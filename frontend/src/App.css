@@ -313,6 +313,30 @@ button:disabled {
   background: rgba(16, 185, 129, 0.5);
 }
 
+.matrix-cell.cell-selected {
+  outline: 2px solid #e94560;
+  outline-offset: -2px;
+  background: rgba(233, 69, 96, 0.15);
+}
+
+.matrix-cell.cell-selected.cell-on {
+  background: rgba(16, 185, 129, 0.4);
+}
+
+.register-matrix-container:focus {
+  outline: none;
+}
+
+.register-matrix-container:focus .matrix-cell.cell-selected {
+  outline: 2px solid #e94560;
+  animation: cursor-blink 1s infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { outline-color: #e94560; }
+  50% { outline-color: #f472b6; }
+}
+
 .matrix-value {
   display: block;
   padding: 0.125rem;

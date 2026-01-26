@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   GetCoils,
   GetDiscreteInputs,
@@ -36,6 +36,11 @@ export function RegisterPanel() {
   const [values, setValues] = useState<(boolean | number)[]>([]);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [displayFormat, setDisplayFormat] = useState<DisplayFormat>('decimal');
+
+  // カーソル（選択セル）の状態
+  const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const dialogInputRef = useRef<HTMLInputElement>(null);
 
   // モーダルダイアログの状態
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -77,6 +82,19 @@ export function RegisterPanel() {
       return () => clearInterval(interval);
     }
   }, [autoRefresh, loadRegisters]);
+
+  // コンポーネントマウント時にテーブルにフォーカスを設定
+  useEffect(() => {
+    tableContainerRef.current?.focus();
+  }, []);
+
+  // ダイアログが開いた時に入力値を全選択
+  useEffect(() => {
+    if (isDialogOpen && dialogInputRef.current) {
+      dialogInputRef.current.focus();
+      dialogInputRef.current.select();
+    }
+  }, [isDialogOpen]);
 
   const isBoolType = REGISTER_TYPES.find(t => t.value === registerType)?.isBool ?? false;
 
@@ -143,6 +161,10 @@ export function RegisterPanel() {
   // ダイアログを閉じる
   const handleDialogClose = () => {
     setIsDialogOpen(false);
+    // テーブルにフォーカスを戻す
+    setTimeout(() => {
+      tableContainerRef.current?.focus();
+    }, 0);
   };
 
   // 入力形式変更時に値を変換
@@ -184,17 +206,79 @@ export function RegisterPanel() {
       }
       await loadRegisters();
       setIsDialogOpen(false);
+      // テーブルにフォーカスを戻す
+      setTimeout(() => {
+        tableContainerRef.current?.focus();
+      }, 0);
     } catch (e) {
       console.error('Failed to set register:', e);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  // ダイアログ内のキーハンドラ
+  const handleDialogKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleSave();
     } else if (e.key === 'Escape') {
       handleDialogClose();
     }
+  };
+
+  // テーブルのキーハンドラ（カーソル移動）
+  const handleTableKeyDown = (e: React.KeyboardEvent) => {
+    if (isDialogOpen) return;
+
+    const maxIndex = values.length - 1;
+    let newIndex = selectedIndex;
+
+    switch (e.key) {
+      case 'ArrowUp':
+        e.preventDefault();
+        newIndex = Math.max(0, selectedIndex - COLUMNS);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        newIndex = Math.min(maxIndex, selectedIndex + COLUMNS);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        newIndex = Math.max(0, selectedIndex - 1);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        newIndex = Math.min(maxIndex, selectedIndex + 1);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        handleCellClick(selectedIndex);
+        return;
+      case 'Home':
+        e.preventDefault();
+        newIndex = 0;
+        break;
+      case 'End':
+        e.preventDefault();
+        newIndex = maxIndex;
+        break;
+      case 'PageUp':
+        e.preventDefault();
+        newIndex = Math.max(0, selectedIndex - COLUMNS * 5);
+        break;
+      case 'PageDown':
+        e.preventDefault();
+        newIndex = Math.min(maxIndex, selectedIndex + COLUMNS * 5);
+        break;
+      default:
+        return;
+    }
+
+    setSelectedIndex(newIndex);
+  };
+
+  // セルクリック時に選択も更新
+  const handleCellClickWithSelect = (index: number) => {
+    setSelectedIndex(index);
+    handleCellClick(index);
   };
 
   const getRows = () => {
@@ -270,7 +354,12 @@ export function RegisterPanel() {
         </button>
       </div>
 
-      <div className="register-matrix-container">
+      <div
+        className="register-matrix-container"
+        ref={tableContainerRef}
+        tabIndex={0}
+        onKeyDown={handleTableKeyDown}
+      >
         <table className="register-matrix">
           <thead>
             <tr>
@@ -287,8 +376,8 @@ export function RegisterPanel() {
                 {row.cells.map((cell) => (
                   <td
                     key={cell.index}
-                    onClick={() => handleCellClick(cell.index)}
-                    className={`matrix-cell ${typeof cell.value === 'boolean' && cell.value ? 'cell-on' : ''}`}
+                    onClick={() => handleCellClickWithSelect(cell.index)}
+                    className={`matrix-cell ${typeof cell.value === 'boolean' && cell.value ? 'cell-on' : ''} ${selectedIndex === cell.index ? 'cell-selected' : ''}`}
                   >
                     <span className="matrix-value">{formatValue(cell.value)}</span>
                   </td>
@@ -350,11 +439,11 @@ export function RegisterPanel() {
               <div className="dialog-row">
                 <label>新しい値:</label>
                 <input
+                  ref={dialogInputRef}
                   type="text"
                   value={editValue}
                   onChange={(e) => setEditValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  autoFocus
+                  onKeyDown={handleDialogKeyDown}
                   className="dialog-input"
                   placeholder={isBoolType ? '0, 1, ON, OFF' : ''}
                 />
