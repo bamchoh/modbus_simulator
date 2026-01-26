@@ -1,0 +1,276 @@
+package application
+
+import (
+	"fmt"
+	"sync"
+	"time"
+
+	"modbus_simulator/internal/domain/register"
+	"modbus_simulator/internal/domain/script"
+	"modbus_simulator/internal/domain/server"
+	"modbus_simulator/internal/infrastructure/modbus"
+	"modbus_simulator/internal/infrastructure/scripting"
+
+	"github.com/google/uuid"
+)
+
+// PLCService はPLCシミュレーターのメインサービス
+type PLCService struct {
+	mu           sync.RWMutex
+	store        *register.RegisterStore
+	modbusServer *modbus.Server
+	scriptEngine *scripting.ScriptEngine
+	scripts      map[string]*script.Script
+}
+
+// NewPLCService は新しいPLCServiceを作成する
+func NewPLCService() *PLCService {
+	// デフォルトのレジスタストアを作成（各65536個）
+	store := register.NewRegisterStore(65536, 65536, 65536, 65536)
+
+	return &PLCService{
+		store:        store,
+		modbusServer: modbus.NewServer(server.DefaultTCPConfig(), store),
+		scriptEngine: scripting.NewScriptEngine(store),
+		scripts:      make(map[string]*script.Script),
+	}
+}
+
+// === サーバー管理 ===
+
+// StartServer はModbusサーバーを起動する
+func (s *PLCService) StartServer() error {
+	return s.modbusServer.Start()
+}
+
+// StopServer はModbusサーバーを停止する
+func (s *PLCService) StopServer() error {
+	return s.modbusServer.Stop()
+}
+
+// GetServerStatus はサーバーのステータスを返す
+func (s *PLCService) GetServerStatus() string {
+	return s.modbusServer.Status().String()
+}
+
+// GetServerConfig はサーバーの設定を返す
+func (s *PLCService) GetServerConfig() *ServerConfigDTO {
+	config := s.modbusServer.GetConfig()
+	return &ServerConfigDTO{
+		Type:       int(config.Type),
+		TypeName:   config.Type.String(),
+		SlaveID:    int(config.SlaveID),
+		TCPAddress: config.TCPAddress,
+		TCPPort:    config.TCPPort,
+		SerialPort: config.SerialPort,
+		BaudRate:   config.BaudRate,
+		DataBits:   config.DataBits,
+		StopBits:   config.StopBits,
+		Parity:     config.Parity,
+	}
+}
+
+// UpdateServerConfig はサーバーの設定を更新する
+func (s *PLCService) UpdateServerConfig(dto *ServerConfigDTO) error {
+	config := &server.ServerConfig{
+		Type:       server.ServerType(dto.Type),
+		SlaveID:    uint8(dto.SlaveID),
+		TCPAddress: dto.TCPAddress,
+		TCPPort:    dto.TCPPort,
+		SerialPort: dto.SerialPort,
+		BaudRate:   dto.BaudRate,
+		DataBits:   dto.DataBits,
+		StopBits:   dto.StopBits,
+		Parity:     dto.Parity,
+	}
+	return s.modbusServer.UpdateConfig(config)
+}
+
+// === レジスタ操作 ===
+
+// GetCoils はコイルの値を取得する
+func (s *PLCService) GetCoils(start, count int) []bool {
+	vals, _ := s.store.GetCoils(uint16(start), uint16(count))
+	return vals
+}
+
+// SetCoil はコイルの値を設定する
+func (s *PLCService) SetCoil(address int, value bool) error {
+	return s.store.SetCoil(uint16(address), value)
+}
+
+// GetDiscreteInputs はディスクリート入力の値を取得する
+func (s *PLCService) GetDiscreteInputs(start, count int) []bool {
+	vals, _ := s.store.GetDiscreteInputs(uint16(start), uint16(count))
+	return vals
+}
+
+// SetDiscreteInput はディスクリート入力の値を設定する
+func (s *PLCService) SetDiscreteInput(address int, value bool) error {
+	return s.store.SetDiscreteInput(uint16(address), value)
+}
+
+// GetHoldingRegisters は保持レジスタの値を取得する
+func (s *PLCService) GetHoldingRegisters(start, count int) []int {
+	vals, _ := s.store.GetHoldingRegisters(uint16(start), uint16(count))
+	result := make([]int, len(vals))
+	for i, v := range vals {
+		result[i] = int(v)
+	}
+	return result
+}
+
+// SetHoldingRegister は保持レジスタの値を設定する
+func (s *PLCService) SetHoldingRegister(address int, value int) error {
+	return s.store.SetHoldingRegister(uint16(address), uint16(value))
+}
+
+// GetInputRegisters は入力レジスタの値を取得する
+func (s *PLCService) GetInputRegisters(start, count int) []int {
+	vals, _ := s.store.GetInputRegisters(uint16(start), uint16(count))
+	result := make([]int, len(vals))
+	for i, v := range vals {
+		result[i] = int(v)
+	}
+	return result
+}
+
+// SetInputRegister は入力レジスタの値を設定する
+func (s *PLCService) SetInputRegister(address int, value int) error {
+	return s.store.SetInputRegister(uint16(address), uint16(value))
+}
+
+// === スクリプト管理 ===
+
+// CreateScript は新しいスクリプトを作成する
+func (s *PLCService) CreateScript(name, code string, intervalMs int) (*ScriptDTO, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := uuid.New().String()
+	sc := script.NewScript(id, name, code, time.Duration(intervalMs)*time.Millisecond)
+	s.scripts[id] = sc
+
+	return scriptToDTO(sc, false), nil
+}
+
+// UpdateScript はスクリプトを更新する
+func (s *PLCService) UpdateScript(id, name, code string, intervalMs int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sc, ok := s.scripts[id]
+	if !ok {
+		return fmt.Errorf("script not found: %s", id)
+	}
+
+	// 実行中なら一旦停止
+	wasRunning := s.scriptEngine.IsRunning(id)
+	if wasRunning {
+		s.scriptEngine.StopScript(id)
+	}
+
+	sc.Name = name
+	sc.Code = code
+	sc.Interval = time.Duration(intervalMs) * time.Millisecond
+
+	// 実行中だった場合は再開
+	if wasRunning {
+		s.scriptEngine.StartScript(sc)
+	}
+
+	return nil
+}
+
+// DeleteScript はスクリプトを削除する
+func (s *PLCService) DeleteScript(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.scripts[id]; !ok {
+		return fmt.Errorf("script not found: %s", id)
+	}
+
+	s.scriptEngine.StopScript(id)
+	delete(s.scripts, id)
+	return nil
+}
+
+// GetScripts は全てのスクリプトを取得する
+func (s *PLCService) GetScripts() []*ScriptDTO {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]*ScriptDTO, 0, len(s.scripts))
+	for _, sc := range s.scripts {
+		isRunning := s.scriptEngine.IsRunning(sc.ID)
+		result = append(result, scriptToDTO(sc, isRunning))
+	}
+	return result
+}
+
+// GetScript は特定のスクリプトを取得する
+func (s *PLCService) GetScript(id string) (*ScriptDTO, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sc, ok := s.scripts[id]
+	if !ok {
+		return nil, fmt.Errorf("script not found: %s", id)
+	}
+
+	isRunning := s.scriptEngine.IsRunning(id)
+	return scriptToDTO(sc, isRunning), nil
+}
+
+// StartScript はスクリプトを開始する
+func (s *PLCService) StartScript(id string) error {
+	s.mu.RLock()
+	sc, ok := s.scripts[id]
+	s.mu.RUnlock()
+
+	if !ok {
+		return fmt.Errorf("script not found: %s", id)
+	}
+
+	return s.scriptEngine.StartScript(sc)
+}
+
+// StopScript はスクリプトを停止する
+func (s *PLCService) StopScript(id string) error {
+	return s.scriptEngine.StopScript(id)
+}
+
+// RunScriptOnce はスクリプトを1回だけ実行する
+func (s *PLCService) RunScriptOnce(code string) (interface{}, error) {
+	return s.scriptEngine.RunOnce(code)
+}
+
+// Shutdown はサービスをシャットダウンする
+func (s *PLCService) Shutdown() {
+	s.scriptEngine.StopAll()
+	s.modbusServer.Stop()
+}
+
+// GetIntervalPresets は周期プリセットを取得する
+func (s *PLCService) GetIntervalPresets() []IntervalPresetDTO {
+	presets := script.IntervalPresets
+	result := make([]IntervalPresetDTO, len(presets))
+	for i, p := range presets {
+		result[i] = IntervalPresetDTO{
+			Label: p.Label,
+			Ms:    int(p.Duration.Milliseconds()),
+		}
+	}
+	return result
+}
+
+func scriptToDTO(sc *script.Script, isRunning bool) *ScriptDTO {
+	return &ScriptDTO{
+		ID:         sc.ID,
+		Name:       sc.Name,
+		Code:       sc.Code,
+		IntervalMs: int(sc.Interval.Milliseconds()),
+		IsRunning:  isRunning,
+	}
+}
