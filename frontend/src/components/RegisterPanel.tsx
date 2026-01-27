@@ -34,7 +34,7 @@ export function RegisterPanel() {
   const [registerType, setRegisterType] = useState<RegisterType>('holdingRegisters');
   const [startAddress, setStartAddress] = useState(0);
   const [values, setValues] = useState<(boolean | number)[]>([]);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [displayFormat, setDisplayFormat] = useState<DisplayFormat>('decimal');
 
   // カーソル（選択セル）の状態
@@ -78,7 +78,7 @@ export function RegisterPanel() {
 
   useEffect(() => {
     if (autoRefresh) {
-      const interval = setInterval(loadRegisters, 500);
+      const interval = setInterval(loadRegisters, 100);
       return () => clearInterval(interval);
     }
   }, [autoRefresh, loadRegisters]);
