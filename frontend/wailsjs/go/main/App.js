@@ -46,6 +46,10 @@ export function GetScripts() {
   return window['go']['main']['App']['GetScripts']();
 }
 
+export function GetSerialPorts() {
+  return window['go']['main']['App']['GetSerialPorts']();
+}
+
 export function GetServerConfig() {
   return window['go']['main']['App']['GetServerConfig']();
 }

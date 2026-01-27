@@ -24,6 +24,8 @@ export function GetScript(arg1:string):Promise<application.ScriptDTO>;
 
 export function GetScripts():Promise<Array<application.ScriptDTO>>;
 
+export function GetSerialPorts():Promise<Array<string>>;
+
 export function GetServerConfig():Promise<application.ServerConfigDTO>;
 
 export function GetServerStatus():Promise<string>;

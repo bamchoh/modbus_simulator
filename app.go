@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"sort"
 
 	"modbus_simulator/internal/application"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"go.bug.st/serial"
 )
 
 // App struct
@@ -233,4 +235,16 @@ func (a *App) ImportProject() error {
 
 	// プロジェクトをインポート
 	return a.plcService.ImportProject(&data)
+}
+
+// === シリアルポート ===
+
+// GetSerialPorts はシステムで利用可能なシリアルポートの一覧を返す
+func (a *App) GetSerialPorts() []string {
+	ports, err := serial.GetPortsList()
+	if err != nil {
+		return []string{}
+	}
+	sort.Strings(ports)
+	return ports
 }

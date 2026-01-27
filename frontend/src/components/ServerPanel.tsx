@@ -8,7 +8,8 @@ import {
   GetDisabledUnitIDs,
   SetUnitIdEnabled,
   ExportProject,
-  ImportProject
+  ImportProject,
+  GetSerialPorts
 } from '../../wailsjs/go/main/App';
 import { application } from '../../wailsjs/go/models';
 
@@ -33,16 +34,27 @@ export function ServerPanel() {
   const [error, setError] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [disabledUnitIds, setDisabledUnitIds] = useState<Set<number>>(new Set());
+  const [serialPorts, setSerialPorts] = useState<string[]>([]);
 
   useEffect(() => {
     loadServerInfo();
     loadDisabledUnitIds();
+    loadSerialPorts();
     const interval = setInterval(() => {
       // ステータスのみ更新（編集中は設定を上書きしない）
       GetServerStatus().then(setStatus).catch(() => {});
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  const loadSerialPorts = async () => {
+    try {
+      const ports = await GetSerialPorts();
+      setSerialPorts(ports);
+    } catch (e) {
+      console.error('Failed to load serial ports:', e);
+    }
+  };
 
   const loadServerInfo = async () => {
     try {
@@ -209,12 +221,33 @@ export function ServerPanel() {
           <>
             <div className="form-group">
               <label>シリアルポート</label>
-              <input
-                type="text"
-                value={config.serialPort}
-                onChange={(e) => handleConfigChange('serialPort', e.target.value)}
-                disabled={isRunning}
-              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <select
+                  value={config.serialPort}
+                  onChange={(e) => handleConfigChange('serialPort', e.target.value)}
+                  disabled={isRunning}
+                  style={{ flex: 1 }}
+                >
+                  {serialPorts.length === 0 && (
+                    <option value="">ポートが見つかりません</option>
+                  )}
+                  {serialPorts.map(port => (
+                    <option key={port} value={port}>{port}</option>
+                  ))}
+                  {config.serialPort && !serialPorts.includes(config.serialPort) && (
+                    <option value={config.serialPort}>{config.serialPort} (未検出)</option>
+                  )}
+                </select>
+                <button
+                  onClick={loadSerialPorts}
+                  disabled={isRunning}
+                  className="btn-secondary"
+                  title="ポート一覧を更新"
+                  style={{ padding: '4px 8px' }}
+                >
+                  ↻
+                </button>
+              </div>
             </div>
             <div className="form-group">
               <label>ボーレート</label>
