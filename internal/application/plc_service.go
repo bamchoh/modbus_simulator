@@ -59,7 +59,6 @@ func (s *PLCService) GetServerConfig() *ServerConfigDTO {
 	return &ServerConfigDTO{
 		Type:       int(config.Type),
 		TypeName:   config.Type.String(),
-		SlaveID:    int(config.SlaveID),
 		TCPAddress: config.TCPAddress,
 		TCPPort:    config.TCPPort,
 		SerialPort: config.SerialPort,
@@ -74,7 +73,6 @@ func (s *PLCService) GetServerConfig() *ServerConfigDTO {
 func (s *PLCService) UpdateServerConfig(dto *ServerConfigDTO) error {
 	config := &server.ServerConfig{
 		Type:       server.ServerType(dto.Type),
-		SlaveID:    uint8(dto.SlaveID),
 		TCPAddress: dto.TCPAddress,
 		TCPPort:    dto.TCPPort,
 		SerialPort: dto.SerialPort,
@@ -84,6 +82,35 @@ func (s *PLCService) UpdateServerConfig(dto *ServerConfigDTO) error {
 		Parity:     dto.Parity,
 	}
 	return s.modbusServer.UpdateConfig(config)
+}
+
+// SetUnitIdEnabled は指定したUnitIdの応答を有効/無効にする
+func (s *PLCService) SetUnitIdEnabled(unitId int, enabled bool) {
+	s.modbusServer.SetUnitIdEnabled(uint8(unitId), enabled)
+}
+
+// IsUnitIdEnabled は指定したUnitIdが応答するかどうかを返す
+func (s *PLCService) IsUnitIdEnabled(unitId int) bool {
+	return s.modbusServer.IsUnitIdEnabled(uint8(unitId))
+}
+
+// GetDisabledUnitIDs は無効化されたUnitIDのリストを返す
+func (s *PLCService) GetDisabledUnitIDs() []int {
+	ids := s.modbusServer.GetDisabledUnitIDs()
+	result := make([]int, len(ids))
+	for i, id := range ids {
+		result[i] = int(id)
+	}
+	return result
+}
+
+// SetDisabledUnitIDs は無効化するUnitIDのリストを設定する
+func (s *PLCService) SetDisabledUnitIDs(ids []int) {
+	uint8Ids := make([]uint8, len(ids))
+	for i, id := range ids {
+		uint8Ids[i] = uint8(id)
+	}
+	s.modbusServer.SetDisabledUnitIDs(uint8Ids)
 }
 
 // === レジスタ操作 ===

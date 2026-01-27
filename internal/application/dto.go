@@ -4,7 +4,6 @@ package application
 type ServerConfigDTO struct {
 	Type       int    `json:"type"`
 	TypeName   string `json:"typeName"`
-	SlaveID    int    `json:"slaveId"`
 	TCPAddress string `json:"tcpAddress"`
 	TCPPort    int    `json:"tcpPort"`
 	SerialPort string `json:"serialPort"`

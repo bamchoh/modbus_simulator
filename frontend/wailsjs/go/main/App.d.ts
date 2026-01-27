@@ -8,6 +8,8 @@ export function DeleteScript(arg1:string):Promise<void>;
 
 export function GetCoils(arg1:number,arg2:number):Promise<Array<boolean>>;
 
+export function GetDisabledUnitIDs():Promise<Array<number>>;
+
 export function GetDiscreteInputs(arg1:number,arg2:number):Promise<Array<boolean>>;
 
 export function GetHoldingRegisters(arg1:number,arg2:number):Promise<Array<number>>;
@@ -24,15 +26,21 @@ export function GetServerConfig():Promise<application.ServerConfigDTO>;
 
 export function GetServerStatus():Promise<string>;
 
+export function IsUnitIdEnabled(arg1:number):Promise<boolean>;
+
 export function RunScriptOnce(arg1:string):Promise<any>;
 
 export function SetCoil(arg1:number,arg2:boolean):Promise<void>;
+
+export function SetDisabledUnitIDs(arg1:Array<number>):Promise<void>;
 
 export function SetDiscreteInput(arg1:number,arg2:boolean):Promise<void>;
 
 export function SetHoldingRegister(arg1:number,arg2:number):Promise<void>;
 
 export function SetInputRegister(arg1:number,arg2:number):Promise<void>;
+
+export function SetUnitIdEnabled(arg1:number,arg2:boolean):Promise<void>;
 
 export function StartScript(arg1:string):Promise<void>;
 

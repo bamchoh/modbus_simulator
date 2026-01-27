@@ -4,7 +4,9 @@ import {
   GetServerConfig,
   UpdateServerConfig,
   StartServer,
-  StopServer
+  StopServer,
+  GetDisabledUnitIDs,
+  SetUnitIdEnabled
 } from '../../wailsjs/go/main/App';
 import { application } from '../../wailsjs/go/models';
 
@@ -20,14 +22,19 @@ const PARITY_OPTIONS = [
   { value: 'O', label: 'Odd' }
 ];
 
+// 表示するUnitIDの範囲（1-247）
+const UNIT_ID_RANGE = Array.from({ length: 247 }, (_, i) => i + 1);
+
 export function ServerPanel() {
   const [status, setStatus] = useState('Stopped');
   const [config, setConfig] = useState<application.ServerConfigDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [disabledUnitIds, setDisabledUnitIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     loadServerInfo();
+    loadDisabledUnitIds();
     const interval = setInterval(() => {
       // ステータスのみ更新（編集中は設定を上書きしない）
       GetServerStatus().then(setStatus).catch(() => {});
@@ -41,6 +48,30 @@ export function ServerPanel() {
       setStatus(s);
       setConfig(c);
       setIsDirty(false);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const loadDisabledUnitIds = async () => {
+    try {
+      const ids = await GetDisabledUnitIDs();
+      setDisabledUnitIds(new Set(ids));
+    } catch (e) {
+      console.error('Failed to load disabled unit IDs:', e);
+    }
+  };
+
+  const handleUnitIdToggle = async (unitId: number, enabled: boolean) => {
+    try {
+      await SetUnitIdEnabled(unitId, enabled);
+      const newDisabled = new Set(disabledUnitIds);
+      if (enabled) {
+        newDisabled.delete(unitId);
+      } else {
+        newDisabled.add(unitId);
+      }
+      setDisabledUnitIds(newDisabled);
     } catch (e) {
       setError(String(e));
     }
@@ -119,18 +150,6 @@ export function ServerPanel() {
               <option key={t.value} value={t.value}>{t.label}</option>
             ))}
           </select>
-        </div>
-
-        <div className="form-group">
-          <label>スレーブID</label>
-          <input
-            type="number"
-            min="1"
-            max="247"
-            value={config.slaveId}
-            onChange={(e) => handleConfigChange('slaveId', parseInt(e.target.value))}
-            disabled={isRunning}
-          />
         </div>
 
         {isTCP ? (
@@ -221,6 +240,23 @@ export function ServerPanel() {
         <button onClick={handleSaveConfig} disabled={isRunning} className={isDirty ? 'btn-primary' : 'btn-secondary'}>
           {isDirty ? '設定を保存 *' : '設定を保存'}
         </button>
+      </div>
+
+      <div className="config-section">
+        <h3>UnitID 応答設定</h3>
+        <p className="help-text">オフにしたUnitIDには応答しません（デフォルト: 全て応答）</p>
+        <div className="unit-id-grid">
+          {UNIT_ID_RANGE.map(unitId => (
+            <label key={unitId} className="unit-id-toggle">
+              <input
+                type="checkbox"
+                checked={!disabledUnitIds.has(unitId)}
+                onChange={(e) => handleUnitIdToggle(unitId, e.target.checked)}
+              />
+              <span className="unit-id-label">{unitId}</span>
+            </label>
+          ))}
+        </div>
       </div>
     </div>
   );

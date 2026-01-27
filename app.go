@@ -56,6 +56,26 @@ func (a *App) UpdateServerConfig(dto *application.ServerConfigDTO) error {
 	return a.plcService.UpdateServerConfig(dto)
 }
 
+// SetUnitIdEnabled は指定したUnitIdの応答を有効/無効にする
+func (a *App) SetUnitIdEnabled(unitId int, enabled bool) {
+	a.plcService.SetUnitIdEnabled(unitId, enabled)
+}
+
+// IsUnitIdEnabled は指定したUnitIdが応答するかどうかを返す
+func (a *App) IsUnitIdEnabled(unitId int) bool {
+	return a.plcService.IsUnitIdEnabled(unitId)
+}
+
+// GetDisabledUnitIDs は無効化されたUnitIDのリストを返す
+func (a *App) GetDisabledUnitIDs() []int {
+	return a.plcService.GetDisabledUnitIDs()
+}
+
+// SetDisabledUnitIDs は無効化するUnitIDのリストを設定する
+func (a *App) SetDisabledUnitIDs(ids []int) {
+	a.plcService.SetDisabledUnitIDs(ids)
+}
+
 // === レジスタ操作 ===
 
 // GetCoils はコイルの値を取得する

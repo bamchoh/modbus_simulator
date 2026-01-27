@@ -14,6 +14,10 @@ export function GetCoils(arg1, arg2) {
   return window['go']['main']['App']['GetCoils'](arg1, arg2);
 }
 
+export function GetDisabledUnitIDs() {
+  return window['go']['main']['App']['GetDisabledUnitIDs']();
+}
+
 export function GetDiscreteInputs(arg1, arg2) {
   return window['go']['main']['App']['GetDiscreteInputs'](arg1, arg2);
 }
@@ -46,12 +50,20 @@ export function GetServerStatus() {
   return window['go']['main']['App']['GetServerStatus']();
 }
 
+export function IsUnitIdEnabled(arg1) {
+  return window['go']['main']['App']['IsUnitIdEnabled'](arg1);
+}
+
 export function RunScriptOnce(arg1) {
   return window['go']['main']['App']['RunScriptOnce'](arg1);
 }
 
 export function SetCoil(arg1, arg2) {
   return window['go']['main']['App']['SetCoil'](arg1, arg2);
+}
+
+export function SetDisabledUnitIDs(arg1) {
+  return window['go']['main']['App']['SetDisabledUnitIDs'](arg1);
 }
 
 export function SetDiscreteInput(arg1, arg2) {
@@ -64,6 +76,10 @@ export function SetHoldingRegister(arg1, arg2) {
 
 export function SetInputRegister(arg1, arg2) {
   return window['go']['main']['App']['SetInputRegister'](arg1, arg2);
+}
+
+export function SetUnitIdEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetUnitIdEnabled'](arg1, arg2);
 }
 
 export function StartScript(arg1) {

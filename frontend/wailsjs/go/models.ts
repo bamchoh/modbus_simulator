@@ -37,7 +37,6 @@ export namespace application {
 	export class ServerConfigDTO {
 	    type: number;
 	    typeName: string;
-	    slaveId: number;
 	    tcpAddress: string;
 	    tcpPort: number;
 	    serialPort: string;
@@ -54,7 +53,6 @@ export namespace application {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
 	        this.typeName = source["typeName"];
-	        this.slaveId = source["slaveId"];
 	        this.tcpAddress = source["tcpAddress"];
 	        this.tcpPort = source["tcpPort"];
 	        this.serialPort = source["serialPort"];

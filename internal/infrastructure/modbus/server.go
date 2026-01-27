@@ -26,7 +26,7 @@ func NewServer(config *server.ServerConfig, store *register.RegisterStore) *Serv
 	return &Server{
 		config:  config,
 		store:   store,
-		handler: NewRegisterHandler(store, config.SlaveID),
+		handler: NewRegisterHandler(store),
 		status:  server.StatusStopped,
 	}
 }
@@ -116,8 +116,11 @@ func (s *Server) UpdateConfig(config *server.ServerConfig) error {
 		return fmt.Errorf("cannot update config while server is running")
 	}
 
+	// 現在の無効化UnitIDリストを保持
+	disabledIDs := s.handler.GetDisabledUnitIDs()
 	s.config = config
-	s.handler = NewRegisterHandler(s.store, config.SlaveID)
+	s.handler = NewRegisterHandler(s.store)
+	s.handler.SetDisabledUnitIDs(disabledIDs)
 	return nil
 }
 
@@ -126,4 +129,32 @@ func (s *Server) GetConfig() *server.ServerConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.config
+}
+
+// SetUnitIdEnabled は指定したUnitIdの応答を有効/無効にする
+func (s *Server) SetUnitIdEnabled(unitId uint8, enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handler.SetUnitIdEnabled(unitId, enabled)
+}
+
+// IsUnitIdEnabled は指定したUnitIdが応答するかどうかを返す
+func (s *Server) IsUnitIdEnabled(unitId uint8) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.handler.IsUnitIdEnabled(unitId)
+}
+
+// GetDisabledUnitIDs は無効化されたUnitIDのリストを返す
+func (s *Server) GetDisabledUnitIDs() []uint8 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.handler.GetDisabledUnitIDs()
+}
+
+// SetDisabledUnitIDs は無効化するUnitIDのリストを設定する
+func (s *Server) SetDisabledUnitIDs(ids []uint8) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handler.SetDisabledUnitIDs(ids)
 }
