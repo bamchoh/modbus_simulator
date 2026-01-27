@@ -10,6 +10,10 @@ export function DeleteScript(arg1) {
   return window['go']['main']['App']['DeleteScript'](arg1);
 }
 
+export function ExportProject() {
+  return window['go']['main']['App']['ExportProject']();
+}
+
 export function GetCoils(arg1, arg2) {
   return window['go']['main']['App']['GetCoils'](arg1, arg2);
 }
@@ -48,6 +52,10 @@ export function GetServerConfig() {
 
 export function GetServerStatus() {
   return window['go']['main']['App']['GetServerStatus']();
+}
+
+export function ImportProject() {
+  return window['go']['main']['App']['ImportProject']();
 }
 
 export function IsUnitIdEnabled(arg1) {

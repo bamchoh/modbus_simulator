@@ -34,3 +34,20 @@ type RegisterValueDTO struct {
 	Value   int  `json:"value"`
 	Bool    bool `json:"bool,omitempty"`
 }
+
+// ProjectDataDTO はプロジェクト全体のエクスポート/インポート用DTO
+type ProjectDataDTO struct {
+	Version         int                `json:"version"`
+	ServerConfig    *ServerConfigDTO   `json:"serverConfig"`
+	DisabledUnitIDs []int              `json:"disabledUnitIds"`
+	Registers       *RegisterDataDTO   `json:"registers"`
+	Scripts         []*ScriptDTO       `json:"scripts"`
+}
+
+// RegisterDataDTO はレジスタデータのDTO
+type RegisterDataDTO struct {
+	Coils           []bool  `json:"coils"`
+	DiscreteInputs  []bool  `json:"discreteInputs"`
+	HoldingRegisters []int  `json:"holdingRegisters"`
+	InputRegisters  []int   `json:"inputRegisters"`
+}

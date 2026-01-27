@@ -235,3 +235,65 @@ func (r *RegisterStore) GetAllInputRegisters() []uint16 {
 	copy(result, r.inputRegs)
 	return result
 }
+
+// SetAllCoils は全てのコイルを設定する
+func (r *RegisterStore) SetAllCoils(values []bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	count := len(values)
+	if count > len(r.coils) {
+		count = len(r.coils)
+	}
+	copy(r.coils, values[:count])
+}
+
+// SetAllDiscreteInputs は全てのディスクリート入力を設定する
+func (r *RegisterStore) SetAllDiscreteInputs(values []bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	count := len(values)
+	if count > len(r.discreteInputs) {
+		count = len(r.discreteInputs)
+	}
+	copy(r.discreteInputs, values[:count])
+}
+
+// SetAllHoldingRegisters は全ての保持レジスタを設定する
+func (r *RegisterStore) SetAllHoldingRegisters(values []uint16) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	count := len(values)
+	if count > len(r.holdingRegs) {
+		count = len(r.holdingRegs)
+	}
+	copy(r.holdingRegs, values[:count])
+}
+
+// SetAllInputRegisters は全ての入力レジスタを設定する
+func (r *RegisterStore) SetAllInputRegisters(values []uint16) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	count := len(values)
+	if count > len(r.inputRegs) {
+		count = len(r.inputRegs)
+	}
+	copy(r.inputRegs, values[:count])
+}
+
+// ClearAll は全てのレジスタをクリアする
+func (r *RegisterStore) ClearAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.coils {
+		r.coils[i] = false
+	}
+	for i := range r.discreteInputs {
+		r.discreteInputs[i] = false
+	}
+	for i := range r.holdingRegs {
+		r.holdingRegs[i] = 0
+	}
+	for i := range r.inputRegs {
+		r.inputRegs[i] = 0
+	}
+}

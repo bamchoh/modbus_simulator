@@ -6,7 +6,9 @@ import {
   StartServer,
   StopServer,
   GetDisabledUnitIDs,
-  SetUnitIdEnabled
+  SetUnitIdEnabled,
+  ExportProject,
+  ImportProject
 } from '../../wailsjs/go/main/App';
 import { application } from '../../wailsjs/go/models';
 
@@ -116,6 +118,27 @@ export function ServerPanel() {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      setError(null);
+      await ExportProject();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      setError(null);
+      await ImportProject();
+      // インポート後に設定を再読み込み
+      await loadServerInfo();
+      await loadDisabledUnitIds();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   if (!config) {
     return <div className="panel">Loading...</div>;
   }
@@ -133,6 +156,13 @@ export function ServerPanel() {
         </span>
         <button onClick={isRunning ? handleStop : handleStart} className={isRunning ? 'btn-danger' : 'btn-primary'}>
           {isRunning ? '停止' : '開始'}
+        </button>
+        <div className="spacer" />
+        <button onClick={handleExport} className="btn-secondary">
+          エクスポート
+        </button>
+        <button onClick={handleImport} className="btn-secondary">
+          インポート
         </button>
       </div>
 

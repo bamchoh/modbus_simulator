@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 
 	"modbus_simulator/internal/application"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -163,4 +167,70 @@ func (a *App) RunScriptOnce(code string) (interface{}, error) {
 // GetIntervalPresets は周期プリセットを取得する
 func (a *App) GetIntervalPresets() []application.IntervalPresetDTO {
 	return a.plcService.GetIntervalPresets()
+}
+
+// === プロジェクト管理 ===
+
+// ExportProject はプロジェクトをファイルにエクスポートする
+func (a *App) ExportProject() error {
+	// ファイル保存ダイアログを表示
+	filepath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title: "プロジェクトをエクスポート",
+		DefaultFilename: "project.json",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "JSON Files (*.json)", Pattern: "*.json"},
+			{DisplayName: "All Files (*.*)", Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if filepath == "" {
+		return nil // キャンセルされた
+	}
+
+	// プロジェクトデータを取得
+	data := a.plcService.ExportProject()
+
+	// JSONに変換
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	// ファイルに書き込み
+	return os.WriteFile(filepath, jsonData, 0644)
+}
+
+// ImportProject はファイルからプロジェクトをインポートする
+func (a *App) ImportProject() error {
+	// ファイル選択ダイアログを表示
+	filepath, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "プロジェクトをインポート",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "JSON Files (*.json)", Pattern: "*.json"},
+			{DisplayName: "All Files (*.*)", Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if filepath == "" {
+		return nil // キャンセルされた
+	}
+
+	// ファイルを読み込み
+	jsonData, err := os.ReadFile(filepath)
+	if err != nil {
+		return err
+	}
+
+	// JSONをパース
+	var data application.ProjectDataDTO
+	if err := json.Unmarshal(jsonData, &data); err != nil {
+		return err
+	}
+
+	// プロジェクトをインポート
+	return a.plcService.ImportProject(&data)
 }

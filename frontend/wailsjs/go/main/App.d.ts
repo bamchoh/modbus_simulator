@@ -6,6 +6,8 @@ export function CreateScript(arg1:string,arg2:string,arg3:number):Promise<applic
 
 export function DeleteScript(arg1:string):Promise<void>;
 
+export function ExportProject():Promise<void>;
+
 export function GetCoils(arg1:number,arg2:number):Promise<Array<boolean>>;
 
 export function GetDisabledUnitIDs():Promise<Array<number>>;
@@ -25,6 +27,8 @@ export function GetScripts():Promise<Array<application.ScriptDTO>>;
 export function GetServerConfig():Promise<application.ServerConfigDTO>;
 
 export function GetServerStatus():Promise<string>;
+
+export function ImportProject():Promise<void>;
 
 export function IsUnitIdEnabled(arg1:number):Promise<boolean>;
 

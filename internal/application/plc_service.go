@@ -301,3 +301,132 @@ func scriptToDTO(sc *script.Script, isRunning bool) *ScriptDTO {
 		IsRunning:  isRunning,
 	}
 }
+
+// ExportProject はプロジェクト全体のデータをエクスポートする
+func (s *PLCService) ExportProject() *ProjectDataDTO {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// サーバー設定を取得
+	serverConfig := s.GetServerConfig()
+
+	// 無効化されたUnitIDを取得
+	disabledUnitIDs := s.GetDisabledUnitIDs()
+
+	// レジスタデータを取得
+	coils := s.store.GetAllCoils()
+	discreteInputs := s.store.GetAllDiscreteInputs()
+	holdingRegs := s.store.GetAllHoldingRegisters()
+	inputRegs := s.store.GetAllInputRegisters()
+
+	// uint16 を int に変換
+	holdingInts := make([]int, len(holdingRegs))
+	for i, v := range holdingRegs {
+		holdingInts[i] = int(v)
+	}
+	inputInts := make([]int, len(inputRegs))
+	for i, v := range inputRegs {
+		inputInts[i] = int(v)
+	}
+
+	// スクリプトを取得
+	scripts := make([]*ScriptDTO, 0, len(s.scripts))
+	for _, sc := range s.scripts {
+		scripts = append(scripts, &ScriptDTO{
+			ID:         sc.ID,
+			Name:       sc.Name,
+			Code:       sc.Code,
+			IntervalMs: int(sc.Interval.Milliseconds()),
+			IsRunning:  false, // エクスポート時は実行状態を保存しない
+		})
+	}
+
+	return &ProjectDataDTO{
+		Version:         1,
+		ServerConfig:    serverConfig,
+		DisabledUnitIDs: disabledUnitIDs,
+		Registers: &RegisterDataDTO{
+			Coils:            coils,
+			DiscreteInputs:   discreteInputs,
+			HoldingRegisters: holdingInts,
+			InputRegisters:   inputInts,
+		},
+		Scripts: scripts,
+	}
+}
+
+// ImportProject はプロジェクト全体のデータをインポートする
+func (s *PLCService) ImportProject(data *ProjectDataDTO) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 実行中のスクリプトを全て停止
+	s.scriptEngine.StopAll()
+
+	// サーバー設定を更新（サーバーが停止中の場合のみ）
+	if data.ServerConfig != nil {
+		config := &server.ServerConfig{
+			Type:       server.ServerType(data.ServerConfig.Type),
+			TCPAddress: data.ServerConfig.TCPAddress,
+			TCPPort:    data.ServerConfig.TCPPort,
+			SerialPort: data.ServerConfig.SerialPort,
+			BaudRate:   data.ServerConfig.BaudRate,
+			DataBits:   data.ServerConfig.DataBits,
+			StopBits:   data.ServerConfig.StopBits,
+			Parity:     data.ServerConfig.Parity,
+		}
+		// サーバーが実行中でもエラーを無視（設定は次回起動時に反映）
+		s.modbusServer.UpdateConfig(config)
+	}
+
+	// 無効化されたUnitIDを設定
+	if data.DisabledUnitIDs != nil {
+		uint8Ids := make([]uint8, len(data.DisabledUnitIDs))
+		for i, id := range data.DisabledUnitIDs {
+			uint8Ids[i] = uint8(id)
+		}
+		s.modbusServer.SetDisabledUnitIDs(uint8Ids)
+	}
+
+	// レジスタデータを設定
+	if data.Registers != nil {
+		if data.Registers.Coils != nil {
+			s.store.SetAllCoils(data.Registers.Coils)
+		}
+		if data.Registers.DiscreteInputs != nil {
+			s.store.SetAllDiscreteInputs(data.Registers.DiscreteInputs)
+		}
+		if data.Registers.HoldingRegisters != nil {
+			uint16Vals := make([]uint16, len(data.Registers.HoldingRegisters))
+			for i, v := range data.Registers.HoldingRegisters {
+				uint16Vals[i] = uint16(v)
+			}
+			s.store.SetAllHoldingRegisters(uint16Vals)
+		}
+		if data.Registers.InputRegisters != nil {
+			uint16Vals := make([]uint16, len(data.Registers.InputRegisters))
+			for i, v := range data.Registers.InputRegisters {
+				uint16Vals[i] = uint16(v)
+			}
+			s.store.SetAllInputRegisters(uint16Vals)
+		}
+	}
+
+	// スクリプトを設定
+	if data.Scripts != nil {
+		// 既存のスクリプトをクリア
+		s.scripts = make(map[string]*script.Script)
+
+		for _, dto := range data.Scripts {
+			sc := script.NewScript(
+				dto.ID,
+				dto.Name,
+				dto.Code,
+				time.Duration(dto.IntervalMs)*time.Millisecond,
+			)
+			s.scripts[dto.ID] = sc
+		}
+	}
+
+	return nil
+}
