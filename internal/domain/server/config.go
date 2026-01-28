@@ -52,7 +52,7 @@ func DefaultRTUConfig() *ServerConfig {
 	return &ServerConfig{
 		Type:       ModbusRTU,
 		SerialPort: "COM1",
-		BaudRate:   9600,
+		BaudRate:   115200,
 		DataBits:   8,
 		StopBits:   1,
 		Parity:     "N",

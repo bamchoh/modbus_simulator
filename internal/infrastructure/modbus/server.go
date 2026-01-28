@@ -6,19 +6,22 @@ import (
 
 	"modbus_simulator/internal/domain/register"
 	"modbus_simulator/internal/domain/server"
+	"modbus_simulator/internal/infrastructure/modbus/rtu"
 
 	"github.com/simonvetter/modbus"
 )
 
 // Server はModbusサーバーを管理する
 type Server struct {
-	mu       sync.Mutex
-	config   *server.ServerConfig
-	store    *register.RegisterStore
-	handler  *RegisterHandler
-	server   *modbus.ModbusServer
-	status   server.ServerStatus
-	lastErr  error
+	mu          sync.Mutex
+	config      *server.ServerConfig
+	store       *register.RegisterStore
+	handler     *RegisterHandler
+	server      *modbus.ModbusServer
+	rtuServer   *rtu.RTUServer
+	asciiServer *rtu.ASCIIServer
+	status      server.ServerStatus
+	lastErr     error
 }
 
 // NewServer は新しいModbusサーバーを作成する
@@ -40,19 +43,21 @@ func (s *Server) Start() error {
 		return fmt.Errorf("server is already running")
 	}
 
-	var url string
 	switch s.config.Type {
 	case server.ModbusTCP:
-		url = fmt.Sprintf("tcp://%s:%d", s.config.TCPAddress, s.config.TCPPort)
+		return s.startTCPServer()
 	case server.ModbusRTU:
-		url = fmt.Sprintf("%s?baud=%d&data=%d&stop=%d&parity=%s",
-			s.config.SerialPort, s.config.BaudRate, s.config.DataBits, s.config.StopBits, s.config.Parity)
+		return s.startRTUServer()
 	case server.ModbusRTUASCII:
-		url = fmt.Sprintf("%s?baud=%d&data=%d&stop=%d&parity=%s",
-			s.config.SerialPort, s.config.BaudRate, s.config.DataBits, s.config.StopBits, s.config.Parity)
+		return s.startASCIIServer()
 	default:
 		return fmt.Errorf("unknown server type: %v", s.config.Type)
 	}
+}
+
+// startTCPServer はTCPサーバーを起動する（simonvetter/modbusを使用）
+func (s *Server) startTCPServer() error {
+	url := fmt.Sprintf("tcp://%s:%d", s.config.TCPAddress, s.config.TCPPort)
 
 	srv, err := modbus.NewServer(&modbus.ServerConfiguration{
 		URL: url,
@@ -75,11 +80,82 @@ func (s *Server) Start() error {
 	return nil
 }
 
+// startRTUServer はRTUサーバーを起動する（自作実装）
+func (s *Server) startRTUServer() error {
+	config := rtu.SerialConfig{
+		Port:     s.config.SerialPort,
+		BaudRate: s.config.BaudRate,
+		DataBits: s.config.DataBits,
+		StopBits: s.config.StopBits,
+		Parity:   s.config.Parity,
+	}
+
+	adapter := NewRTUHandlerAdapter(s.handler)
+	rtuSrv := rtu.NewRTUServer(config, adapter)
+
+	if err := rtuSrv.Start(); err != nil {
+		s.status = server.StatusError
+		s.lastErr = err
+		return fmt.Errorf("failed to start RTU server: %w", err)
+	}
+
+	s.rtuServer = rtuSrv
+	s.status = server.StatusRunning
+	s.lastErr = nil
+	return nil
+}
+
+// startASCIIServer はRTU ASCIIサーバーを起動する（自作実装）
+func (s *Server) startASCIIServer() error {
+	config := rtu.SerialConfig{
+		Port:     s.config.SerialPort,
+		BaudRate: s.config.BaudRate,
+		DataBits: s.config.DataBits,
+		StopBits: s.config.StopBits,
+		Parity:   s.config.Parity,
+	}
+
+	adapter := NewRTUHandlerAdapter(s.handler)
+	asciiSrv := rtu.NewASCIIServer(config, adapter)
+
+	if err := asciiSrv.Start(); err != nil {
+		s.status = server.StatusError
+		s.lastErr = err
+		return fmt.Errorf("failed to start ASCII server: %w", err)
+	}
+
+	s.asciiServer = asciiSrv
+	s.status = server.StatusRunning
+	s.lastErr = nil
+	return nil
+}
+
 // Stop はサーバーを停止する
 func (s *Server) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// ASCIIサーバーの停止
+	if s.asciiServer != nil {
+		if err := s.asciiServer.Stop(); err != nil {
+			return fmt.Errorf("failed to stop ASCII server: %w", err)
+		}
+		s.asciiServer = nil
+		s.status = server.StatusStopped
+		return nil
+	}
+
+	// RTUサーバーの停止
+	if s.rtuServer != nil {
+		if err := s.rtuServer.Stop(); err != nil {
+			return fmt.Errorf("failed to stop RTU server: %w", err)
+		}
+		s.rtuServer = nil
+		s.status = server.StatusStopped
+		return nil
+	}
+
+	// TCPサーバーの停止
 	if s.server == nil {
 		return nil
 	}

@@ -25,6 +25,20 @@ const PARITY_OPTIONS = [
   { value: 'O', label: 'Odd' }
 ];
 
+// RTUデフォルト設定
+const DEFAULT_RTU_CONFIG = {
+  baudRate: 115200,
+  dataBits: 8,
+  stopBits: 1,
+  parity: 'N'
+};
+
+// TCPデフォルト設定
+const DEFAULT_TCP_CONFIG = {
+  tcpAddress: '0.0.0.0',
+  tcpPort: 502
+};
+
 // 表示するUnitIDの範囲（1-247）
 const UNIT_ID_RANGE = Array.from({ length: 247 }, (_, i) => i + 1);
 
@@ -113,7 +127,20 @@ export function ServerPanel() {
 
   const handleConfigChange = (field: keyof application.ServerConfigDTO, value: any) => {
     if (config) {
-      setConfig({ ...config, [field]: value });
+      let newConfig = { ...config, [field]: value };
+
+      // サーバータイプ切り替え時にデフォルト値を適用
+      if (field === 'type') {
+        if (value === 0) {
+          // TCP
+          newConfig = { ...newConfig, ...DEFAULT_TCP_CONFIG };
+        } else {
+          // RTU or RTU ASCII
+          newConfig = { ...newConfig, ...DEFAULT_RTU_CONFIG };
+        }
+      }
+
+      setConfig(newConfig);
       setIsDirty(true);
     }
   };
