@@ -8,6 +8,10 @@ import (
 
 	"modbus_simulator/internal/application"
 
+	// プロトコル実装をレジストリに登録するためのブランクインポート
+	_ "modbus_simulator/internal/infrastructure/fins"
+	_ "modbus_simulator/internal/infrastructure/modbus"
+
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"go.bug.st/serial"
 )
@@ -37,12 +41,12 @@ func (a *App) shutdown(ctx context.Context) {
 
 // === サーバー管理 ===
 
-// StartServer はModbusサーバーを起動する
+// StartServer はサーバーを起動する
 func (a *App) StartServer() error {
 	return a.plcService.StartServer()
 }
 
-// StopServer はModbusサーバーを停止する
+// StopServer はサーバーを停止する
 func (a *App) StopServer() error {
 	return a.plcService.StopServer()
 }
@@ -52,24 +56,53 @@ func (a *App) GetServerStatus() string {
 	return a.plcService.GetServerStatus()
 }
 
-// GetServerConfig はサーバーの設定を返す
-func (a *App) GetServerConfig() *application.ServerConfigDTO {
-	return a.plcService.GetServerConfig()
+// === プロトコル管理API ===
+
+// GetAvailableProtocols は利用可能なプロトコル一覧を返す
+func (a *App) GetAvailableProtocols() []application.ProtocolInfoDTO {
+	return a.plcService.GetAvailableProtocols()
 }
 
-// UpdateServerConfig はサーバーの設定を更新する
-func (a *App) UpdateServerConfig(dto *application.ServerConfigDTO) error {
-	return a.plcService.UpdateServerConfig(dto)
+// GetActiveProtocol はアクティブなプロトコルタイプを返す
+func (a *App) GetActiveProtocol() string {
+	return a.plcService.GetActiveProtocol()
 }
 
-// SetUnitIdEnabled は指定したUnitIdの応答を有効/無効にする
-func (a *App) SetUnitIdEnabled(unitId int, enabled bool) {
-	a.plcService.SetUnitIdEnabled(unitId, enabled)
+// GetActiveVariant はアクティブなバリアントIDを返す
+func (a *App) GetActiveVariant() string {
+	return a.plcService.GetActiveVariant()
 }
 
-// IsUnitIdEnabled は指定したUnitIdが応答するかどうかを返す
-func (a *App) IsUnitIdEnabled(unitId int) bool {
-	return a.plcService.IsUnitIdEnabled(unitId)
+// SetProtocol はプロトコルを設定する
+func (a *App) SetProtocol(protocolType string, variantID string) error {
+	return a.plcService.SetProtocol(protocolType, variantID)
+}
+
+// GetProtocolSchema はプロトコルスキーマを返す
+func (a *App) GetProtocolSchema(protocolType string) (*application.ProtocolSchemaDTO, error) {
+	return a.plcService.GetProtocolSchema(protocolType)
+}
+
+// GetCurrentConfig は現在の設定を返す
+func (a *App) GetCurrentConfig() *application.ProtocolConfigDTO {
+	return a.plcService.GetCurrentConfig()
+}
+
+// UpdateConfig は設定を更新する
+func (a *App) UpdateConfig(dto *application.ProtocolConfigDTO) error {
+	return a.plcService.UpdateConfig(dto)
+}
+
+// === UnitID設定API ===
+
+// GetUnitIDSettings はUnitID設定を返す（プロトコルがサポートしない場合はnil）
+func (a *App) GetUnitIDSettings() *application.UnitIDSettingsDTO {
+	return a.plcService.GetUnitIDSettings()
+}
+
+// SetUnitIDEnabled は指定したUnitIdの応答を有効/無効にする
+func (a *App) SetUnitIDEnabled(unitId int, enabled bool) error {
+	return a.plcService.SetUnitIDEnabled(unitId, enabled)
 }
 
 // GetDisabledUnitIDs は無効化されたUnitIDのリストを返す
@@ -78,50 +111,35 @@ func (a *App) GetDisabledUnitIDs() []int {
 }
 
 // SetDisabledUnitIDs は無効化するUnitIDのリストを設定する
-func (a *App) SetDisabledUnitIDs(ids []int) {
-	a.plcService.SetDisabledUnitIDs(ids)
+func (a *App) SetDisabledUnitIDs(ids []int) error {
+	return a.plcService.SetDisabledUnitIDs(ids)
 }
 
-// === レジスタ操作 ===
+// === 汎用メモリ操作API ===
 
-// GetCoils はコイルの値を取得する
-func (a *App) GetCoils(start, count int) []bool {
-	return a.plcService.GetCoils(start, count)
+// GetMemoryAreas は利用可能なメモリエリアの一覧を返す
+func (a *App) GetMemoryAreas() []application.MemoryAreaDTO {
+	return a.plcService.GetMemoryAreas()
 }
 
-// SetCoil はコイルの値を設定する
-func (a *App) SetCoil(address int, value bool) error {
-	return a.plcService.SetCoil(address, value)
+// ReadBits は指定エリアの複数ビット値を読み込む
+func (a *App) ReadBits(area string, address, count int) ([]bool, error) {
+	return a.plcService.ReadBits(area, address, count)
 }
 
-// GetDiscreteInputs はディスクリート入力の値を取得する
-func (a *App) GetDiscreteInputs(start, count int) []bool {
-	return a.plcService.GetDiscreteInputs(start, count)
+// WriteBit は指定エリアのビット値を書き込む
+func (a *App) WriteBit(area string, address int, value bool) error {
+	return a.plcService.WriteBit(area, address, value)
 }
 
-// SetDiscreteInput はディスクリート入力の値を設定する
-func (a *App) SetDiscreteInput(address int, value bool) error {
-	return a.plcService.SetDiscreteInput(address, value)
+// ReadWords は指定エリアの複数ワード値を読み込む
+func (a *App) ReadWords(area string, address, count int) ([]int, error) {
+	return a.plcService.ReadWords(area, address, count)
 }
 
-// GetHoldingRegisters は保持レジスタの値を取得する
-func (a *App) GetHoldingRegisters(start, count int) []int {
-	return a.plcService.GetHoldingRegisters(start, count)
-}
-
-// SetHoldingRegister は保持レジスタの値を設定する
-func (a *App) SetHoldingRegister(address int, value int) error {
-	return a.plcService.SetHoldingRegister(address, value)
-}
-
-// GetInputRegisters は入力レジスタの値を取得する
-func (a *App) GetInputRegisters(start, count int) []int {
-	return a.plcService.GetInputRegisters(start, count)
-}
-
-// SetInputRegister は入力レジスタの値を設定する
-func (a *App) SetInputRegister(address int, value int) error {
-	return a.plcService.SetInputRegister(address, value)
+// WriteWord は指定エリアのワード値を書き込む
+func (a *App) WriteWord(area string, address int, value int) error {
+	return a.plcService.WriteWord(area, address, value)
 }
 
 // === スクリプト管理 ===
@@ -177,7 +195,7 @@ func (a *App) GetIntervalPresets() []application.IntervalPresetDTO {
 func (a *App) ExportProject() error {
 	// ファイル保存ダイアログを表示
 	filepath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title: "プロジェクトをエクスポート",
+		Title:           "プロジェクトをエクスポート",
 		DefaultFilename: "project.json",
 		Filters: []runtime.FileFilter{
 			{DisplayName: "JSON Files (*.json)", Pattern: "*.json"},

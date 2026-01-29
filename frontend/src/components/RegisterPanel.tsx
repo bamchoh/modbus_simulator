@@ -1,24 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  GetCoils,
-  GetDiscreteInputs,
-  GetHoldingRegisters,
-  GetInputRegisters,
-  SetCoil,
-  SetDiscreteInput,
-  SetHoldingRegister,
-  SetInputRegister
+  GetMemoryAreas,
+  ReadBits,
+  ReadWords,
+  WriteBit,
+  WriteWord
 } from '../../wailsjs/go/main/App';
+import { application } from '../../wailsjs/go/models';
 
-type RegisterType = 'coils' | 'discreteInputs' | 'holdingRegisters' | 'inputRegisters';
 type DisplayFormat = 'decimal' | 'hex' | 'octal' | 'binary';
-
-const REGISTER_TYPES: { value: RegisterType; label: string; isBool: boolean }[] = [
-  { value: 'coils', label: 'コイル (0x)', isBool: true },
-  { value: 'discreteInputs', label: 'ディスクリート入力 (1x)', isBool: true },
-  { value: 'holdingRegisters', label: '保持レジスタ (4x)', isBool: false },
-  { value: 'inputRegisters', label: '入力レジスタ (3x)', isBool: false }
-];
 
 const DISPLAY_FORMATS: { value: DisplayFormat; label: string }[] = [
   { value: 'decimal', label: '10進数' },
@@ -31,7 +21,8 @@ const COLUMNS = 10;
 const PAGE_SIZE = 100;
 
 export function RegisterPanel() {
-  const [registerType, setRegisterType] = useState<RegisterType>('holdingRegisters');
+  const [memoryAreas, setMemoryAreas] = useState<application.MemoryAreaDTO[]>([]);
+  const [selectedArea, setSelectedArea] = useState<string>('');
   const [startAddress, setStartAddress] = useState(0);
   const [values, setValues] = useState<(boolean | number)[]>([]);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -49,28 +40,42 @@ export function RegisterPanel() {
   const [editInputFormat, setEditInputFormat] = useState<DisplayFormat>('decimal');
   const [editValue, setEditValue] = useState('');
 
+  // メモリエリア一覧を取得
+  useEffect(() => {
+    const loadAreas = async () => {
+      try {
+        const areas = await GetMemoryAreas();
+        setMemoryAreas(areas);
+        // デフォルトで最初のワードエリアを選択
+        const defaultArea = areas.find(a => !a.isBit) || areas[0];
+        if (defaultArea) {
+          setSelectedArea(defaultArea.id);
+        }
+      } catch (e) {
+        console.error('Failed to load memory areas:', e);
+      }
+    };
+    loadAreas();
+  }, []);
+
+  const currentArea = memoryAreas.find(a => a.id === selectedArea);
+  const isBitType = currentArea?.isBit ?? false;
+
   const loadRegisters = useCallback(async () => {
+    if (!selectedArea) return;
+
     try {
       let data: (boolean | number)[];
-      switch (registerType) {
-        case 'coils':
-          data = await GetCoils(startAddress, PAGE_SIZE);
-          break;
-        case 'discreteInputs':
-          data = await GetDiscreteInputs(startAddress, PAGE_SIZE);
-          break;
-        case 'holdingRegisters':
-          data = await GetHoldingRegisters(startAddress, PAGE_SIZE);
-          break;
-        case 'inputRegisters':
-          data = await GetInputRegisters(startAddress, PAGE_SIZE);
-          break;
+      if (isBitType) {
+        data = await ReadBits(selectedArea, startAddress, PAGE_SIZE);
+      } else {
+        data = await ReadWords(selectedArea, startAddress, PAGE_SIZE);
       }
       setValues(data || []);
     } catch (e) {
       console.error('Failed to load registers:', e);
     }
-  }, [registerType, startAddress]);
+  }, [selectedArea, startAddress, isBitType]);
 
   useEffect(() => {
     loadRegisters();
@@ -95,8 +100,6 @@ export function RegisterPanel() {
       dialogInputRef.current.select();
     }
   }, [isDialogOpen]);
-
-  const isBoolType = REGISTER_TYPES.find(t => t.value === registerType)?.isBool ?? false;
 
   // 指定した形式で値をフォーマット
   const formatValueWithFormat = (value: boolean | number, format: DisplayFormat) => {
@@ -169,7 +172,7 @@ export function RegisterPanel() {
 
   // 入力形式変更時に値を変換
   const handleInputFormatChange = (newFormat: DisplayFormat) => {
-    if (!isBoolType && editValue) {
+    if (!isBitType && editValue) {
       try {
         const numValue = parseInputValue(editValue, editInputFormat);
         if (!isNaN(numValue)) {
@@ -185,24 +188,16 @@ export function RegisterPanel() {
   // 保存処理
   const handleSave = async () => {
     try {
-      if (isBoolType) {
+      if (isBitType) {
         const newValue = editValue === 'true' || editValue === '1' || editValue.toLowerCase() === 'on';
-        if (registerType === 'coils') {
-          await SetCoil(editingAddress, newValue);
-        } else {
-          await SetDiscreteInput(editingAddress, newValue);
-        }
+        await WriteBit(selectedArea, editingAddress, newValue);
       } else {
         const newValue = parseInputValue(editValue, editInputFormat);
         if (isNaN(newValue)) {
           console.error('Invalid number format');
           return;
         }
-        if (registerType === 'holdingRegisters') {
-          await SetHoldingRegister(editingAddress, newValue);
-        } else {
-          await SetInputRegister(editingAddress, newValue);
-        }
+        await WriteWord(selectedArea, editingAddress, newValue);
       }
       await loadRegisters();
       setIsDialogOpen(false);
@@ -302,13 +297,13 @@ export function RegisterPanel() {
 
       <div className="register-controls">
         <div className="form-group">
-          <label>レジスタタイプ</label>
+          <label>メモリエリア</label>
           <select
-            value={registerType}
-            onChange={(e) => setRegisterType(e.target.value as RegisterType)}
+            value={selectedArea}
+            onChange={(e) => setSelectedArea(e.target.value)}
           >
-            {REGISTER_TYPES.map(t => (
-              <option key={t.value} value={t.value}>{t.label}</option>
+            {memoryAreas.map(area => (
+              <option key={area.id} value={area.id}>{area.displayName}</option>
             ))}
           </select>
         </div>
@@ -324,7 +319,7 @@ export function RegisterPanel() {
           />
         </div>
 
-        {!isBoolType && (
+        {!isBitType && (
           <div className="form-group">
             <label>表示形式</label>
             <select
@@ -422,7 +417,7 @@ export function RegisterPanel() {
                 <span className="dialog-value">{formatValue(editingOriginalValue)}</span>
               </div>
 
-              {!isBoolType && (
+              {!isBitType && (
                 <div className="dialog-row">
                   <label>入力形式:</label>
                   <select
@@ -445,7 +440,7 @@ export function RegisterPanel() {
                   onChange={(e) => setEditValue(e.target.value)}
                   onKeyDown={handleDialogKeyDown}
                   className="dialog-input"
-                  placeholder={isBoolType ? '0, 1, ON, OFF' : ''}
+                  placeholder={isBitType ? '0, 1, ON, OFF' : ''}
                 />
               </div>
             </div>

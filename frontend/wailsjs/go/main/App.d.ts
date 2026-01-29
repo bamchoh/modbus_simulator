@@ -8,17 +8,21 @@ export function DeleteScript(arg1:string):Promise<void>;
 
 export function ExportProject():Promise<void>;
 
-export function GetCoils(arg1:number,arg2:number):Promise<Array<boolean>>;
+export function GetActiveProtocol():Promise<string>;
+
+export function GetActiveVariant():Promise<string>;
+
+export function GetAvailableProtocols():Promise<Array<application.ProtocolInfoDTO>>;
+
+export function GetCurrentConfig():Promise<application.ProtocolConfigDTO>;
 
 export function GetDisabledUnitIDs():Promise<Array<number>>;
 
-export function GetDiscreteInputs(arg1:number,arg2:number):Promise<Array<boolean>>;
-
-export function GetHoldingRegisters(arg1:number,arg2:number):Promise<Array<number>>;
-
-export function GetInputRegisters(arg1:number,arg2:number):Promise<Array<number>>;
-
 export function GetIntervalPresets():Promise<Array<application.IntervalPresetDTO>>;
+
+export function GetMemoryAreas():Promise<Array<application.MemoryAreaDTO>>;
+
+export function GetProtocolSchema(arg1:string):Promise<application.ProtocolSchemaDTO>;
 
 export function GetScript(arg1:string):Promise<application.ScriptDTO>;
 
@@ -26,27 +30,23 @@ export function GetScripts():Promise<Array<application.ScriptDTO>>;
 
 export function GetSerialPorts():Promise<Array<string>>;
 
-export function GetServerConfig():Promise<application.ServerConfigDTO>;
-
 export function GetServerStatus():Promise<string>;
+
+export function GetUnitIDSettings():Promise<application.UnitIDSettingsDTO>;
 
 export function ImportProject():Promise<void>;
 
-export function IsUnitIdEnabled(arg1:number):Promise<boolean>;
+export function ReadBits(arg1:string,arg2:number,arg3:number):Promise<Array<boolean>>;
+
+export function ReadWords(arg1:string,arg2:number,arg3:number):Promise<Array<number>>;
 
 export function RunScriptOnce(arg1:string):Promise<any>;
 
-export function SetCoil(arg1:number,arg2:boolean):Promise<void>;
-
 export function SetDisabledUnitIDs(arg1:Array<number>):Promise<void>;
 
-export function SetDiscreteInput(arg1:number,arg2:boolean):Promise<void>;
+export function SetProtocol(arg1:string,arg2:string):Promise<void>;
 
-export function SetHoldingRegister(arg1:number,arg2:number):Promise<void>;
-
-export function SetInputRegister(arg1:number,arg2:number):Promise<void>;
-
-export function SetUnitIdEnabled(arg1:number,arg2:boolean):Promise<void>;
+export function SetUnitIDEnabled(arg1:number,arg2:boolean):Promise<void>;
 
 export function StartScript(arg1:string):Promise<void>;
 
@@ -56,6 +56,10 @@ export function StopScript(arg1:string):Promise<void>;
 
 export function StopServer():Promise<void>;
 
+export function UpdateConfig(arg1:application.ProtocolConfigDTO):Promise<void>;
+
 export function UpdateScript(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
 
-export function UpdateServerConfig(arg1:application.ServerConfigDTO):Promise<void>;
+export function WriteBit(arg1:string,arg2:number,arg3:boolean):Promise<void>;
+
+export function WriteWord(arg1:string,arg2:number,arg3:number):Promise<void>;

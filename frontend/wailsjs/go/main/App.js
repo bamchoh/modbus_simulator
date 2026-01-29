@@ -14,28 +14,36 @@ export function ExportProject() {
   return window['go']['main']['App']['ExportProject']();
 }
 
-export function GetCoils(arg1, arg2) {
-  return window['go']['main']['App']['GetCoils'](arg1, arg2);
+export function GetActiveProtocol() {
+  return window['go']['main']['App']['GetActiveProtocol']();
+}
+
+export function GetActiveVariant() {
+  return window['go']['main']['App']['GetActiveVariant']();
+}
+
+export function GetAvailableProtocols() {
+  return window['go']['main']['App']['GetAvailableProtocols']();
+}
+
+export function GetCurrentConfig() {
+  return window['go']['main']['App']['GetCurrentConfig']();
 }
 
 export function GetDisabledUnitIDs() {
   return window['go']['main']['App']['GetDisabledUnitIDs']();
 }
 
-export function GetDiscreteInputs(arg1, arg2) {
-  return window['go']['main']['App']['GetDiscreteInputs'](arg1, arg2);
-}
-
-export function GetHoldingRegisters(arg1, arg2) {
-  return window['go']['main']['App']['GetHoldingRegisters'](arg1, arg2);
-}
-
-export function GetInputRegisters(arg1, arg2) {
-  return window['go']['main']['App']['GetInputRegisters'](arg1, arg2);
-}
-
 export function GetIntervalPresets() {
   return window['go']['main']['App']['GetIntervalPresets']();
+}
+
+export function GetMemoryAreas() {
+  return window['go']['main']['App']['GetMemoryAreas']();
+}
+
+export function GetProtocolSchema(arg1) {
+  return window['go']['main']['App']['GetProtocolSchema'](arg1);
 }
 
 export function GetScript(arg1) {
@@ -50,48 +58,40 @@ export function GetSerialPorts() {
   return window['go']['main']['App']['GetSerialPorts']();
 }
 
-export function GetServerConfig() {
-  return window['go']['main']['App']['GetServerConfig']();
-}
-
 export function GetServerStatus() {
   return window['go']['main']['App']['GetServerStatus']();
+}
+
+export function GetUnitIDSettings() {
+  return window['go']['main']['App']['GetUnitIDSettings']();
 }
 
 export function ImportProject() {
   return window['go']['main']['App']['ImportProject']();
 }
 
-export function IsUnitIdEnabled(arg1) {
-  return window['go']['main']['App']['IsUnitIdEnabled'](arg1);
+export function ReadBits(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ReadBits'](arg1, arg2, arg3);
+}
+
+export function ReadWords(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ReadWords'](arg1, arg2, arg3);
 }
 
 export function RunScriptOnce(arg1) {
   return window['go']['main']['App']['RunScriptOnce'](arg1);
 }
 
-export function SetCoil(arg1, arg2) {
-  return window['go']['main']['App']['SetCoil'](arg1, arg2);
-}
-
 export function SetDisabledUnitIDs(arg1) {
   return window['go']['main']['App']['SetDisabledUnitIDs'](arg1);
 }
 
-export function SetDiscreteInput(arg1, arg2) {
-  return window['go']['main']['App']['SetDiscreteInput'](arg1, arg2);
+export function SetProtocol(arg1, arg2) {
+  return window['go']['main']['App']['SetProtocol'](arg1, arg2);
 }
 
-export function SetHoldingRegister(arg1, arg2) {
-  return window['go']['main']['App']['SetHoldingRegister'](arg1, arg2);
-}
-
-export function SetInputRegister(arg1, arg2) {
-  return window['go']['main']['App']['SetInputRegister'](arg1, arg2);
-}
-
-export function SetUnitIdEnabled(arg1, arg2) {
-  return window['go']['main']['App']['SetUnitIdEnabled'](arg1, arg2);
+export function SetUnitIDEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetUnitIDEnabled'](arg1, arg2);
 }
 
 export function StartScript(arg1) {
@@ -110,10 +110,18 @@ export function StopServer() {
   return window['go']['main']['App']['StopServer']();
 }
 
+export function UpdateConfig(arg1) {
+  return window['go']['main']['App']['UpdateConfig'](arg1);
+}
+
 export function UpdateScript(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['UpdateScript'](arg1, arg2, arg3, arg4);
 }
 
-export function UpdateServerConfig(arg1) {
-  return window['go']['main']['App']['UpdateServerConfig'](arg1);
+export function WriteBit(arg1, arg2, arg3) {
+  return window['go']['main']['App']['WriteBit'](arg1, arg2, arg3);
+}
+
+export function WriteWord(arg1, arg2, arg3) {
+  return window['go']['main']['App']['WriteWord'](arg1, arg2, arg3);
 }

@@ -11,26 +11,69 @@ import (
 	"github.com/simonvetter/modbus"
 )
 
+// ModbusHandler はModbusリクエストを処理するインターフェース
+type ModbusHandler interface {
+	SetUnitIdEnabled(unitId uint8, enabled bool)
+	IsUnitIdEnabled(unitId uint8) bool
+	GetDisabledUnitIDs() []uint8
+	SetDisabledUnitIDs(ids []uint8)
+}
+
 // Server はModbusサーバーを管理する
 type Server struct {
-	mu          sync.Mutex
-	config      *server.ServerConfig
-	store       *register.RegisterStore
-	handler     *RegisterHandler
-	server      *modbus.ModbusServer
-	rtuServer   *rtu.RTUServer
-	asciiServer *rtu.ASCIIServer
-	status      server.ServerStatus
-	lastErr     error
+	mu            sync.Mutex
+	config        *server.ServerConfig
+	modbusConfig  *ModbusConfig
+	store         *register.RegisterStore
+	handler       *RegisterHandler
+	dsHandler     *DataStoreHandler
+	server        *modbus.ModbusServer
+	rtuServer     *rtu.RTUServer
+	asciiServer   *rtu.ASCIIServer
+	status        server.ServerStatus
+	lastErr       error
+	useDataStore  bool
 }
 
 // NewServer は新しいModbusサーバーを作成する
 func NewServer(config *server.ServerConfig, store *register.RegisterStore) *Server {
 	return &Server{
-		config:  config,
-		store:   store,
-		handler: NewRegisterHandler(store),
-		status:  server.StatusStopped,
+		config:       config,
+		store:        store,
+		handler:      NewRegisterHandler(store),
+		status:       server.StatusStopped,
+		useDataStore: false,
+	}
+}
+
+// NewServerWithHandler はDataStoreHandlerを使用するサーバーを作成する
+func NewServerWithHandler(config *ModbusConfig, handler *DataStoreHandler) *Server {
+	// ModbusConfigからserver.ServerConfigへ変換
+	serverType := server.ModbusTCP
+	switch config.GetVariant() {
+	case VariantRTU:
+		serverType = server.ModbusRTU
+	case VariantASCII:
+		serverType = server.ModbusRTUASCII
+	}
+
+	serverConfig := &server.ServerConfig{
+		Type:       serverType,
+		TCPAddress: config.TCPAddress,
+		TCPPort:    config.TCPPort,
+		SerialPort: config.SerialPort,
+		BaudRate:   config.BaudRate,
+		DataBits:   config.DataBits,
+		StopBits:   config.StopBits,
+		Parity:     config.Parity,
+	}
+
+	return &Server{
+		config:       serverConfig,
+		modbusConfig: config,
+		dsHandler:    handler,
+		status:       server.StatusStopped,
+		useDataStore: true,
 	}
 }
 
@@ -59,9 +102,17 @@ func (s *Server) Start() error {
 func (s *Server) startTCPServer() error {
 	url := fmt.Sprintf("tcp://%s:%d", s.config.TCPAddress, s.config.TCPPort)
 
+	// 使用するハンドラーを決定
+	var handler modbus.RequestHandler
+	if s.useDataStore && s.dsHandler != nil {
+		handler = NewDataStoreRequestHandler(s.dsHandler)
+	} else {
+		handler = s.handler
+	}
+
 	srv, err := modbus.NewServer(&modbus.ServerConfiguration{
 		URL: url,
-	}, s.handler)
+	}, handler)
 	if err != nil {
 		s.status = server.StatusError
 		s.lastErr = err
@@ -90,7 +141,12 @@ func (s *Server) startRTUServer() error {
 		Parity:   s.config.Parity,
 	}
 
-	adapter := NewRTUHandlerAdapter(s.handler)
+	var adapter rtu.RequestHandler
+	if s.useDataStore && s.dsHandler != nil {
+		adapter = NewRTUDataStoreAdapter(s.dsHandler)
+	} else {
+		adapter = NewRTUHandlerAdapter(s.handler)
+	}
 	rtuSrv := rtu.NewRTUServer(config, adapter)
 
 	if err := rtuSrv.Start(); err != nil {
@@ -115,7 +171,12 @@ func (s *Server) startASCIIServer() error {
 		Parity:   s.config.Parity,
 	}
 
-	adapter := NewRTUHandlerAdapter(s.handler)
+	var adapter rtu.RequestHandler
+	if s.useDataStore && s.dsHandler != nil {
+		adapter = NewRTUDataStoreAdapter(s.dsHandler)
+	} else {
+		adapter = NewRTUHandlerAdapter(s.handler)
+	}
 	asciiSrv := rtu.NewASCIIServer(config, adapter)
 
 	if err := asciiSrv.Start(); err != nil {
@@ -192,11 +253,16 @@ func (s *Server) UpdateConfig(config *server.ServerConfig) error {
 		return fmt.Errorf("cannot update config while server is running")
 	}
 
-	// 現在の無効化UnitIDリストを保持
-	disabledIDs := s.handler.GetDisabledUnitIDs()
-	s.config = config
-	s.handler = NewRegisterHandler(s.store)
-	s.handler.SetDisabledUnitIDs(disabledIDs)
+	if s.useDataStore {
+		// DataStoreHandlerを使用している場合
+		s.config = config
+	} else {
+		// 現在の無効化UnitIDリストを保持
+		disabledIDs := s.handler.GetDisabledUnitIDs()
+		s.config = config
+		s.handler = NewRegisterHandler(s.store)
+		s.handler.SetDisabledUnitIDs(disabledIDs)
+	}
 	return nil
 }
 
@@ -211,26 +277,44 @@ func (s *Server) GetConfig() *server.ServerConfig {
 func (s *Server) SetUnitIdEnabled(unitId uint8, enabled bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.handler.SetUnitIdEnabled(unitId, enabled)
+	if s.useDataStore && s.dsHandler != nil {
+		s.dsHandler.SetUnitIdEnabled(unitId, enabled)
+	} else if s.handler != nil {
+		s.handler.SetUnitIdEnabled(unitId, enabled)
+	}
 }
 
 // IsUnitIdEnabled は指定したUnitIdが応答するかどうかを返す
 func (s *Server) IsUnitIdEnabled(unitId uint8) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.handler.IsUnitIdEnabled(unitId)
+	if s.useDataStore && s.dsHandler != nil {
+		return s.dsHandler.IsUnitIdEnabled(unitId)
+	} else if s.handler != nil {
+		return s.handler.IsUnitIdEnabled(unitId)
+	}
+	return true
 }
 
 // GetDisabledUnitIDs は無効化されたUnitIDのリストを返す
 func (s *Server) GetDisabledUnitIDs() []uint8 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.handler.GetDisabledUnitIDs()
+	if s.useDataStore && s.dsHandler != nil {
+		return s.dsHandler.GetDisabledUnitIDs()
+	} else if s.handler != nil {
+		return s.handler.GetDisabledUnitIDs()
+	}
+	return nil
 }
 
 // SetDisabledUnitIDs は無効化するUnitIDのリストを設定する
 func (s *Server) SetDisabledUnitIDs(ids []uint8) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.handler.SetDisabledUnitIDs(ids)
+	if s.useDataStore && s.dsHandler != nil {
+		s.dsHandler.SetDisabledUnitIDs(ids)
+	} else if s.handler != nil {
+		s.handler.SetDisabledUnitIDs(ids)
+	}
 }
