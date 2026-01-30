@@ -138,6 +138,30 @@ export namespace application {
 	        this.readOnly = source["readOnly"];
 	    }
 	}
+	export class MonitoringItemDTO {
+	    id: string;
+	    order: number;
+	    memoryArea: string;
+	    address: number;
+	    bitWidth: number;
+	    endianness: string;
+	    displayFormat: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MonitoringItemDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.order = source["order"];
+	        this.memoryArea = source["memoryArea"];
+	        this.address = source["address"];
+	        this.bitWidth = source["bitWidth"];
+	        this.endianness = source["endianness"];
+	        this.displayFormat = source["displayFormat"];
+	    }
+	}
 	
 	export class ProtocolConfigDTO {
 	    protocolType: string;

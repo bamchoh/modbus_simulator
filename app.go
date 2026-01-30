@@ -255,6 +255,33 @@ func (a *App) ImportProject() error {
 	return a.plcService.ImportProject(&data)
 }
 
+// === モニタリング管理 ===
+
+// GetMonitoringItems はモニタリング項目一覧を返す
+func (a *App) GetMonitoringItems() []*application.MonitoringItemDTO {
+	return a.plcService.GetMonitoringItems()
+}
+
+// AddMonitoringItem はモニタリング項目を追加する
+func (a *App) AddMonitoringItem(item *application.MonitoringItemDTO) (*application.MonitoringItemDTO, error) {
+	return a.plcService.AddMonitoringItem(item)
+}
+
+// UpdateMonitoringItem はモニタリング項目を更新する
+func (a *App) UpdateMonitoringItem(item *application.MonitoringItemDTO) error {
+	return a.plcService.UpdateMonitoringItem(item)
+}
+
+// DeleteMonitoringItem はモニタリング項目を削除する
+func (a *App) DeleteMonitoringItem(id string) error {
+	return a.plcService.DeleteMonitoringItem(id)
+}
+
+// MoveMonitoringItem はモニタリング項目を移動する
+func (a *App) MoveMonitoringItem(id string, direction string) error {
+	return a.plcService.MoveMonitoringItem(id, direction)
+}
+
 // === シリアルポート ===
 
 // GetSerialPorts はシステムで利用可能なシリアルポートの一覧を返す

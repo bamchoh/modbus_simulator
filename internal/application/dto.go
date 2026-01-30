@@ -110,15 +110,35 @@ type IntervalPresetDTO struct {
 	Ms    int    `json:"ms"`
 }
 
+// === モニタリングDTO ===
+
+// MonitoringItemDTO はモニタリング項目のDTO
+type MonitoringItemDTO struct {
+	ID            string `json:"id"`
+	Order         int    `json:"order"`
+	MemoryArea    string `json:"memoryArea"`
+	Address       int    `json:"address"`
+	BitWidth      int    `json:"bitWidth"`
+	Endianness    string `json:"endianness"`
+	DisplayFormat string `json:"displayFormat"`
+}
+
+// MonitoringConfigDTO はモニタリング設定全体のDTO
+type MonitoringConfigDTO struct {
+	Version int                  `json:"version"`
+	Items   []*MonitoringItemDTO `json:"items"`
+}
+
 // === プロジェクトエクスポート/インポートDTO ===
 
 // ProjectDataDTO はプロジェクト全体のエクスポート/インポート用DTO
 type ProjectDataDTO struct {
-	Version        int                    `json:"version"`
-	ProtocolType   string                 `json:"protocolType"`
-	Variant        string                 `json:"variant"`
-	Settings       map[string]interface{} `json:"settings"`
-	MemorySnapshot map[string]interface{} `json:"memorySnapshot"`
-	UnitIDSettings *UnitIDSettingsDTO     `json:"unitIdSettings,omitempty"`
-	Scripts        []*ScriptDTO           `json:"scripts"`
+	Version         int                    `json:"version"`
+	ProtocolType    string                 `json:"protocolType"`
+	Variant         string                 `json:"variant"`
+	Settings        map[string]interface{} `json:"settings"`
+	MemorySnapshot  map[string]interface{} `json:"memorySnapshot"`
+	UnitIDSettings  *UnitIDSettingsDTO     `json:"unitIdSettings,omitempty"`
+	Scripts         []*ScriptDTO           `json:"scripts"`
+	MonitoringItems []*MonitoringItemDTO   `json:"monitoringItems,omitempty"`
 }

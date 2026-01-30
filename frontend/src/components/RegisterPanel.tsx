@@ -7,6 +7,9 @@ import {
   WriteWord
 } from '../../wailsjs/go/main/App';
 import { application } from '../../wailsjs/go/models';
+import { MonitoringView } from './MonitoringView';
+
+type RegisterTab = 'list' | 'monitoring';
 
 type DisplayFormat = 'decimal' | 'hex' | 'octal' | 'binary';
 type BitWidth = 16 | 32 | 64;
@@ -111,6 +114,9 @@ const COLUMNS = 10;
 const PAGE_SIZE = 100;
 
 export function RegisterPanel() {
+  // サブタブ
+  const [activeTab, setActiveTab] = useState<RegisterTab>('list');
+
   const [memoryAreas, setMemoryAreas] = useState<application.MemoryAreaDTO[]>([]);
   const [selectedArea, setSelectedArea] = useState<string>('');
   const [startAddress, setStartAddress] = useState(0);
@@ -444,6 +450,30 @@ export function RegisterPanel() {
     <div className="panel">
       <h2>レジスタ</h2>
 
+      {/* サブタブナビゲーション */}
+      <div className="sub-tab-nav">
+        <button
+          className={`sub-tab-button ${activeTab === 'list' ? 'active' : ''}`}
+          onClick={() => setActiveTab('list')}
+        >
+          一覧表示
+        </button>
+        <button
+          className={`sub-tab-button ${activeTab === 'monitoring' ? 'active' : ''}`}
+          onClick={() => setActiveTab('monitoring')}
+        >
+          モニタリング
+        </button>
+      </div>
+
+      {/* モニタリングタブ */}
+      {activeTab === 'monitoring' && (
+        <MonitoringView memoryAreas={memoryAreas} />
+      )}
+
+      {/* 一覧表示タブ */}
+      {activeTab === 'list' && (
+      <>
       <div className="register-controls">
         <div className="form-group">
           <label>メモリエリア</label>
@@ -633,6 +663,8 @@ export function RegisterPanel() {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

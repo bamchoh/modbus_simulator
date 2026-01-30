@@ -2,7 +2,11 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -29,17 +33,24 @@ type PLCService struct {
 	// スクリプト
 	scriptEngine *scripting.ScriptEngine
 	scripts      map[string]*script.Script
+
+	// モニタリング
+	monitoringItems map[string]*MonitoringItemDTO
 }
 
 // NewPLCService は新しいPLCServiceを作成する
 func NewPLCService() *PLCService {
 	service := &PLCService{
-		registry: protocol.DefaultRegistry,
-		scripts:  make(map[string]*script.Script),
+		registry:        protocol.DefaultRegistry,
+		scripts:         make(map[string]*script.Script),
+		monitoringItems: make(map[string]*MonitoringItemDTO),
 	}
 
 	// デフォルトでModbus TCPを設定
 	service.SetProtocol("modbus", "tcp")
+
+	// モニタリング設定を読み込み
+	_ = service.LoadMonitoringConfig()
 
 	return service
 }
@@ -634,14 +645,21 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 		})
 	}
 
+	// モニタリング項目を取得
+	monitoringItems := make([]*MonitoringItemDTO, 0, len(s.monitoringItems))
+	for _, item := range s.monitoringItems {
+		monitoringItems = append(monitoringItems, item)
+	}
+
 	return &ProjectDataDTO{
-		Version:        2, // 新バージョン
-		ProtocolType:   string(s.activeProtocol),
-		Variant:        s.activeVariant,
-		Settings:       settings,
-		MemorySnapshot: memorySnapshot,
-		UnitIDSettings: unitIDSettings,
-		Scripts:        scripts,
+		Version:         2, // 新バージョン
+		ProtocolType:    string(s.activeProtocol),
+		Variant:         s.activeVariant,
+		Settings:        settings,
+		MemorySnapshot:  memorySnapshot,
+		UnitIDSettings:  unitIDSettings,
+		Scripts:         scripts,
+		MonitoringItems: monitoringItems,
 	}
 }
 
@@ -718,6 +736,232 @@ func (s *PLCService) ImportProject(data *ProjectDataDTO) error {
 			)
 			s.scripts[dto.ID] = sc
 		}
+	}
+
+	// モニタリング項目を設定
+	if data.MonitoringItems != nil {
+		s.monitoringItems = make(map[string]*MonitoringItemDTO)
+		for _, item := range data.MonitoringItems {
+			s.monitoringItems[item.ID] = item
+		}
+	}
+
+	return nil
+}
+
+// === モニタリング管理 ===
+
+// GetMonitoringItems はモニタリング項目一覧をOrder順で返す
+func (s *PLCService) GetMonitoringItems() []*MonitoringItemDTO {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]*MonitoringItemDTO, 0, len(s.monitoringItems))
+	for _, item := range s.monitoringItems {
+		result = append(result, item)
+	}
+
+	// Order順にソート
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Order < result[j].Order
+	})
+
+	return result
+}
+
+// getNextOrder は次のOrder値を返す（ロック済み前提）
+func (s *PLCService) getNextOrder() int {
+	maxOrder := 0
+	for _, item := range s.monitoringItems {
+		if item.Order > maxOrder {
+			maxOrder = item.Order
+		}
+	}
+	return maxOrder + 1
+}
+
+// AddMonitoringItem はモニタリング項目を追加する
+func (s *PLCService) AddMonitoringItem(item *MonitoringItemDTO) (*MonitoringItemDTO, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// IDを生成
+	item.ID = uuid.New().String()
+	// Orderを設定
+	item.Order = s.getNextOrder()
+	s.monitoringItems[item.ID] = item
+
+	// 自動保存
+	go s.saveMonitoringConfigInternal()
+
+	return item, nil
+}
+
+// MoveMonitoringItem はモニタリング項目を移動する（fromIndex → toIndex）
+func (s *PLCService) MoveMonitoringItem(id string, direction string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 現在の項目を取得
+	target, ok := s.monitoringItems[id]
+	if !ok {
+		return fmt.Errorf("monitoring item not found: %s", id)
+	}
+
+	// 全項目をOrder順にソート
+	items := make([]*MonitoringItemDTO, 0, len(s.monitoringItems))
+	for _, item := range s.monitoringItems {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Order < items[j].Order
+	})
+
+	// 現在のインデックスを探す
+	currentIndex := -1
+	for i, item := range items {
+		if item.ID == id {
+			currentIndex = i
+			break
+		}
+	}
+
+	if currentIndex == -1 {
+		return fmt.Errorf("item not found in sorted list")
+	}
+
+	// 移動先インデックスを計算
+	var swapIndex int
+	if direction == "up" {
+		if currentIndex == 0 {
+			return nil // すでに先頭
+		}
+		swapIndex = currentIndex - 1
+	} else if direction == "down" {
+		if currentIndex == len(items)-1 {
+			return nil // すでに末尾
+		}
+		swapIndex = currentIndex + 1
+	} else {
+		return fmt.Errorf("invalid direction: %s", direction)
+	}
+
+	// Orderを入れ替え
+	target.Order, items[swapIndex].Order = items[swapIndex].Order, target.Order
+
+	// 自動保存
+	go s.saveMonitoringConfigInternal()
+
+	return nil
+}
+
+// UpdateMonitoringItem はモニタリング項目を更新する
+func (s *PLCService) UpdateMonitoringItem(item *MonitoringItemDTO) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.monitoringItems[item.ID]; !ok {
+		return fmt.Errorf("monitoring item not found: %s", item.ID)
+	}
+
+	s.monitoringItems[item.ID] = item
+
+	// 自動保存
+	go s.saveMonitoringConfigInternal()
+
+	return nil
+}
+
+// DeleteMonitoringItem はモニタリング項目を削除する
+func (s *PLCService) DeleteMonitoringItem(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.monitoringItems[id]; !ok {
+		return fmt.Errorf("monitoring item not found: %s", id)
+	}
+
+	delete(s.monitoringItems, id)
+
+	// 自動保存
+	go s.saveMonitoringConfigInternal()
+
+	return nil
+}
+
+// getMonitoringConfigPath はモニタリング設定ファイルのパスを返す
+func getMonitoringConfigPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	dir := filepath.Join(configDir, "PLCSimulator")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, "monitoring_config.json"), nil
+}
+
+// SaveMonitoringConfig はモニタリング設定をファイルに保存する
+func (s *PLCService) SaveMonitoringConfig() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.saveMonitoringConfigInternal()
+}
+
+// saveMonitoringConfigInternal は内部保存処理（ロック不要）
+func (s *PLCService) saveMonitoringConfigInternal() error {
+	configPath, err := getMonitoringConfigPath()
+	if err != nil {
+		return err
+	}
+
+	items := make([]*MonitoringItemDTO, 0, len(s.monitoringItems))
+	for _, item := range s.monitoringItems {
+		items = append(items, item)
+	}
+
+	config := &MonitoringConfigDTO{
+		Version: 1,
+		Items:   items,
+	}
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(configPath, data, 0644)
+}
+
+// LoadMonitoringConfig はモニタリング設定をファイルから読み込む
+func (s *PLCService) LoadMonitoringConfig() error {
+	configPath, err := getMonitoringConfigPath()
+	if err != nil {
+		return err
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // ファイルがなければ無視
+		}
+		return err
+	}
+
+	var config MonitoringConfigDTO
+	if err := json.Unmarshal(data, &config); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.monitoringItems = make(map[string]*MonitoringItemDTO)
+	for _, item := range config.Items {
+		s.monitoringItems[item.ID] = item
 	}
 
 	return nil
