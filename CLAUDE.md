@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-このプロジェクトは PLC シミュレーター です。マルチプロトコル対応で、Modbus（TCP/RTU/RTU ASCII）およびOMRON FINSプロトコルをサポートしています。スクリプトを記述することで周期処理を記述することができます。スクリプトは Javascript で記述します。GUIも持っており、各種レジスタの情報が一覧表示できます。もちろん GUI からレジスタの値を操作することも可能です。
+このプロジェクトは PLC シミュレーター です。マルチプロトコル対応で、Modbus（TCP/RTU/RTU ASCII）およびOMRON FINSプロトコルをサポートしています。スクリプトを記述することで周期処理を記述することができます。スクリプトは Javascript で記述します。GUIも持っており、各種レジスタの情報が一覧表示できます。もちろん GUI からレジスタの値を操作することも可能です。モニタリング機能により、任意のレジスタを登録してリアルタイムで監視・操作できます。
 
 ## Build and Development Commands
 
@@ -43,8 +43,8 @@ internal/
 │   ├── script/       # スクリプトエンティティ
 │   └── register/     # レジスタエンティティ（レガシー）
 ├── application/      # アプリケーション層
-│   ├── plc_service.go  # メインサービス（プロトコル非依存）
-│   └── dto.go          # DTO定義（ProtocolSchemaDTO, FieldDTO等）
+│   ├── plc_service.go  # メインサービス（プロトコル非依存、モニタリング管理含む）
+│   └── dto.go          # DTO定義（ProtocolSchemaDTO, MonitoringItemDTO等）
 └── infrastructure/   # インフラ層（プロトコル実装）
     ├── modbus/       # Modbusサーバー実装
     │   ├── factory.go      # ModbusServerFactory
@@ -74,13 +74,16 @@ internal/
 ```
 frontend/src/
 ├── components/
-│   ├── ServerPanel.tsx   # スキーマ駆動のサーバー設定UI
-│   ├── RegisterPanel.tsx # 汎用メモリ操作UI（ReadBits/ReadWords使用）
-│   └── ScriptPanel.tsx   # スクリプト管理
-└── App.tsx               # タブベースのメインUI
+│   ├── ServerPanel.tsx     # スキーマ駆動のサーバー設定UI
+│   ├── RegisterPanel.tsx   # 汎用メモリ操作UI（サブタブで一覧/モニタリング切替）
+│   ├── MonitoringView.tsx  # カスタムレジスタモニタリング
+│   └── ScriptPanel.tsx     # スクリプト管理
+└── App.tsx                 # タブベースのメインUI
 ```
 
 ServerPanel.tsxは`GetProtocolSchema()`から取得したスキーマに基づき、`DynamicField`コンポーネントで動的にフォームを生成します。
+
+RegisterPanel.tsxは「一覧表示」と「モニタリング」のサブタブを持ち、モニタリングでは任意のレジスタを登録してリアルタイム監視・書き込みが可能です。
 
 ### Wailsバインディング
 
@@ -91,6 +94,13 @@ ServerPanel.tsxは`GetProtocolSchema()`から取得したスキーマに基づ�
 - `GetCurrentConfig()`: 現在の設定を取得
 - `UpdateConfig(dto)`: 設定を更新
 - `ReadBits()`, `WriteBit()`, `ReadWords()`, `WriteWord()`: 汎用メモリ操作
+- `GetMonitoringItems()`, `AddMonitoringItem()`, `UpdateMonitoringItem()`, `DeleteMonitoringItem()`, `MoveMonitoringItem()`: モニタリング項目管理
+
+### 設定ファイル
+
+アプリケーションの設定は以下の場所に保存されます：
+- **モニタリング設定**: `%APPDATA%\PLCSimulator\monitoring_config.json`
+  - 登録したモニタリング項目（メモリエリア、アドレス、ビット幅、エンディアン、表示形式）
 
 ## 新プロトコル追加手順
 
