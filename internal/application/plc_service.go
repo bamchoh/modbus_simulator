@@ -855,6 +855,69 @@ func (s *PLCService) MoveMonitoringItem(id string, direction string) error {
 	return nil
 }
 
+// ReorderMonitoringItem はモニタリング項目を指定したインデックスに移動する
+func (s *PLCService) ReorderMonitoringItem(id string, newIndex int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 項目の存在確認
+	if _, ok := s.monitoringItems[id]; !ok {
+		return fmt.Errorf("monitoring item not found: %s", id)
+	}
+
+	// 全項目をOrder順にソート
+	items := make([]*MonitoringItemDTO, 0, len(s.monitoringItems))
+	for _, item := range s.monitoringItems {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Order < items[j].Order
+	})
+
+	// 現在のインデックスを探す
+	currentIndex := -1
+	for i, item := range items {
+		if item.ID == id {
+			currentIndex = i
+			break
+		}
+	}
+
+	if currentIndex == -1 {
+		return fmt.Errorf("item not found in sorted list")
+	}
+
+	// 範囲チェック
+	if newIndex < 0 {
+		newIndex = 0
+	}
+	if newIndex >= len(items) {
+		newIndex = len(items) - 1
+	}
+
+	// 同じ位置なら何もしない
+	if currentIndex == newIndex {
+		return nil
+	}
+
+	// 項目を新しい位置に移動（配列操作）
+	item := items[currentIndex]
+	// 元の位置から削除
+	items = append(items[:currentIndex], items[currentIndex+1:]...)
+	// 新しい位置に挿入
+	items = append(items[:newIndex], append([]*MonitoringItemDTO{item}, items[newIndex:]...)...)
+
+	// Orderを再割り当て
+	for i, item := range items {
+		item.Order = i
+	}
+
+	// 自動保存
+	go s.saveMonitoringConfigInternal()
+
+	return nil
+}
+
 // UpdateMonitoringItem はモニタリング項目を更新する
 func (s *PLCService) UpdateMonitoringItem(item *MonitoringItemDTO) error {
 	s.mu.Lock()
@@ -887,6 +950,17 @@ func (s *PLCService) DeleteMonitoringItem(id string) error {
 	go s.saveMonitoringConfigInternal()
 
 	return nil
+}
+
+// ClearMonitoringItems は全モニタリング項目を削除する
+func (s *PLCService) ClearMonitoringItems() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.monitoringItems = make(map[string]*MonitoringItemDTO)
+
+	// 自動保存
+	go s.saveMonitoringConfigInternal()
 }
 
 // getMonitoringConfigPath はモニタリング設定ファイルのパスを返す

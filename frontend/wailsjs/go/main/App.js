@@ -6,6 +6,10 @@ export function AddMonitoringItem(arg1) {
   return window['go']['main']['App']['AddMonitoringItem'](arg1);
 }
 
+export function ClearMonitoringItems() {
+  return window['go']['main']['App']['ClearMonitoringItems']();
+}
+
 export function CreateScript(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateScript'](arg1, arg2, arg3);
 }
@@ -92,6 +96,10 @@ export function ReadBits(arg1, arg2, arg3) {
 
 export function ReadWords(arg1, arg2, arg3) {
   return window['go']['main']['App']['ReadWords'](arg1, arg2, arg3);
+}
+
+export function ReorderMonitoringItem(arg1, arg2) {
+  return window['go']['main']['App']['ReorderMonitoringItem'](arg1, arg2);
 }
 
 export function RunScriptOnce(arg1) {

@@ -14,7 +14,9 @@ import {
   GetCurrentConfig,
   UpdateConfig,
   GetUnitIDSettings,
-  SetUnitIDEnabled
+  SetUnitIDEnabled,
+  GetMonitoringItems,
+  ClearMonitoringItems
 } from '../../wailsjs/go/main/App';
 import { application } from '../../wailsjs/go/models';
 
@@ -36,6 +38,11 @@ export function ServerPanel() {
 
   // シリアルポート
   const [serialPorts, setSerialPorts] = useState<string[]>([]);
+
+  // プロトコル変更確認ダイアログ
+  const [isProtocolChangeDialogOpen, setIsProtocolChangeDialogOpen] = useState(false);
+  const [pendingProtocolChange, setPendingProtocolChange] = useState<string | null>(null);
+  const [monitoringItemCount, setMonitoringItemCount] = useState(0);
 
   useEffect(() => {
     loadInitialData();
@@ -112,6 +119,30 @@ export function ServerPanel() {
   };
 
   const handleProtocolChange = async (protocolType: string) => {
+    // 現在のプロトコルと同じなら何もしない
+    if (protocolType === activeProtocol) return;
+
+    try {
+      setError(null);
+      // モニタリング項目の数を確認
+      const items = await GetMonitoringItems();
+      const count = items?.length || 0;
+
+      if (count > 0) {
+        // モニタリング項目がある場合は確認ダイアログを表示
+        setMonitoringItemCount(count);
+        setPendingProtocolChange(protocolType);
+        setIsProtocolChangeDialogOpen(true);
+      } else {
+        // モニタリング項目がない場合はそのまま変更
+        await executeProtocolChange(protocolType);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const executeProtocolChange = async (protocolType: string) => {
     try {
       setError(null);
       const proto = protocols.find(p => p.type === protocolType);
@@ -127,6 +158,22 @@ export function ServerPanel() {
     } catch (e) {
       setError(String(e));
     }
+  };
+
+  const handleProtocolChangeConfirm = async () => {
+    if (pendingProtocolChange) {
+      // モニタリング項目をクリア
+      await ClearMonitoringItems();
+      // プロトコルを変更
+      await executeProtocolChange(pendingProtocolChange);
+    }
+    setIsProtocolChangeDialogOpen(false);
+    setPendingProtocolChange(null);
+  };
+
+  const handleProtocolChangeCancel = () => {
+    setIsProtocolChangeDialogOpen(false);
+    setPendingProtocolChange(null);
   };
 
   const handleVariantChange = async (variantId: string) => {
@@ -317,6 +364,29 @@ export function ServerPanel() {
                 <span className="unit-id-label">{unitId}</span>
               </label>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* プロトコル変更確認ダイアログ */}
+      {isProtocolChangeDialogOpen && (
+        <div className="dialog-overlay">
+          <div className="dialog">
+            <h3>プロトコル変更の確認</h3>
+            <div className="dialog-content">
+              <p className="warning-text">
+                プロトコルを変更すると、登録されているモニタリング項目（{monitoringItemCount}件）がすべて削除されます。
+              </p>
+              <p>続行しますか？</p>
+            </div>
+            <div className="dialog-buttons">
+              <button onClick={handleProtocolChangeCancel} className="btn-secondary">
+                キャンセル
+              </button>
+              <button onClick={handleProtocolChangeConfirm} className="btn-danger">
+                変更する
+              </button>
+            </div>
           </div>
         </div>
       )}

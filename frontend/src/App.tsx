@@ -4,7 +4,7 @@ import { ServerPanel } from "./components/ServerPanel";
 import { RegisterPanel } from "./components/RegisterPanel";
 import { ScriptPanel } from "./components/ScriptPanel";
 
-const APP_VERSION = "v0.0.5";
+const APP_VERSION = "v0.0.6";
 
 type Tab = "server" | "registers" | "scripts";
 

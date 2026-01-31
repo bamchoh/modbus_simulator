@@ -83,7 +83,7 @@ frontend/src/
 
 ServerPanel.tsxは`GetProtocolSchema()`から取得したスキーマに基づき、`DynamicField`コンポーネントで動的にフォームを生成します。
 
-RegisterPanel.tsxは「一覧表示」と「モニタリング」のサブタブを持ち、モニタリングでは任意のレジスタを登録してリアルタイム監視・書き込みが可能です。
+RegisterPanel.tsxは「一覧表示」と「モニタリング」のサブタブを持ち、モニタリングでは任意のレジスタを登録してリアルタイム監視・書き込みが可能です。モニタリング項目はドラッグ＆ドロップで並び替え可能（@dnd-kit使用）。プロトコル変更時はメモリエリアが異なるため、確認ダイアログ後にモニタリングリストがクリアされます。
 
 ### Wailsバインディング
 
@@ -94,7 +94,7 @@ RegisterPanel.tsxは「一覧表示」と「モニタリング」のサブタブ
 - `GetCurrentConfig()`: 現在の設定を取得
 - `UpdateConfig(dto)`: 設定を更新
 - `ReadBits()`, `WriteBit()`, `ReadWords()`, `WriteWord()`: 汎用メモリ操作
-- `GetMonitoringItems()`, `AddMonitoringItem()`, `UpdateMonitoringItem()`, `DeleteMonitoringItem()`, `MoveMonitoringItem()`: モニタリング項目管理
+- `GetMonitoringItems()`, `AddMonitoringItem()`, `UpdateMonitoringItem()`, `DeleteMonitoringItem()`, `ReorderMonitoringItem()`, `ClearMonitoringItems()`: モニタリング項目管理
 
 ### 設定ファイル
 

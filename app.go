@@ -282,6 +282,16 @@ func (a *App) MoveMonitoringItem(id string, direction string) error {
 	return a.plcService.MoveMonitoringItem(id, direction)
 }
 
+// ReorderMonitoringItem はモニタリング項目を指定したインデックスに移動する
+func (a *App) ReorderMonitoringItem(id string, newIndex int) error {
+	return a.plcService.ReorderMonitoringItem(id, newIndex)
+}
+
+// ClearMonitoringItems は全モニタリング項目を削除する
+func (a *App) ClearMonitoringItems() {
+	a.plcService.ClearMonitoringItems()
+}
+
 // === シリアルポート ===
 
 // GetSerialPorts はシステムで利用可能なシリアルポートの一覧を返す

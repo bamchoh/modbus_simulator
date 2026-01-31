@@ -4,6 +4,8 @@ import {application} from '../models';
 
 export function AddMonitoringItem(arg1:application.MonitoringItemDTO):Promise<application.MonitoringItemDTO>;
 
+export function ClearMonitoringItems():Promise<void>;
+
 export function CreateScript(arg1:string,arg2:string,arg3:number):Promise<application.ScriptDTO>;
 
 export function DeleteMonitoringItem(arg1:string):Promise<void>;
@@ -47,6 +49,8 @@ export function MoveMonitoringItem(arg1:string,arg2:string):Promise<void>;
 export function ReadBits(arg1:string,arg2:number,arg3:number):Promise<Array<boolean>>;
 
 export function ReadWords(arg1:string,arg2:number,arg3:number):Promise<Array<number>>;
+
+export function ReorderMonitoringItem(arg1:string,arg2:number):Promise<void>;
 
 export function RunScriptOnce(arg1:string):Promise<any>;
 

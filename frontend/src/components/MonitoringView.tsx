@@ -1,10 +1,27 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
   GetMonitoringItems,
   AddMonitoringItem,
   UpdateMonitoringItem,
   DeleteMonitoringItem,
-  MoveMonitoringItem,
+  ReorderMonitoringItem,
   ReadWords,
   ReadBits,
   WriteBit,
@@ -147,9 +164,113 @@ interface Props {
   memoryAreas: application.MemoryAreaDTO[];
 }
 
+// ドラッグ可能な行コンポーネント
+interface SortableRowProps {
+  itemWithValue: MonitoringItemWithValue;
+  memoryAreas: application.MemoryAreaDTO[];
+  onSettingChange: (item: MonitoringItemWithValue, field: 'displayFormat' | 'bitWidth' | 'endianness', value: string | number) => void;
+  onValueClick: (item: MonitoringItemWithValue) => void;
+  onDelete: (id: string) => void;
+}
+
+function SortableRow({ itemWithValue, memoryAreas, onSettingChange, onValueClick, onDelete }: SortableRowProps) {
+  const item = itemWithValue.item;
+  const area = memoryAreas.find(a => a.id === item.memoryArea);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    backgroundColor: isDragging ? 'rgba(233, 69, 96, 0.1)' : undefined
+  };
+
+  return (
+    <tr ref={setNodeRef} style={style}>
+      <td className="monitoring-drag-handle" {...attributes} {...listeners}>
+        <span className="drag-handle">⠿</span>
+      </td>
+      <td>{area?.displayName || item.memoryArea}</td>
+      <td>{item.address}</td>
+      <td>
+        {!itemWithValue.isBit ? (
+          <select
+            value={item.bitWidth}
+            onChange={(e) => onSettingChange(itemWithValue, 'bitWidth', parseInt(e.target.value))}
+            className="inline-select"
+          >
+            {BIT_WIDTHS.map(b => (
+              <option key={b.value} value={b.value}>{b.label}</option>
+            ))}
+          </select>
+        ) : (
+          'Bit'
+        )}
+      </td>
+      <td>
+        {!itemWithValue.isBit ? (
+          <select
+            value={item.endianness}
+            onChange={(e) => onSettingChange(itemWithValue, 'endianness', e.target.value)}
+            className="inline-select"
+          >
+            {ENDIANNESS_OPTIONS.map(e => (
+              <option key={e.value} value={e.value}>{e.label}</option>
+            ))}
+          </select>
+        ) : (
+          '-'
+        )}
+      </td>
+      <td>
+        {!itemWithValue.isBit ? (
+          <select
+            value={item.displayFormat}
+            onChange={(e) => onSettingChange(itemWithValue, 'displayFormat', e.target.value)}
+            className="inline-select"
+          >
+            {DISPLAY_FORMATS.map(f => (
+              <option key={f.value} value={f.value}>{f.label}</option>
+            ))}
+          </select>
+        ) : (
+          '-'
+        )}
+      </td>
+      <td
+        className="monitoring-value"
+        onClick={() => onValueClick(itemWithValue)}
+      >
+        {itemWithValue.currentValue}
+      </td>
+      <td className="monitoring-actions">
+        <button onClick={() => onDelete(item.id)} className="btn-small btn-danger">
+          削除
+        </button>
+      </td>
+    </tr>
+  );
+}
+
 export function MonitoringView({ memoryAreas }: Props) {
   const [items, setItems] = useState<MonitoringItemWithValue[]>([]);
   const [autoRefresh, setAutoRefresh] = useState(true);
+
+  // ドラッグ＆ドロップ用センサー
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates
+    })
+  );
 
   // 追加ダイアログ
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -333,13 +454,24 @@ export function MonitoringView({ memoryAreas }: Props) {
     }
   };
 
-  // 移動
-  const handleMove = async (id: string, direction: 'up' | 'down') => {
-    try {
-      await MoveMonitoringItem(id, direction);
-      await loadItems();
-    } catch (e) {
-      console.error('Failed to move monitoring item:', e);
+  // ドラッグ＆ドロップによる並び替え
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = items.findIndex(item => item.item.id === active.id);
+      const newIndex = items.findIndex(item => item.item.id === over.id);
+
+      // UIを先に更新（楽観的更新）
+      setItems((items) => arrayMove(items, oldIndex, newIndex));
+
+      // バックエンドに通知
+      try {
+        await ReorderMonitoringItem(active.id as string, newIndex);
+      } catch (e) {
+        console.error('Failed to reorder monitoring item:', e);
+        // エラー時はリロード
+        await loadItems();
+      }
     }
   };
 
@@ -453,104 +585,43 @@ export function MonitoringView({ memoryAreas }: Props) {
           モニタリング項目がありません。「追加」ボタンで項目を登録してください。
         </div>
       ) : (
-        <table className="monitoring-table">
-          <thead>
-            <tr>
-              <th>順序</th>
-              <th>エリア</th>
-              <th>アドレス</th>
-              <th>ビット幅</th>
-              <th>エンディアン</th>
-              <th>表示形式</th>
-              <th>現在値</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((itemWithValue, index) => {
-              const item = itemWithValue.item;
-              const area = memoryAreas.find(a => a.id === item.memoryArea);
-              return (
-                <tr key={item.id}>
-                  <td className="monitoring-order">
-                    <button
-                      onClick={() => handleMove(item.id, 'up')}
-                      disabled={index === 0}
-                      className="btn-move"
-                    >
-                      ▲
-                    </button>
-                    <button
-                      onClick={() => handleMove(item.id, 'down')}
-                      disabled={index === items.length - 1}
-                      className="btn-move"
-                    >
-                      ▼
-                    </button>
-                  </td>
-                  <td>{area?.displayName || item.memoryArea}</td>
-                  <td>{item.address}</td>
-                  <td>
-                    {!itemWithValue.isBit ? (
-                      <select
-                        value={item.bitWidth}
-                        onChange={(e) => handleSettingChange(itemWithValue, 'bitWidth', parseInt(e.target.value))}
-                        className="inline-select"
-                      >
-                        {BIT_WIDTHS.map(b => (
-                          <option key={b.value} value={b.value}>{b.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      'Bit'
-                    )}
-                  </td>
-                  <td>
-                    {!itemWithValue.isBit ? (
-                      <select
-                        value={item.endianness}
-                        onChange={(e) => handleSettingChange(itemWithValue, 'endianness', e.target.value)}
-                        className="inline-select"
-                      >
-                        {ENDIANNESS_OPTIONS.map(e => (
-                          <option key={e.value} value={e.value}>{e.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      '-'
-                    )}
-                  </td>
-                  <td>
-                    {!itemWithValue.isBit ? (
-                      <select
-                        value={item.displayFormat}
-                        onChange={(e) => handleSettingChange(itemWithValue, 'displayFormat', e.target.value)}
-                        className="inline-select"
-                      >
-                        {DISPLAY_FORMATS.map(f => (
-                          <option key={f.value} value={f.value}>{f.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      '-'
-                    )}
-                  </td>
-                  <td
-                    className="monitoring-value"
-                    onClick={() => handleValueClick(itemWithValue)}
-                  >
-                    {itemWithValue.currentValue}
-                  </td>
-                  <td className="monitoring-actions">
-                    <button onClick={() => handleDelete(item.id)} className="btn-small btn-danger">
-                      削除
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <table className="monitoring-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>エリア</th>
+                <th>アドレス</th>
+                <th>ビット幅</th>
+                <th>エンディアン</th>
+                <th>表示形式</th>
+                <th>現在値</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <SortableContext
+              items={items.map(i => i.item.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <tbody>
+                {items.map((itemWithValue) => (
+                  <SortableRow
+                    key={itemWithValue.item.id}
+                    itemWithValue={itemWithValue}
+                    memoryAreas={memoryAreas}
+                    onSettingChange={handleSettingChange}
+                    onValueClick={handleValueClick}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </tbody>
+            </SortableContext>
+          </table>
+        </DndContext>
       )}
 
       {/* 追加ダイアログ */}
