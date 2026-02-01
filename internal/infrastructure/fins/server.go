@@ -13,16 +13,17 @@ import (
 
 // FINSServer はFINS/TCPサーバー
 type FINSServer struct {
-	config   *FINSConfig
-	store    *FINSDataStore
-	handler  *Handler
-	listener net.Listener
-	status   protocol.ServerStatus
-	mu       sync.Mutex
-	ctx      context.Context
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	clients  map[net.Conn]byte // conn -> assigned client node
+	config       *FINSConfig
+	store        *FINSDataStore
+	handler      *Handler
+	listener     net.Listener
+	status       protocol.ServerStatus
+	mu           sync.Mutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	clients      map[net.Conn]byte // conn -> assigned client node
+	eventEmitter protocol.CommunicationEventEmitter
 }
 
 // NewFINSServer は新しいFINSServerを作成する
@@ -135,6 +136,20 @@ func (s *FINSServer) UpdateConfig(config protocol.ProtocolConfig) error {
 	return nil
 }
 
+// SetEventEmitter はイベントエミッターを設定する
+func (s *FINSServer) SetEventEmitter(emitter protocol.CommunicationEventEmitter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.eventEmitter = emitter
+}
+
+// emitConnection は接続数変更イベントを発行する
+func (s *FINSServer) emitConnection() {
+	if s.eventEmitter != nil {
+		s.eventEmitter.EmitConnection(len(s.clients))
+	}
+}
+
 // acceptLoop は接続を受け付けるループ
 func (s *FINSServer) acceptLoop() {
 	defer s.wg.Done()
@@ -153,6 +168,7 @@ func (s *FINSServer) acceptLoop() {
 
 		s.mu.Lock()
 		s.clients[conn] = 0 // クライアントノード未割り当て
+		s.emitConnection()
 		s.mu.Unlock()
 
 		s.wg.Add(1)
@@ -165,6 +181,7 @@ func (s *FINSServer) handleConnection(conn net.Conn) {
 	defer func() {
 		s.mu.Lock()
 		delete(s.clients, conn)
+		s.emitConnection()
 		s.mu.Unlock()
 		conn.Close()
 		s.wg.Done()
@@ -197,6 +214,11 @@ func (s *FINSServer) handleConnection(conn net.Conn) {
 			return
 		}
 
+		// 受信イベント発行
+		if s.eventEmitter != nil {
+			s.eventEmitter.EmitRx()
+		}
+
 		accumulated = append(accumulated, buf[:n]...)
 
 		// 完全なフレームを処理
@@ -225,6 +247,10 @@ func (s *FINSServer) handleConnection(conn net.Conn) {
 				if err != nil {
 					log.Printf("FINS: Write error: %v", err)
 					return
+				}
+				// 送信イベント発行
+				if s.eventEmitter != nil {
+					s.eventEmitter.EmitTx()
 				}
 			}
 		}

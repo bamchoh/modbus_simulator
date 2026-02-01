@@ -36,6 +36,10 @@ type PLCService struct {
 
 	// モニタリング
 	monitoringItems map[string]*MonitoringItemDTO
+
+	// 通信イベント
+	eventEmitter   protocol.CommunicationEventEmitter
+	sessionManager *protocol.SessionManager
 }
 
 // NewPLCService は新しいPLCServiceを作成する
@@ -159,6 +163,11 @@ func (s *PLCService) SetProtocol(protocolType string, variantID string) error {
 	s.dataStore = dataStore
 	s.server = server
 	s.scriptEngine = scripting.NewScriptEngineWithDataStore(dataStore)
+
+	// イベントエミッターをサーバーに設定
+	if s.eventEmitter != nil {
+		s.setEmitterToServer()
+	}
 
 	return nil
 }
@@ -565,6 +574,57 @@ func (s *PLCService) Shutdown() {
 	}
 	if s.server != nil {
 		s.server.Stop()
+	}
+	if s.sessionManager != nil {
+		s.sessionManager.Stop()
+	}
+}
+
+// SetEventEmitter はイベントエミッターを設定する
+func (s *PLCService) SetEventEmitter(emitter protocol.CommunicationEventEmitter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.eventEmitter = emitter
+
+	// セッションマネージャーを作成（Modbus TCP用、5秒タイムアウト）
+	s.sessionManager = protocol.NewSessionManager(5*time.Second, emitter)
+	s.sessionManager.Start()
+
+	// サーバーにもエミッターを設定
+	if s.server != nil {
+		s.setEmitterToServer()
+	}
+}
+
+// GetEventEmitter はイベントエミッターを返す
+func (s *PLCService) GetEventEmitter() protocol.CommunicationEventEmitter {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.eventEmitter
+}
+
+// GetSessionManager はセッションマネージャーを返す
+func (s *PLCService) GetSessionManager() *protocol.SessionManager {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sessionManager
+}
+
+// setEmitterToServer はサーバーにイベントエミッターを設定する（ロック済み前提）
+func (s *PLCService) setEmitterToServer() {
+	type eventAware interface {
+		SetEventEmitter(emitter protocol.CommunicationEventEmitter)
+	}
+	type sessionAware interface {
+		SetSessionManager(manager *protocol.SessionManager)
+	}
+
+	if ea, ok := s.server.(eventAware); ok {
+		ea.SetEventEmitter(s.eventEmitter)
+	}
+	if sa, ok := s.server.(sessionAware); ok {
+		sa.SetSessionManager(s.sessionManager)
 	}
 }
 

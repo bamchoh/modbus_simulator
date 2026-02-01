@@ -3,8 +3,9 @@ import "./App.css";
 import { ServerPanel } from "./components/ServerPanel";
 import { RegisterPanel } from "./components/RegisterPanel";
 import { ScriptPanel } from "./components/ScriptPanel";
+import { CommunicationIndicator } from "./components/CommunicationIndicator";
 
-const APP_VERSION = "v0.0.6";
+const APP_VERSION = "v0.0.7";
 
 type Tab = "server" | "registers" | "scripts";
 
@@ -15,6 +16,7 @@ function App() {
     <div id="App">
       <header className="app-header">
         <h1>PLC Simulator({APP_VERSION})</h1>
+        <CommunicationIndicator />
         <nav className="tab-nav">
           <button
             className={`tab-button ${activeTab === "server" ? "active" : ""}`}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"modbus_simulator/internal/domain/protocol"
 	"modbus_simulator/internal/domain/register"
 	"modbus_simulator/internal/domain/server"
 	"modbus_simulator/internal/infrastructure/modbus/rtu"
@@ -21,18 +22,20 @@ type ModbusHandler interface {
 
 // Server はModbusサーバーを管理する
 type Server struct {
-	mu            sync.Mutex
-	config        *server.ServerConfig
-	modbusConfig  *ModbusConfig
-	store         *register.RegisterStore
-	handler       *RegisterHandler
-	dsHandler     *DataStoreHandler
-	server        *modbus.ModbusServer
-	rtuServer     *rtu.RTUServer
-	asciiServer   *rtu.ASCIIServer
-	status        server.ServerStatus
-	lastErr       error
-	useDataStore  bool
+	mu             sync.Mutex
+	config         *server.ServerConfig
+	modbusConfig   *ModbusConfig
+	store          *register.RegisterStore
+	handler        *RegisterHandler
+	dsHandler      *DataStoreHandler
+	server         *modbus.ModbusServer
+	rtuServer      *rtu.RTUServer
+	asciiServer    *rtu.ASCIIServer
+	status         server.ServerStatus
+	lastErr        error
+	useDataStore   bool
+	eventEmitter   protocol.CommunicationEventEmitter
+	sessionManager *protocol.SessionManager
 }
 
 // NewServer は新しいModbusサーバーを作成する
@@ -105,7 +108,10 @@ func (s *Server) startTCPServer() error {
 	// 使用するハンドラーを決定
 	var handler modbus.RequestHandler
 	if s.useDataStore && s.dsHandler != nil {
-		handler = NewDataStoreRequestHandler(s.dsHandler)
+		reqHandler := NewDataStoreRequestHandler(s.dsHandler)
+		reqHandler.SetEventEmitter(s.eventEmitter)
+		reqHandler.SetSessionManager(s.sessionManager)
+		handler = reqHandler
 	} else {
 		handler = s.handler
 	}
@@ -143,7 +149,9 @@ func (s *Server) startRTUServer() error {
 
 	var adapter rtu.RequestHandler
 	if s.useDataStore && s.dsHandler != nil {
-		adapter = NewRTUDataStoreAdapter(s.dsHandler)
+		rtuAdapter := NewRTUDataStoreAdapter(s.dsHandler)
+		rtuAdapter.SetEventEmitter(s.eventEmitter)
+		adapter = rtuAdapter
 	} else {
 		adapter = NewRTUHandlerAdapter(s.handler)
 	}
@@ -173,7 +181,9 @@ func (s *Server) startASCIIServer() error {
 
 	var adapter rtu.RequestHandler
 	if s.useDataStore && s.dsHandler != nil {
-		adapter = NewRTUDataStoreAdapter(s.dsHandler)
+		rtuAdapter := NewRTUDataStoreAdapter(s.dsHandler)
+		rtuAdapter.SetEventEmitter(s.eventEmitter)
+		adapter = rtuAdapter
 	} else {
 		adapter = NewRTUHandlerAdapter(s.handler)
 	}
@@ -317,4 +327,18 @@ func (s *Server) SetDisabledUnitIDs(ids []uint8) {
 	} else if s.handler != nil {
 		s.handler.SetDisabledUnitIDs(ids)
 	}
+}
+
+// SetEventEmitter はイベントエミッターを設定する
+func (s *Server) SetEventEmitter(emitter protocol.CommunicationEventEmitter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.eventEmitter = emitter
+}
+
+// SetSessionManager はセッションマネージャーを設定する
+func (s *Server) SetSessionManager(manager *protocol.SessionManager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessionManager = manager
 }

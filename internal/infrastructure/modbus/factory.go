@@ -305,11 +305,13 @@ func DefaultASCIIConfig() *ModbusConfig {
 
 // ModbusServer はModbusプロトコルサーバー
 type ModbusServer struct {
-	config      *ModbusConfig
-	store       *ModbusDataStore
-	handler     *DataStoreHandler
-	innerServer *Server
-	status      protocol.ServerStatus
+	config         *ModbusConfig
+	store          *ModbusDataStore
+	handler        *DataStoreHandler
+	innerServer    *Server
+	status         protocol.ServerStatus
+	eventEmitter   protocol.CommunicationEventEmitter
+	sessionManager *protocol.SessionManager
 }
 
 // NewModbusServer は新しいModbusServerを作成する
@@ -330,6 +332,14 @@ func (s *ModbusServer) Start(ctx context.Context) error {
 
 	// 内部サーバーを作成
 	s.innerServer = NewServerWithHandler(s.config, s.handler)
+
+	// イベントエミッターとセッションマネージャーを設定
+	if s.eventEmitter != nil {
+		s.innerServer.SetEventEmitter(s.eventEmitter)
+	}
+	if s.sessionManager != nil {
+		s.innerServer.SetSessionManager(s.sessionManager)
+	}
 
 	if err := s.innerServer.Start(); err != nil {
 		s.status = protocol.StatusError
@@ -404,6 +414,22 @@ func (s *ModbusServer) GetDisabledUnitIDs() []uint8 {
 // SetDisabledUnitIDs は無効化するUnitIDのリストを設定する
 func (s *ModbusServer) SetDisabledUnitIDs(ids []uint8) {
 	s.handler.SetDisabledUnitIDs(ids)
+}
+
+// SetEventEmitter はイベントエミッターを設定する
+func (s *ModbusServer) SetEventEmitter(emitter protocol.CommunicationEventEmitter) {
+	s.eventEmitter = emitter
+	if s.innerServer != nil {
+		s.innerServer.SetEventEmitter(emitter)
+	}
+}
+
+// SetSessionManager はセッションマネージャーを設定する
+func (s *ModbusServer) SetSessionManager(manager *protocol.SessionManager) {
+	s.sessionManager = manager
+	if s.innerServer != nil {
+		s.innerServer.SetSessionManager(manager)
+	}
 }
 
 // DataStoreHandler はDataStoreを使用するModbusハンドラー

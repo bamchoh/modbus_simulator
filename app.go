@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"modbus_simulator/internal/application"
+	"modbus_simulator/internal/domain/protocol"
 
 	// プロトコル実装をレジストリに登録するためのブランクインポート
 	_ "modbus_simulator/internal/infrastructure/fins"
@@ -32,6 +33,10 @@ func NewApp() *App {
 // startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// イベントエミッターを設定
+	emitter := protocol.NewWailsEventEmitter(ctx)
+	a.plcService.SetEventEmitter(emitter)
 }
 
 // shutdown is called when the app closes
