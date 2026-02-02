@@ -122,3 +122,82 @@ func (h *Handler) SetNodeAddress(nodeAddr byte) {
 func (h *Handler) SetNetworkID(networkID byte) {
 	h.networkID = networkID
 }
+
+// HandleUDPCommand はFINS/UDPコマンドを処理し、レスポンスを返す
+func (h *Handler) HandleUDPCommand(frame *UDPFrame) []byte {
+	if frame.Header == nil {
+		return nil
+	}
+
+	cmdCode := frame.Command.Code()
+
+	switch cmdCode {
+	case CmdMemoryAreaRead:
+		return h.handleUDPMemoryAreaRead(frame)
+	case CmdMemoryAreaWrite:
+		return h.handleUDPMemoryAreaWrite(frame)
+	default:
+		log.Printf("FINS/UDP: Unknown command: 0x%04X", cmdCode)
+		return BuildUDPErrorResponse(frame.Header, frame.Command, ErrCommandNotSupported)
+	}
+}
+
+// handleUDPMemoryAreaRead はUDP用メモリエリア読み込みコマンドを処理する
+func (h *Handler) handleUDPMemoryAreaRead(frame *UDPFrame) []byte {
+	req, err := ParseMemoryAreaReadRequest(frame.Data)
+	if err != nil {
+		log.Printf("FINS/UDP: Failed to parse memory read request: %v", err)
+		return BuildUDPErrorResponse(frame.Header, frame.Command, ErrCommandFormatError)
+	}
+
+	// エリアコードからエリアIDを取得
+	areaID := AreaCodeToID(req.AreaCode)
+	if areaID == "" {
+		log.Printf("FINS/UDP: Unknown area code: 0x%02X", req.AreaCode)
+		return BuildUDPErrorResponse(frame.Header, frame.Command, ErrAreaClassError)
+	}
+
+	// データを読み込む
+	data, err := h.store.ReadWords(areaID, uint32(req.Address), req.Count)
+	if err != nil {
+		log.Printf("FINS/UDP: Failed to read memory: %v", err)
+		return BuildUDPErrorResponse(frame.Header, frame.Command, ErrAddressRangeError)
+	}
+
+	log.Printf("FINS/UDP: Memory read: area=%s, addr=%d, count=%d", areaID, req.Address, req.Count)
+
+	return BuildUDPMemoryAreaReadResponse(frame.Header, frame.Command, EndCode{Main: ErrNormal}, data)
+}
+
+// handleUDPMemoryAreaWrite はUDP用メモリエリア書き込みコマンドを処理する
+func (h *Handler) handleUDPMemoryAreaWrite(frame *UDPFrame) []byte {
+	req, err := ParseMemoryAreaWriteRequest(frame.Data)
+	if err != nil {
+		log.Printf("FINS/UDP: Failed to parse memory write request: %v", err)
+		return BuildUDPErrorResponse(frame.Header, frame.Command, ErrCommandFormatError)
+	}
+
+	// エリアコードからエリアIDを取得
+	areaID := AreaCodeToID(req.AreaCode)
+	if areaID == "" {
+		log.Printf("FINS/UDP: Unknown area code: 0x%02X", req.AreaCode)
+		return BuildUDPErrorResponse(frame.Header, frame.Command, ErrAreaClassError)
+	}
+
+	// バイト列をワード列に変換（ビッグエンディアン）
+	words := make([]uint16, req.Count)
+	for i := 0; i < int(req.Count); i++ {
+		words[i] = binary.BigEndian.Uint16(req.Data[i*2 : i*2+2])
+	}
+
+	// データを書き込む
+	err = h.store.WriteWords(areaID, uint32(req.Address), words)
+	if err != nil {
+		log.Printf("FINS/UDP: Failed to write memory: %v", err)
+		return BuildUDPErrorResponse(frame.Header, frame.Command, ErrAddressRangeError)
+	}
+
+	log.Printf("FINS/UDP: Memory write: area=%s, addr=%d, count=%d", areaID, req.Address, req.Count)
+
+	return BuildUDPMemoryAreaWriteResponse(frame.Header, frame.Command, EndCode{Main: ErrNormal})
+}

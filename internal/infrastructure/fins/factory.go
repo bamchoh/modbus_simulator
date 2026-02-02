@@ -36,7 +36,12 @@ func (f *FINSServerFactory) CreateServer(config protocol.ProtocolConfig, store p
 		return nil, fmt.Errorf("invalid store type: expected FINSDataStore")
 	}
 
-	return NewFINSServer(finsConfig, finsStore), nil
+	switch finsConfig.Variant() {
+	case "udp":
+		return NewFINSUDPServer(finsConfig, finsStore), nil
+	default:
+		return NewFINSServer(finsConfig, finsStore), nil
+	}
 }
 
 // CreateDataStore はプロトコル用のデータストアを作成する
@@ -53,6 +58,7 @@ func (f *FINSServerFactory) DefaultConfig() protocol.ProtocolConfig {
 func (f *FINSServerFactory) ConfigVariants() []protocol.ConfigVariant {
 	return []protocol.ConfigVariant{
 		{ID: "tcp", DisplayName: "FINS/TCP"},
+		{ID: "udp", DisplayName: "FINS/UDP"},
 	}
 }
 
@@ -61,6 +67,8 @@ func (f *FINSServerFactory) CreateConfigFromVariant(variantID string) protocol.P
 	switch variantID {
 	case "tcp":
 		return DefaultFINSConfig()
+	case "udp":
+		return DefaultFINSUDPConfig()
 	default:
 		return DefaultFINSConfig()
 	}
@@ -90,6 +98,7 @@ func (f *FINSServerFactory) ConfigToMap(config protocol.ProtocolConfig) map[stri
 		return nil
 	}
 	return map[string]interface{}{
+		"variant":     fc.Variant(),
 		"address":     fc.Address,
 		"port":        fc.Port,
 		"nodeAddress": int(fc.NodeAddress),
@@ -99,7 +108,7 @@ func (f *FINSServerFactory) ConfigToMap(config protocol.ProtocolConfig) map[stri
 
 // MapToConfig はmapから設定を作成する
 func (f *FINSServerFactory) MapToConfig(variantID string, settings map[string]interface{}) (protocol.ProtocolConfig, error) {
-	config := DefaultFINSConfig()
+	config := f.CreateConfigFromVariant(variantID).(*FINSConfig)
 
 	if v, ok := settings["address"].(string); ok {
 		config.Address = v
@@ -129,10 +138,11 @@ func intPtr(i int) *int {
 
 // FINSConfig はFINSサーバーの設定
 type FINSConfig struct {
-	Address     string `json:"address"`
-	Port        int    `json:"port"`
-	NodeAddress byte   `json:"nodeAddress"`
-	NetworkID   byte   `json:"networkId"`
+	TransportType string `json:"variant"`
+	Address       string `json:"address"`
+	Port          int    `json:"port"`
+	NodeAddress   byte   `json:"nodeAddress"`
+	NetworkID     byte   `json:"networkId"`
 }
 
 // ProtocolType はプロトコルの種類を返す
@@ -142,6 +152,9 @@ func (c *FINSConfig) ProtocolType() protocol.ProtocolType {
 
 // Variant はバリアント名を返す
 func (c *FINSConfig) Variant() string {
+	if c.TransportType != "" {
+		return c.TransportType
+	}
 	return "tcp"
 }
 
@@ -156,20 +169,33 @@ func (c *FINSConfig) Validate() error {
 // Clone は設定のコピーを作成する
 func (c *FINSConfig) Clone() protocol.ProtocolConfig {
 	return &FINSConfig{
-		Address:     c.Address,
-		Port:        c.Port,
-		NodeAddress: c.NodeAddress,
-		NetworkID:   c.NetworkID,
+		TransportType: c.TransportType,
+		Address:       c.Address,
+		Port:          c.Port,
+		NodeAddress:   c.NodeAddress,
+		NetworkID:     c.NetworkID,
 	}
 }
 
-// DefaultFINSConfig はデフォルトのFINS設定を返す
+// DefaultFINSConfig はデフォルトのFINS/TCP設定を返す
 func DefaultFINSConfig() *FINSConfig {
 	return &FINSConfig{
-		Address:     "0.0.0.0",
-		Port:        9600,
-		NodeAddress: 1,
-		NetworkID:   0,
+		TransportType: "tcp",
+		Address:       "0.0.0.0",
+		Port:          9600,
+		NodeAddress:   1,
+		NetworkID:     0,
+	}
+}
+
+// DefaultFINSUDPConfig はデフォルトのFINS/UDP設定を返す
+func DefaultFINSUDPConfig() *FINSConfig {
+	return &FINSConfig{
+		TransportType: "udp",
+		Address:       "0.0.0.0",
+		Port:          9600,
+		NodeAddress:   1,
+		NetworkID:     0,
 	}
 }
 

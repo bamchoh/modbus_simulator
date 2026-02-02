@@ -391,3 +391,96 @@ func BuildNodeAddressResponse(clientNode, serverNode byte) []byte {
 func BuildErrorResponse(cmdHeader *CommandHeader, cmd Command, finsError FINSError) []byte {
 	return BuildMemoryAreaReadResponse(cmdHeader, cmd, EndCode{Main: finsError}, nil)
 }
+
+// UDPFrame はFINS/UDPフレーム（TCPヘッダーなし）
+type UDPFrame struct {
+	Header  *CommandHeader
+	Command Command
+	Data    []byte
+}
+
+// ParseUDPFrame はFINS/UDPフレームをパースする（TCPヘッダーなし）
+func ParseUDPFrame(data []byte) (*UDPFrame, error) {
+	if len(data) < CommandHeaderSize+2 {
+		return nil, errors.New("data too short for FINS/UDP frame")
+	}
+
+	cmdHeader, err := ParseCommandHeader(data[:CommandHeaderSize])
+	if err != nil {
+		return nil, err
+	}
+
+	cmd, err := ParseCommand(data[CommandHeaderSize : CommandHeaderSize+2])
+	if err != nil {
+		return nil, err
+	}
+
+	frame := &UDPFrame{
+		Header:  cmdHeader,
+		Command: cmd,
+	}
+
+	if len(data) > CommandHeaderSize+2 {
+		frame.Data = data[CommandHeaderSize+2:]
+	}
+
+	return frame, nil
+}
+
+// Bytes はUDPフレームをバイト列に変換する
+func (f *UDPFrame) Bytes() []byte {
+	var result []byte
+
+	if f.Header != nil {
+		result = append(result, f.Header.Bytes()...)
+		result = append(result, f.Command.Bytes()...)
+	}
+
+	if f.Data != nil {
+		result = append(result, f.Data...)
+	}
+
+	return result
+}
+
+// BuildUDPMemoryAreaReadResponse はUDP用メモリエリア読み込みレスポンスを構築する
+func BuildUDPMemoryAreaReadResponse(cmdHeader *CommandHeader, cmd Command, endCode EndCode, data []uint16) []byte {
+	respHeader := cmdHeader.CreateResponseHeader()
+
+	// レスポンスデータを構築
+	var respData []byte
+	respData = append(respData, endCode.Bytes()...)
+
+	// ワードデータをビッグエンディアンで追加
+	for _, word := range data {
+		respData = append(respData, byte(word>>8), byte(word&0xFF))
+	}
+
+	// フレームを構築
+	frame := &UDPFrame{
+		Header:  respHeader,
+		Command: cmd,
+		Data:    respData,
+	}
+
+	return frame.Bytes()
+}
+
+// BuildUDPMemoryAreaWriteResponse はUDP用メモリエリア書き込みレスポンスを構築する
+func BuildUDPMemoryAreaWriteResponse(cmdHeader *CommandHeader, cmd Command, endCode EndCode) []byte {
+	respHeader := cmdHeader.CreateResponseHeader()
+
+	// フレームを構築
+	frame := &UDPFrame{
+		Header:  respHeader,
+		Command: cmd,
+		Data:    endCode.Bytes(),
+	}
+
+	return frame.Bytes()
+}
+
+// BuildUDPErrorResponse はUDP用エラーレスポンスを構築する
+func BuildUDPErrorResponse(cmdHeader *CommandHeader, cmd Command, finsError FINSError) []byte {
+	return BuildUDPMemoryAreaReadResponse(cmdHeader, cmd, EndCode{Main: finsError}, nil)
+}
