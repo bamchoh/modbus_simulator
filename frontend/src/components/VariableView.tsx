@@ -193,7 +193,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
   // 構造体型かどうか判定
   const isStructType = (dataType: string): boolean => {
-    const scalarTypes = ['BOOL', 'SINT', 'INT', 'DINT', 'USINT', 'UINT', 'UDINT', 'REAL', 'LREAL', 'STRING'];
+    const scalarTypes = ['BOOL', 'SINT', 'INT', 'DINT', 'USINT', 'UINT', 'UDINT', 'REAL', 'LREAL', 'STRING', 'TIME', 'DATE', 'TIME_OF_DAY', 'DATE_AND_TIME'];
     return !scalarTypes.includes(dataType) && !dataType.startsWith('ARRAY[') && !dataType.startsWith('STRING[');
   };
 
