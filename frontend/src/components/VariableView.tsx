@@ -728,6 +728,24 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         />
       );
     }
+    // 時間・日付型（文字列として編集）
+    if (dataType === 'TIME' || dataType === 'DATE' || dataType === 'TIME_OF_DAY' || dataType === 'DATE_AND_TIME') {
+      const placeholders: { [key: string]: string } = {
+        'TIME': 'T#1s, T#100ms, T#1h30m',
+        'DATE': 'D#2024-01-01',
+        'TIME_OF_DAY': 'TOD#12:30:15',
+        'DATE_AND_TIME': 'DT#2024-01-01-12:30:15'
+      };
+      return (
+        <input
+          type="text"
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          style={{ flex: 1 }}
+          placeholder={placeholders[dataType] || ''}
+        />
+      );
+    }
     // 数値型
     return (
       <input

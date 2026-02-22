@@ -4,6 +4,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // ConvertValue は値を指定されたデータ型に変換する
@@ -109,6 +113,12 @@ func ConvertValue(value interface{}, dataType DataType) (interface{}, error) {
 			return float64(v), nil
 		}
 	case TypeSTRING:
+		switch v := value.(type) {
+		case string:
+			return v, nil
+		}
+	case TypeTIME, TypeDATE, TypeTIME_OF_DAY, TypeDATE_AND_TIME:
+		// 時間・日付型は文字列形式で保持
 		switch v := value.(type) {
 		case string:
 			return v, nil
@@ -278,6 +288,42 @@ func ValueToWords(value interface{}, dataType DataType, endianness string) []uin
 		if val, ok := value.(string); ok {
 			return stringToWords(val)
 		}
+	case TypeTIME:
+		// TIME型: 文字列をミリ秒(int32)に変換して2ワードで保存
+		if val, ok := value.(string); ok {
+			ms, err := ParseTIME(val)
+			if err == nil {
+				return uint32ToWords(uint32(ms), endianness)
+			}
+		}
+		return []uint16{0, 0}
+	case TypeDATE:
+		// DATE型: 文字列を日数(uint16)に変換して1ワードで保存
+		if val, ok := value.(string); ok {
+			days, err := ParseDATE(val)
+			if err == nil {
+				return []uint16{days}
+			}
+		}
+		return []uint16{0}
+	case TypeTIME_OF_DAY:
+		// TIME_OF_DAY型: 文字列をミリ秒(uint32)に変換して2ワードで保存
+		if val, ok := value.(string); ok {
+			ms, err := ParseTIME_OF_DAY(val)
+			if err == nil {
+				return uint32ToWords(ms, endianness)
+			}
+		}
+		return []uint16{0, 0}
+	case TypeDATE_AND_TIME:
+		// DATE_AND_TIME型: 文字列をタイムスタンプ(uint64)に変換して4ワードで保存
+		if val, ok := value.(string); ok {
+			timestamp, err := ParseDATE_AND_TIME(val)
+			if err == nil {
+				return uint64ToWords(timestamp, endianness)
+			}
+		}
+		return []uint16{0, 0, 0, 0}
 	}
 
 	// STRING[n] 型
@@ -334,6 +380,34 @@ func WordsToValue(words []uint16, dataType DataType, endianness string) (interfa
 		return math.Float64frombits(bits), nil
 	case TypeSTRING:
 		return wordsToString(words), nil
+	case TypeTIME:
+		// TIME型: 2ワードからミリ秒(int32)に変換して文字列形式で返す
+		if len(words) < 2 {
+			return "T#0ms", nil
+		}
+		ms := int32(wordsToUint32(words[:2], endianness))
+		return FormatTIME(ms), nil
+	case TypeDATE:
+		// DATE型: 1ワードから日数(uint16)に変換して文字列形式で返す
+		if len(words) < 1 {
+			return "D#1970-01-01", nil
+		}
+		days := words[0]
+		return FormatDATE(days), nil
+	case TypeTIME_OF_DAY:
+		// TIME_OF_DAY型: 2ワードからミリ秒(uint32)に変換して文字列形式で返す
+		if len(words) < 2 {
+			return "TOD#00:00:00", nil
+		}
+		ms := wordsToUint32(words[:2], endianness)
+		return FormatTIME_OF_DAY(ms), nil
+	case TypeDATE_AND_TIME:
+		// DATE_AND_TIME型: 4ワードからタイムスタンプ(uint64)に変換して文字列形式で返す
+		if len(words) < 4 {
+			return "DT#1970-01-01-00:00:00", nil
+		}
+		timestamp := wordsToUint64(words[:4], endianness)
+		return FormatDATE_AND_TIME(timestamp), nil
 	}
 
 	// STRING[n] 型
@@ -629,4 +703,203 @@ func wordsToString(words []uint16) string {
 		length = uint32(len(buf) - 4)
 	}
 	return string(buf[4 : 4+length])
+}
+
+// ============================================================
+// 時間・日付型の変換関数
+// ============================================================
+
+// ParseTIME は "T#1h30m45s", "T#100ms" などをミリ秒(int32)に変換
+func ParseTIME(s string) (int32, error) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(strings.ToUpper(s), "T#") {
+		return 0, fmt.Errorf("invalid TIME format: %s", s)
+	}
+	s = s[2:] // "T#" を削除
+
+	var totalMs int32
+	// 正規表現で h, m, s, ms を抽出
+	re := regexp.MustCompile(`(\d+(?:\.\d+)?)(h|m|s|ms|d)`)
+	matches := re.FindAllStringSubmatch(s, -1)
+	if len(matches) == 0 {
+		return 0, fmt.Errorf("invalid TIME format: %s", s)
+	}
+
+	for _, match := range matches {
+		valStr := match[1]
+		unit := match[2]
+		val, err := strconv.ParseFloat(valStr, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid number in TIME: %s", valStr)
+		}
+
+		switch unit {
+		case "d":
+			totalMs += int32(val * 24 * 60 * 60 * 1000)
+		case "h":
+			totalMs += int32(val * 60 * 60 * 1000)
+		case "m":
+			totalMs += int32(val * 60 * 1000)
+		case "s":
+			totalMs += int32(val * 1000)
+		case "ms":
+			totalMs += int32(val)
+		}
+	}
+	return totalMs, nil
+}
+
+// FormatTIME はミリ秒(int32)を "T#...ms" 形式に変換
+func FormatTIME(ms int32) string {
+	if ms < 0 {
+		return fmt.Sprintf("T#%dms", ms)
+	}
+	if ms == 0 {
+		return "T#0ms"
+	}
+
+	// 日、時、分、秒、ミリ秒に分解
+	days := ms / (24 * 60 * 60 * 1000)
+	ms %= 24 * 60 * 60 * 1000
+	hours := ms / (60 * 60 * 1000)
+	ms %= 60 * 60 * 1000
+	minutes := ms / (60 * 1000)
+	ms %= 60 * 1000
+	seconds := ms / 1000
+	ms %= 1000
+
+	var parts []string
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", days))
+	}
+	if hours > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", hours))
+	}
+	if minutes > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", minutes))
+	}
+	if seconds > 0 {
+		parts = append(parts, fmt.Sprintf("%ds", seconds))
+	}
+	if ms > 0 {
+		parts = append(parts, fmt.Sprintf("%dms", ms))
+	}
+
+	return "T#" + strings.Join(parts, "")
+}
+
+// ParseDATE は "D#2024-01-01" を1970-01-01からの日数(uint16)に変換
+func ParseDATE(s string) (uint16, error) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(strings.ToUpper(s), "D#") {
+		return 0, fmt.Errorf("invalid DATE format: %s", s)
+	}
+	dateStr := s[2:] // "D#" を削除
+
+	t, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid DATE format: %s", s)
+	}
+
+	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	days := int(t.Sub(epoch).Hours() / 24)
+	if days < 0 || days > 65535 {
+		return 0, fmt.Errorf("DATE out of range: %s", s)
+	}
+	return uint16(days), nil
+}
+
+// FormatDATE は日数(uint16)を "D#2024-01-01" 形式に変換
+func FormatDATE(days uint16) string {
+	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	t := epoch.Add(time.Duration(days) * 24 * time.Hour)
+	return "D#" + t.Format("2006-01-02")
+}
+
+// ParseTIME_OF_DAY は "TOD#12:30:15" を0:00:00からのミリ秒(uint32)に変換
+func ParseTIME_OF_DAY(s string) (uint32, error) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(strings.ToUpper(s), "TOD#") {
+		return 0, fmt.Errorf("invalid TIME_OF_DAY format: %s", s)
+	}
+	timeStr := s[4:] // "TOD#" を削除
+
+	// HH:MM:SS または HH:MM:SS.sss 形式
+	parts := strings.Split(timeStr, ":")
+	if len(parts) < 2 {
+		return 0, fmt.Errorf("invalid TIME_OF_DAY format: %s", s)
+	}
+
+	hours, err := strconv.Atoi(parts[0])
+	if err != nil || hours < 0 || hours > 23 {
+		return 0, fmt.Errorf("invalid hour in TIME_OF_DAY: %s", s)
+	}
+
+	minutes, err := strconv.Atoi(parts[1])
+	if err != nil || minutes < 0 || minutes > 59 {
+		return 0, fmt.Errorf("invalid minute in TIME_OF_DAY: %s", s)
+	}
+
+	var seconds float64
+	if len(parts) >= 3 {
+		seconds, err = strconv.ParseFloat(parts[2], 64)
+		if err != nil || seconds < 0 || seconds >= 60 {
+			return 0, fmt.Errorf("invalid second in TIME_OF_DAY: %s", s)
+		}
+	}
+
+	totalMs := uint32(hours*60*60*1000 + minutes*60*1000 + int(seconds*1000))
+	return totalMs, nil
+}
+
+// FormatTIME_OF_DAY はミリ秒(uint32)を "TOD#12:30:15" 形式に変換
+func FormatTIME_OF_DAY(ms uint32) string {
+	hours := ms / (60 * 60 * 1000)
+	ms %= 60 * 60 * 1000
+	minutes := ms / (60 * 1000)
+	ms %= 60 * 1000
+	seconds := ms / 1000
+	ms %= 1000
+
+	if ms > 0 {
+		return fmt.Sprintf("TOD#%02d:%02d:%02d.%03d", hours, minutes, seconds, ms)
+	}
+	return fmt.Sprintf("TOD#%02d:%02d:%02d", hours, minutes, seconds)
+}
+
+// ParseDATE_AND_TIME は "DT#2024-01-01-12:30:15" をタイムスタンプ(uint64)に変換
+func ParseDATE_AND_TIME(s string) (uint64, error) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(strings.ToUpper(s), "DT#") {
+		return 0, fmt.Errorf("invalid DATE_AND_TIME format: %s", s)
+	}
+	dtStr := s[3:] // "DT#" を削除
+
+	// YYYY-MM-DD-HH:MM:SS または YYYY-MM-DD-HH:MM:SS.sss 形式
+	parts := strings.Split(dtStr, "-")
+	if len(parts) < 4 {
+		return 0, fmt.Errorf("invalid DATE_AND_TIME format: %s", s)
+	}
+
+	dateStr := strings.Join(parts[:3], "-")
+	timeStr := parts[3]
+
+	t, err := time.Parse("2006-01-02 15:04:05", dateStr+" "+timeStr)
+	if err != nil {
+		// ミリ秒付きの場合
+		t, err = time.Parse("2006-01-02 15:04:05.000", dateStr+" "+timeStr)
+		if err != nil {
+			return 0, fmt.Errorf("invalid DATE_AND_TIME format: %s", s)
+		}
+	}
+
+	// ミリ秒単位のUnixタイムスタンプ
+	timestamp := uint64(t.UnixMilli())
+	return timestamp, nil
+}
+
+// FormatDATE_AND_TIME はタイムスタンプ(uint64)を "DT#2024-01-01-12:30:15" 形式に変換
+func FormatDATE_AND_TIME(timestamp uint64) string {
+	t := time.UnixMilli(int64(timestamp))
+	return "DT#" + t.Format("2006-01-02-15:04:05")
 }

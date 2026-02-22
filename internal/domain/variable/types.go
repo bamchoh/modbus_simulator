@@ -10,16 +10,20 @@ import (
 type DataType string
 
 const (
-	TypeBOOL   DataType = "BOOL"   // ブール値
-	TypeSINT   DataType = "SINT"   // 符号付き8ビット整数
-	TypeINT    DataType = "INT"    // 符号付き16ビット整数
-	TypeDINT   DataType = "DINT"   // 符号付き32ビット整数
-	TypeUSINT  DataType = "USINT"  // 符号なし8ビット整数
-	TypeUINT   DataType = "UINT"   // 符号なし16ビット整数
-	TypeUDINT  DataType = "UDINT"  // 符号なし32ビット整数
-	TypeREAL   DataType = "REAL"   // 32ビット浮動小数点
-	TypeLREAL  DataType = "LREAL"  // 64ビット浮動小数点
-	TypeSTRING DataType = "STRING" // 文字列
+	TypeBOOL          DataType = "BOOL"          // ブール値
+	TypeSINT          DataType = "SINT"          // 符号付き8ビット整数
+	TypeINT           DataType = "INT"           // 符号付き16ビット整数
+	TypeDINT          DataType = "DINT"          // 符号付き32ビット整数
+	TypeUSINT         DataType = "USINT"         // 符号なし8ビット整数
+	TypeUINT          DataType = "UINT"          // 符号なし16ビット整数
+	TypeUDINT         DataType = "UDINT"         // 符号なし32ビット整数
+	TypeREAL          DataType = "REAL"          // 32ビット浮動小数点
+	TypeLREAL         DataType = "LREAL"         // 64ビット浮動小数点
+	TypeSTRING        DataType = "STRING"        // 文字列
+	TypeTIME          DataType = "TIME"          // 時間間隔（ミリ秒）
+	TypeDATE          DataType = "DATE"          // 日付（1970-01-01からの日数）
+	TypeTIME_OF_DAY   DataType = "TIME_OF_DAY"   // 1日の中の時刻（ミリ秒）
+	TypeDATE_AND_TIME DataType = "DATE_AND_TIME" // 日付と時刻
 )
 
 // AllDataTypes はすべてのデータ型を返す
@@ -28,6 +32,7 @@ func AllDataTypes() []DataType {
 		TypeBOOL, TypeSINT, TypeINT, TypeDINT,
 		TypeUSINT, TypeUINT, TypeUDINT,
 		TypeREAL, TypeLREAL, TypeSTRING,
+		TypeTIME, TypeDATE, TypeTIME_OF_DAY, TypeDATE_AND_TIME,
 	}
 }
 
@@ -36,9 +41,11 @@ func (dt DataType) WordCount() int {
 	switch dt {
 	case TypeBOOL, TypeSINT, TypeUSINT, TypeINT, TypeUINT:
 		return 1
-	case TypeDINT, TypeUDINT, TypeREAL:
+	case TypeDATE:
+		return 1
+	case TypeDINT, TypeUDINT, TypeREAL, TypeTIME, TypeTIME_OF_DAY:
 		return 2
-	case TypeLREAL:
+	case TypeLREAL, TypeDATE_AND_TIME:
 		return 4
 	case TypeSTRING:
 		return 1 // 後方互換: 長さ未指定のSTRING
@@ -112,6 +119,14 @@ func (dt DataType) DefaultValue() interface{} {
 		return float64(0)
 	case TypeSTRING:
 		return ""
+	case TypeTIME:
+		return "T#0ms"
+	case TypeDATE:
+		return "D#1970-01-01"
+	case TypeTIME_OF_DAY:
+		return "TOD#00:00:00"
+	case TypeDATE_AND_TIME:
+		return "DT#1970-01-01-00:00:00"
 	default:
 		if dt.IsStringType() {
 			return ""

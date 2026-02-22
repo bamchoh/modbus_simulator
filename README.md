@@ -15,9 +15,10 @@
 
 - **変数管理（v0.0.8〜）**
   - **IEC 61131-3準拠のデータ型**
-    - スカラー型: BOOL, SINT, INT, DINT, USINT, UINT, UDINT, REAL, LREAL, STRING[n]
+    - スカラー型: BOOL, SINT, INT, DINT, USINT, UINT, UDINT, REAL, LREAL, STRING[n], TIME, DATE, TIME_OF_DAY, DATE_AND_TIME
     - 配列型: ARRAY[型;サイズ]（例: ARRAY[INT;10]）
     - 構造体型: カスタム構造体定義（ネスト可能）
+    - 時間・日付型はメモリ上で数値として保存（TIME: int32、DATE: uint16、TIME_OF_DAY: uint32、DATE_AND_TIME: uint64）
   - 構造体フィールドと配列要素をフラット化して表示
   - 再帰的値編集ダイアログ（複雑なデータ構造に対応）
   - プロトコルマッピング: 変数を複数プロトコルのメモリアドレスにマッピング

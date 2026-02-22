@@ -165,6 +165,11 @@ JavaScript（goja）でPLC動作を記述。
    - 浮動小数点: REAL(32bit), LREAL(64bit)
    - 論理: BOOL
    - 文字列: STRING[n] (固定長、nはバイト数)
+   - 時間・日付: TIME, DATE, TIME_OF_DAY, DATE_AND_TIME
+     - TIME: 時間間隔（"T#1h30m45s" など、内部はミリ秒int32で2ワード保存）
+     - DATE: 日付（"D#2024-01-01" など、内部は1970-01-01からの日数uint16で1ワード保存）
+     - TIME_OF_DAY: 1日の中の時刻（"TOD#12:30:15" など、内部はミリ秒uint32で2ワード保存）
+     - DATE_AND_TIME: 日付と時刻（"DT#2024-01-01-12:30:15" など、内部はミリ秒単位のUnixタイムスタンプuint64で4ワード保存）
 
 2. **配列型**: `ARRAY[要素型;要素数]`
    - 例: `ARRAY[INT;10]`, `ARRAY[MyStruct;5]`
