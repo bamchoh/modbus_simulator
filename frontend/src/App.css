@@ -458,6 +458,46 @@ button:disabled {
   border-left: 3px solid #fbbf24;
 }
 
+/* Dialog sections */
+.dialog-section {
+  margin-bottom: 1rem;
+}
+
+.dialog-section-title {
+  margin: 0 0 0.5rem 0;
+  color: #9ca3af;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.dialog-field-editor {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.dialog-field-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.dialog-field-row:first-child {
+  margin-top: 0;
+}
+
+.dialog-content label {
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.dialog-description {
+  color: #999;
+  font-size: 0.875rem;
+  margin: 0 0 0.625rem 0;
+  line-height: 1.4;
+}
+
 .register-navigation {
   display: flex;
   align-items: center;

@@ -1087,12 +1087,14 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                   {editingRow ? editingRow.dataType : editingVariable.dataType}
                 </span>
               </div>
-              <div style={{ marginTop: '8px' }}>
-                <label style={{ fontSize: '0.85em', marginBottom: '4px', display: 'block' }}>値:</label>
-                {editingRow
-                  ? renderValueEditor(editingRow.dataType, editData, setEditData)
-                  : renderValueEditor(editingVariable.dataType, editData, setEditData)
-                }
+              <div className="dialog-row" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                <label>値:</label>
+                <div style={{ width: '100%' }}>
+                  {editingRow
+                    ? renderValueEditor(editingRow.dataType, editData, setEditData)
+                    : renderValueEditor(editingVariable.dataType, editData, setEditData)
+                  }
+                </div>
               </div>
             </div>
             <div className="dialog-buttons">
@@ -1109,76 +1111,86 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
           <div className="dialog" style={{ minWidth: '500px' }}>
             <h3>マッピング設定: {mappingVariable.name}</h3>
             <div className="dialog-content">
-              <p style={{ fontSize: '0.85em', color: '#999', margin: '0 0 10px 0' }}>
+              <p className="dialog-description">
                 この変数をプロトコルのアドレスにマッピングします。
               </p>
 
               {editMappings.map((m, index) => (
-                <div key={index} className="mapping-row" style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
-                  <select
-                    value={m.protocolType}
-                    onChange={(e) => {
-                      const updated = [...editMappings];
-                      updated[index] = { ...updated[index], protocolType: e.target.value };
-                      setEditMappings(updated);
-                    }}
-                    style={{ flex: 1 }}
-                  >
-                    {protocols.map((p) => (
-                      <option key={p.type} value={p.type}>{p.displayName}</option>
-                    ))}
-                  </select>
+                <div key={index} className="dialog-section">
+                  {/* ヘッダ行 */}
+                  <div className="dialog-row">
+                    <label style={{ flex: 1 }}>プロトコル</label>
+                    <label style={{ flex: 1 }}>メモリエリア</label>
+                    <label style={{ flex: 1 }}>アドレス</label>
+                    <label style={{ flex: 1 }}>エンディアン</label>
+                    <span style={{ width: '60px' }}></span>
+                  </div>
+                  {/* コントロール行 */}
+                  <div className="dialog-row">
+                    <select
+                      value={m.protocolType}
+                      onChange={(e) => {
+                        const updated = [...editMappings];
+                        updated[index] = { ...updated[index], protocolType: e.target.value };
+                        setEditMappings(updated);
+                      }}
+                      style={{ flex: 1 }}
+                    >
+                      {protocols.map((p) => (
+                        <option key={p.type} value={p.type}>{p.displayName}</option>
+                      ))}
+                    </select>
 
-                  <select
-                    value={m.memoryArea}
-                    onChange={(e) => {
-                      const updated = [...editMappings];
-                      updated[index] = { ...updated[index], memoryArea: e.target.value };
-                      setEditMappings(updated);
-                    }}
-                    style={{ flex: 1 }}
-                  >
-                    {memoryAreas.map((a) => (
-                      <option key={a.id} value={a.id}>{a.displayName}</option>
-                    ))}
-                  </select>
+                    <select
+                      value={m.memoryArea}
+                      onChange={(e) => {
+                        const updated = [...editMappings];
+                        updated[index] = { ...updated[index], memoryArea: e.target.value };
+                        setEditMappings(updated);
+                      }}
+                      style={{ flex: 1 }}
+                    >
+                      {memoryAreas.map((a) => (
+                        <option key={a.id} value={a.id}>{a.displayName}</option>
+                      ))}
+                    </select>
 
-                  <input
-                    type="number"
-                    value={m.address}
-                    onChange={(e) => {
-                      const updated = [...editMappings];
-                      updated[index] = { ...updated[index], address: parseInt(e.target.value) || 0 };
-                      setEditMappings(updated);
-                    }}
-                    placeholder="アドレス"
-                    style={{ width: '80px' }}
-                    min={0}
-                  />
+                    <input
+                      type="number"
+                      value={m.address}
+                      onChange={(e) => {
+                        const updated = [...editMappings];
+                        updated[index] = { ...updated[index], address: parseInt(e.target.value) || 0 };
+                        setEditMappings(updated);
+                      }}
+                      min={0}
+                      style={{ flex: 1 }}
+                    />
 
-                  <select
-                    value={m.endianness}
-                    onChange={(e) => {
-                      const updated = [...editMappings];
-                      updated[index] = { ...updated[index], endianness: e.target.value };
-                      setEditMappings(updated);
-                    }}
-                    style={{ width: '80px' }}
-                  >
-                    <option value="big">Big</option>
-                    <option value="little">Little</option>
-                  </select>
+                    <select
+                      value={m.endianness}
+                      onChange={(e) => {
+                        const updated = [...editMappings];
+                        updated[index] = { ...updated[index], endianness: e.target.value };
+                        setEditMappings(updated);
+                      }}
+                      style={{ flex: 1 }}
+                    >
+                      <option value="big">Big</option>
+                      <option value="little">Little</option>
+                    </select>
 
-                  <button
-                    onClick={() => handleRemoveMapping(index)}
-                    className="btn-small btn-danger"
-                  >
-                    X
-                  </button>
+                    <button
+                      onClick={() => handleRemoveMapping(index)}
+                      className="btn-small btn-danger"
+                    >
+                      X
+                    </button>
+                  </div>
                 </div>
               ))}
 
-              <button onClick={handleAddMapping} className="btn-secondary" style={{ marginTop: '4px' }}>
+              <button onClick={handleAddMapping} className="btn-secondary">
                 + マッピング追加
               </button>
             </div>
@@ -1197,9 +1209,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
             <div className="dialog-content">
               {/* 既存の構造体型一覧 */}
               {structTypes.length > 0 && (
-                <div style={{ marginBottom: '16px' }}>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9em' }}>登録済み構造体型</h4>
-                  <table className="opcua-variable-table" style={{ fontSize: '0.85em' }}>
+                <div className="dialog-section">
+                  <h4 className="dialog-section-title">登録済み構造体型</h4>
+                  <table className="opcua-variable-table">
                     <thead>
                       <tr>
                         <th>名前</th>
@@ -1227,7 +1239,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               )}
 
               {/* 新規構造体型登録 */}
-              <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9em' }}>新規構造体型</h4>
+              <h4 className="dialog-section-title">新規構造体型</h4>
               <div className="dialog-row">
                 <label>型名:</label>
                 <input
@@ -1237,11 +1249,23 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                   placeholder="例: MotorData"
                 />
               </div>
-              <div style={{ marginTop: '8px' }}>
-                <label style={{ fontSize: '0.85em' }}>フィールド:</label>
+              <div className="dialog-section">
+                <label>フィールド:</label>
                 {structTypeFields.map((field, index) => (
-                  <div key={index} style={{ marginTop: '4px', padding: '6px', border: '1px solid #444', borderRadius: '4px' }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div key={index} className="dialog-field-editor">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                      <strong>フィールド {index + 1}</strong>
+                      <button
+                        onClick={() => setStructTypeFields(structTypeFields.filter((_, i) => i !== index))}
+                        className="btn-small btn-danger"
+                        disabled={structTypeFields.length <= 1}
+                      >
+                        X
+                      </button>
+                    </div>
+
+                    <div className="dialog-row">
+                      <label>名前:</label>
                       <input
                         type="text"
                         value={field.name}
@@ -1251,8 +1275,11 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                           setStructTypeFields(updated);
                         }}
                         placeholder="フィールド名"
-                        style={{ flex: 1 }}
                       />
+                    </div>
+
+                    <div className="dialog-row">
+                      <label>カテゴリ:</label>
                       <select
                         value={field.category}
                         onChange={(e) => {
@@ -1265,38 +1292,32 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                           };
                           setStructTypeFields(updated);
                         }}
-                        style={{ width: '100px' }}
                       >
                         <option value="scalar">スカラー</option>
                         {structTypes.length > 0 && <option value="struct">構造体</option>}
                         <option value="array">配列</option>
                       </select>
-                      <button
-                        onClick={() => setStructTypeFields(structTypeFields.filter((_, i) => i !== index))}
-                        className="btn-small btn-danger"
-                        disabled={structTypeFields.length <= 1}
-                      >
-                        X
-                      </button>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
-                      {field.category === 'scalar' && (
-                        <>
-                          <select
-                            value={field.dataType}
-                            onChange={(e) => {
-                              const updated = [...structTypeFields];
-                              updated[index] = { ...updated[index], dataType: e.target.value };
-                              setStructTypeFields(updated);
-                            }}
-                            style={{ flex: 1 }}
-                          >
-                            {dataTypes.map((t) => (
-                              <option key={t.id} value={t.id}>{t.displayName}</option>
-                            ))}
-                            <option value="STRING">STRING</option>
-                          </select>
-                          {field.dataType === 'STRING' && (
+
+                    {field.category === 'scalar' && (
+                      <div className="dialog-row">
+                        <label>データ型:</label>
+                        <select
+                          value={field.dataType}
+                          onChange={(e) => {
+                            const updated = [...structTypeFields];
+                            updated[index] = { ...updated[index], dataType: e.target.value };
+                            setStructTypeFields(updated);
+                          }}
+                        >
+                          {dataTypes.map((t) => (
+                            <option key={t.id} value={t.id}>{t.displayName}</option>
+                          ))}
+                          <option value="STRING">STRING</option>
+                        </select>
+                        {field.dataType === 'STRING' && (
+                          <>
+                            <label>バイト長:</label>
                             <input
                               type="number"
                               value={field.stringLength}
@@ -1307,13 +1328,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                               }}
                               min={1}
                               max={256}
-                              style={{ width: '60px' }}
-                              placeholder="バイト長"
                             />
-                          )}
-                        </>
-                      )}
-                      {field.category === 'struct' && (
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {field.category === 'struct' && (
+                      <div className="dialog-row">
+                        <label>構造体型:</label>
                         <select
                           value={field.dataType}
                           onChange={(e) => {
@@ -1321,7 +1344,6 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                             updated[index] = { ...updated[index], dataType: e.target.value };
                             setStructTypeFields(updated);
                           }}
-                          style={{ flex: 1 }}
                         >
                           {structTypes
                             .filter(st => st.name !== structTypeName.trim())
@@ -1329,9 +1351,13 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                               <option key={st.name} value={st.name}>{st.name} ({st.wordCount}W)</option>
                             ))}
                         </select>
-                      )}
-                      {field.category === 'array' && (
-                        <>
+                      </div>
+                    )}
+
+                    {field.category === 'array' && (
+                      <>
+                        <div className="dialog-row">
+                          <label>要素カテゴリ:</label>
                           <select
                             value={field.arrayElemCategory}
                             onChange={(e) => {
@@ -1344,11 +1370,14 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                               };
                               setStructTypeFields(updated);
                             }}
-                            style={{ width: '90px' }}
                           >
                             <option value="scalar">スカラー</option>
                             {structTypes.length > 0 && <option value="struct">構造体</option>}
                           </select>
+                        </div>
+
+                        <div className="dialog-row">
+                          <label>要素型:</label>
                           <select
                             value={field.arrayElemType}
                             onChange={(e) => {
@@ -1356,7 +1385,6 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                               updated[index] = { ...updated[index], arrayElemType: e.target.value };
                               setStructTypeFields(updated);
                             }}
-                            style={{ flex: 1 }}
                           >
                             {field.arrayElemCategory === 'scalar'
                               ? <>
@@ -1373,20 +1401,25 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                             }
                           </select>
                           {field.arrayElemCategory === 'scalar' && field.arrayElemType === 'STRING' && (
-                            <input
-                              type="number"
-                              value={field.stringLength}
-                              onChange={(e) => {
-                                const updated = [...structTypeFields];
-                                updated[index] = { ...updated[index], stringLength: parseInt(e.target.value) || 1 };
-                                setStructTypeFields(updated);
-                              }}
-                              min={1}
-                              max={256}
-                              style={{ width: '50px' }}
-                              placeholder="バイト"
-                            />
+                            <>
+                              <label>バイト長:</label>
+                              <input
+                                type="number"
+                                value={field.stringLength}
+                                onChange={(e) => {
+                                  const updated = [...structTypeFields];
+                                  updated[index] = { ...updated[index], stringLength: parseInt(e.target.value) || 1 };
+                                  setStructTypeFields(updated);
+                                }}
+                                min={1}
+                                max={256}
+                              />
+                            </>
                           )}
+                        </div>
+
+                        <div className="dialog-row">
+                          <label>配列サイズ:</label>
                           <input
                             type="number"
                             value={field.arraySize}
@@ -1397,18 +1430,16 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                             }}
                             min={1}
                             max={1000}
-                            style={{ width: '60px' }}
-                            placeholder="個数"
                           />
-                        </>
-                      )}
-                    </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
                 <button
                   onClick={() => setStructTypeFields([...structTypeFields, { name: '', category: 'scalar', dataType: 'INT', stringLength: 20, arrayElemType: 'INT', arrayElemCategory: 'scalar', arraySize: 10 }])}
                   className="btn-secondary"
-                  style={{ marginTop: '4px', fontSize: '0.85em' }}
+                  style={{ marginTop: '0.5rem' }}
                 >
                   + フィールド追加
                 </button>
