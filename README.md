@@ -10,8 +10,17 @@
   - **Modbus**: TCP / RTU / RTU ASCII
     - 全 UnitID (1-247) に応答（個別に無効化可能）
     - コイル、ディスクリート入力、保持レジスタ、入力レジスタ（各65536点）
-  - **OMRON FINS**: UDP / TCP
+  - **OMRON FINS**: UDP
     - DM、CIO、WR、HR、AR エリアをサポート
+
+- **変数管理（v0.0.8〜）**
+  - **IEC 61131-3準拠のデータ型**
+    - スカラー型: BOOL, SINT, INT, DINT, USINT, UINT, UDINT, REAL, LREAL, STRING[n]
+    - 配列型: ARRAY[型;サイズ]（例: ARRAY[INT;10]）
+    - 構造体型: カスタム構造体定義（ネスト可能）
+  - 構造体フィールドと配列要素をフラット化して表示
+  - 再帰的値編集ダイアログ（複雑なデータ構造に対応）
+  - プロトコルマッピング: 変数を複数プロトコルのメモリアドレスにマッピング
 
 - **レジスタ操作**
   - マトリクス表示でレジスタ値を一覧表示
@@ -29,11 +38,13 @@
 
 - **スクリプト機能**
   - JavaScript でカスタムロジックを記述
+  - const/let 対応（IIFE wrapping）
+  - 実行時エラーを GUI に表示（タイムスタンプ付き、クリアボタン）
   - 周期実行（100ms〜1時間）
-  - `plc` オブジェクトでレジスタにアクセス
+  - `plc` オブジェクトでメモリアクセス（プロトコル非依存）
 
 - **プロジェクト管理**
-  - 設定・レジスタ・スクリプト・モニタリング項目を JSON ファイルにエクスポート/インポート
+  - 設定・レジスタ・スクリプト・変数・モニタリング項目を JSON ファイルにエクスポート/インポート
 
 ## インストール
 
@@ -96,21 +107,51 @@ go build ./...
 4. 登録した項目の値がリアルタイムで更新される
 5. 値をクリックして直接書き込み可能
 
+### 変数管理
+
+「変数」タブで IEC 61131-3 準拠の変数を管理できます。
+
+1. 「変数を追加」ボタンで新しい変数を作成
+2. 型カテゴリ（スカラー、配列、構造体）を選択
+3. データ型を選択（STRING の場合はバイト長も指定）
+4. 変数をクリックして値を編集
+5. 「マッピング」ボタンでプロトコルのメモリアドレスにマッピング
+
+構造体型は「構造体型管理」ボタンから登録できます。フィールドはスカラー、配列、構造体のいずれかを指定可能（ネスト対応）。
+
 ### スクリプト
 
-JavaScript でカスタムロジックを記述できます。
+JavaScript でカスタムロジックを記述できます。const/let が使用可能です。
 
 ```javascript
-// 保持レジスタ0の値をインクリメント
-var value = plc.getHoldingRegister(0);
-plc.setHoldingRegister(0, value + 1);
+// プロトコル非依存の汎用 API（推奨）
+const bit = plc.readBit("coil", 0);
+plc.writeBit("coil", 0, !bit);
 
-// コイル0をトグル
-var coil = plc.getCoil(0);
-plc.setCoil(0, !coil);
+const word = plc.readWord("holding_register", 0);
+plc.writeWord("holding_register", 0, word + 1);
+
+// Modbus 互換 API（下位互換性のため残存）
+const value = plc.getHoldingRegister(0);
+plc.setHoldingRegister(0, value + 1);
 ```
 
+実行時エラーはスクリプト一覧に表示されます（タイムスタンプ付き）。
+
 #### 利用可能な API
+
+**プロトコル非依存 API（推奨）**:
+
+| メソッド                              | 説明                                           |
+| ------------------------------------- | ---------------------------------------------- |
+| `plc.readBit(area, address)`          | 指定メモリエリアのビットを読み取り             |
+| `plc.writeBit(area, address, value)`  | 指定メモリエリアのビットを書き込み             |
+| `plc.readWord(area, address)`         | 指定メモリエリアのワード（16bit）を読み取り   |
+| `plc.writeWord(area, address, value)` | 指定メモリエリアのワード（16bit）を書き込み   |
+
+メモリエリアはプロトコルにより異なります（例: Modbus の "coil", "holding_register"、FINS の "DM", "CIO" など）。
+
+**Modbus 互換 API**:
 
 | メソッド                                 | 説明                         |
 | ---------------------------------------- | ---------------------------- |
@@ -139,14 +180,16 @@ plc.setCoil(0, !coil);
 internal/
 ├── domain/           # ドメイン層
 │   ├── protocol/     # プロトコル共通インターフェース
+│   ├── variable/     # 変数エンティティ（IEC 61131-3データ型）
 │   ├── script/       # スクリプトエンティティ
 │   └── datastore/    # DataStore 共通定義
 ├── application/      # アプリケーション層
-│   ├── plc_service.go  # メインサービス（モニタリング管理含む）
+│   ├── plc_service.go  # メインサービス（モニタリング・変数管理含む）
 │   └── dto.go          # DTO 定義
 └── infrastructure/   # インフラ層（プロトコル実装）
     ├── modbus/       # Modbus サーバー実装
     ├── fins/         # OMRON FINS サーバー実装
+    ├── adapter/      # 変数とDataStoreのアダプタ
     └── scripting/    # JavaScript エンジン（goja）
 ```
 
