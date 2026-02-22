@@ -4,10 +4,12 @@ import {
   ReadBits,
   ReadWords,
   WriteBit,
-  WriteWord
+  WriteWord,
+  IsOPCUAProtocol
 } from '../../wailsjs/go/main/App';
 import { application } from '../../wailsjs/go/models';
 import { MonitoringView } from './MonitoringView';
+import { OPCUAVariableView } from './OPCUAVariableView';
 
 type RegisterTab = 'list' | 'monitoring';
 
@@ -117,6 +119,9 @@ export function RegisterPanel() {
   // サブタブ
   const [activeTab, setActiveTab] = useState<RegisterTab>('list');
 
+  // OPC UAプロトコルかどうか
+  const [isOPCUA, setIsOPCUA] = useState(false);
+
   const [memoryAreas, setMemoryAreas] = useState<application.MemoryAreaDTO[]>([]);
   const [selectedArea, setSelectedArea] = useState<string>('');
   const [startAddress, setStartAddress] = useState(0);
@@ -138,8 +143,23 @@ export function RegisterPanel() {
   const [editInputFormat, setEditInputFormat] = useState<DisplayFormat>('decimal');
   const [editValue, setEditValue] = useState('');
 
+  // OPC UAプロトコルかどうかを確認
+  useEffect(() => {
+    const checkProtocol = async () => {
+      try {
+        const isOpcua = await IsOPCUAProtocol();
+        setIsOPCUA(isOpcua);
+      } catch (e) {
+        console.error('Failed to check protocol:', e);
+      }
+    };
+    checkProtocol();
+  }, []);
+
   // メモリエリア一覧を取得
   useEffect(() => {
+    if (isOPCUA) return; // OPC UAの場合はスキップ
+
     const loadAreas = async () => {
       try {
         const areas = await GetMemoryAreas();
@@ -154,10 +174,14 @@ export function RegisterPanel() {
       }
     };
     loadAreas();
-  }, []);
+  }, [isOPCUA]);
 
   const currentArea = memoryAreas.find(a => a.id === selectedArea);
   const isBitType = currentArea?.isBit ?? false;
+  const isByteAddr = currentArea?.byteAddressing ?? false;
+
+  // ワードアドレスを表示用アドレスに変換する（バイトアドレスの場合は*2）
+  const toDisplayAddr = (wordAddr: number) => isByteAddr ? wordAddr * 2 : wordAddr;
 
   const loadRegisters = useCallback(async () => {
     if (!selectedArea) return;
@@ -446,6 +470,16 @@ export function RegisterPanel() {
     return rows;
   };
 
+  // OPC UAの場合は変数ビューを表示
+  if (isOPCUA) {
+    return (
+      <div className="panel">
+        <h2>OPC UA 変数</h2>
+        <OPCUAVariableView autoRefresh={autoRefresh} />
+      </div>
+    );
+  }
+
   return (
     <div className="panel">
       <h2>レジスタ</h2>
@@ -566,7 +600,7 @@ export function RegisterPanel() {
               <th className="row-header"></th>
               {Array.from({ length: effectiveColumns }, (_, i) => (
                 <th key={i} className="col-header" colSpan={wordCount}>
-                  +{i * wordCount}{wordCount > 1 ? `~+${i * wordCount + wordCount - 1}` : ''}
+                  +{toDisplayAddr(i * wordCount)}{wordCount > 1 ? `~+${toDisplayAddr(i * wordCount + wordCount - 1)}` : ''}
                 </th>
               ))}
             </tr>
@@ -574,7 +608,7 @@ export function RegisterPanel() {
           <tbody>
             {getRows().map((row) => (
               <tr key={row.rowStart}>
-                <td className="row-header">{row.rowStart}</td>
+                <td className="row-header">{toDisplayAddr(row.rowStart)}</td>
                 {row.cells.map((cell) => (
                   <td
                     key={cell.index}
@@ -599,7 +633,7 @@ export function RegisterPanel() {
         >
           前へ
         </button>
-        <span>{startAddress} - {startAddress + PAGE_SIZE - 1}</span>
+        <span>{toDisplayAddr(startAddress)} - {toDisplayAddr(startAddress + PAGE_SIZE - 1)}</span>
         <button
           onClick={() => setStartAddress(startAddress + PAGE_SIZE)}
           className="btn-secondary"
@@ -617,7 +651,7 @@ export function RegisterPanel() {
             <div className="dialog-content">
               <div className="dialog-row">
                 <label>アドレス:</label>
-                <span className="dialog-value">{editingAddress}</span>
+                <span className="dialog-value">{toDisplayAddr(editingAddress)}</span>
               </div>
 
               <div className="dialog-row">

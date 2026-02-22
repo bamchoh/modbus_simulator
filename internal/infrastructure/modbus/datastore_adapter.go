@@ -46,7 +46,7 @@ func (h *DataStoreRequestHandler) HandleCoils(req *modbus.CoilsRequest) ([]bool,
 	if !h.handler.IsUnitIdEnabled(req.UnitId) {
 		return nil, modbus.ErrIllegalFunction
 	}
-	return h.handler.store.GetCoils(req.Addr, req.Quantity)
+	return h.handler.store.ReadBits(AreaCoils, uint32(req.Addr), req.Quantity)
 }
 
 // HandleDiscreteInputs はディスクリート入力読み取りを処理する (Function Code 2)
@@ -55,7 +55,7 @@ func (h *DataStoreRequestHandler) HandleDiscreteInputs(req *modbus.DiscreteInput
 	if !h.handler.IsUnitIdEnabled(req.UnitId) {
 		return nil, modbus.ErrIllegalFunction
 	}
-	return h.handler.store.GetDiscreteInputs(req.Addr, req.Quantity)
+	return h.handler.store.ReadBits(AreaDiscreteInputs, uint32(req.Addr), req.Quantity)
 }
 
 // HandleHoldingRegisters は保持レジスタ読み取りを処理する (Function Code 3)
@@ -67,14 +67,14 @@ func (h *DataStoreRequestHandler) HandleHoldingRegisters(req *modbus.HoldingRegi
 
 	if req.IsWrite {
 		// 書き込みリクエスト (Function Code 6, 16)
-		if err := h.handler.store.SetHoldingRegisters(req.Addr, req.Args); err != nil {
+		if err := h.handler.store.WriteWords(AreaHoldingRegs, uint32(req.Addr), req.Args); err != nil {
 			return nil, modbus.ErrIllegalDataAddress
 		}
 		return req.Args, nil
 	}
 
 	// 読み取りリクエスト
-	return h.handler.store.GetHoldingRegisters(req.Addr, req.Quantity)
+	return h.handler.store.ReadWords(AreaHoldingRegs, uint32(req.Addr), req.Quantity)
 }
 
 // HandleInputRegisters は入力レジスタ読み取りを処理する (Function Code 4)
@@ -83,7 +83,7 @@ func (h *DataStoreRequestHandler) HandleInputRegisters(req *modbus.InputRegister
 	if !h.handler.IsUnitIdEnabled(req.UnitId) {
 		return nil, modbus.ErrIllegalFunction
 	}
-	return h.handler.store.GetInputRegisters(req.Addr, req.Quantity)
+	return h.handler.store.ReadWords(AreaInputRegs, uint32(req.Addr), req.Quantity)
 }
 
 // HandleWriteSingleCoil は単一コイル書き込みを処理する (Function Code 5)
@@ -95,7 +95,7 @@ func (h *DataStoreRequestHandler) HandleWriteSingleCoil(req *modbus.CoilsRequest
 	if len(req.Args) == 0 {
 		return modbus.ErrIllegalDataValue
 	}
-	return h.handler.store.SetCoil(req.Addr, req.Args[0])
+	return h.handler.store.WriteBit(AreaCoils, uint32(req.Addr), req.Args[0])
 }
 
 // HandleWriteMultipleCoils は複数コイル書き込みを処理する (Function Code 15)
@@ -104,7 +104,7 @@ func (h *DataStoreRequestHandler) HandleWriteMultipleCoils(req *modbus.CoilsRequ
 	if !h.handler.IsUnitIdEnabled(req.UnitId) {
 		return modbus.ErrIllegalFunction
 	}
-	return h.handler.store.SetCoils(req.Addr, req.Args)
+	return h.handler.store.WriteBits(AreaCoils, uint32(req.Addr), req.Args)
 }
 
 // RTUDataStoreAdapter はDataStoreHandlerをrtu.RequestHandlerに適合させるアダプター
@@ -137,7 +137,7 @@ func (a *RTUDataStoreAdapter) HandleReadCoils(unitID byte, address, quantity uin
 	if !a.handler.IsUnitIdEnabled(unitID) {
 		return nil, rtu.ErrIllegalFunction
 	}
-	values, err := a.handler.store.GetCoils(address, quantity)
+	values, err := a.handler.store.ReadBits(AreaCoils, uint32(address), quantity)
 	if err != nil {
 		return nil, rtu.ErrIllegalDataAddress
 	}
@@ -150,7 +150,7 @@ func (a *RTUDataStoreAdapter) HandleReadDiscreteInputs(unitID byte, address, qua
 	if !a.handler.IsUnitIdEnabled(unitID) {
 		return nil, rtu.ErrIllegalFunction
 	}
-	values, err := a.handler.store.GetDiscreteInputs(address, quantity)
+	values, err := a.handler.store.ReadBits(AreaDiscreteInputs, uint32(address), quantity)
 	if err != nil {
 		return nil, rtu.ErrIllegalDataAddress
 	}
@@ -163,7 +163,7 @@ func (a *RTUDataStoreAdapter) HandleReadHoldingRegisters(unitID byte, address, q
 	if !a.handler.IsUnitIdEnabled(unitID) {
 		return nil, rtu.ErrIllegalFunction
 	}
-	values, err := a.handler.store.GetHoldingRegisters(address, quantity)
+	values, err := a.handler.store.ReadWords(AreaHoldingRegs, uint32(address), quantity)
 	if err != nil {
 		return nil, rtu.ErrIllegalDataAddress
 	}
@@ -176,7 +176,7 @@ func (a *RTUDataStoreAdapter) HandleReadInputRegisters(unitID byte, address, qua
 	if !a.handler.IsUnitIdEnabled(unitID) {
 		return nil, rtu.ErrIllegalFunction
 	}
-	values, err := a.handler.store.GetInputRegisters(address, quantity)
+	values, err := a.handler.store.ReadWords(AreaInputRegs, uint32(address), quantity)
 	if err != nil {
 		return nil, rtu.ErrIllegalDataAddress
 	}
@@ -189,7 +189,7 @@ func (a *RTUDataStoreAdapter) HandleWriteSingleCoil(unitID byte, address uint16,
 	if !a.handler.IsUnitIdEnabled(unitID) {
 		return rtu.ErrIllegalFunction
 	}
-	if err := a.handler.store.SetCoil(address, value); err != nil {
+	if err := a.handler.store.WriteBit(AreaCoils, uint32(address), value); err != nil {
 		return rtu.ErrIllegalDataAddress
 	}
 	return nil
@@ -201,7 +201,7 @@ func (a *RTUDataStoreAdapter) HandleWriteSingleRegister(unitID byte, address, va
 	if !a.handler.IsUnitIdEnabled(unitID) {
 		return rtu.ErrIllegalFunction
 	}
-	if err := a.handler.store.SetHoldingRegister(address, value); err != nil {
+	if err := a.handler.store.WriteWord(AreaHoldingRegs, uint32(address), value); err != nil {
 		return rtu.ErrIllegalDataAddress
 	}
 	return nil
@@ -213,7 +213,7 @@ func (a *RTUDataStoreAdapter) HandleWriteMultipleCoils(unitID byte, address uint
 	if !a.handler.IsUnitIdEnabled(unitID) {
 		return rtu.ErrIllegalFunction
 	}
-	if err := a.handler.store.SetCoils(address, values); err != nil {
+	if err := a.handler.store.WriteBits(AreaCoils, uint32(address), values); err != nil {
 		return rtu.ErrIllegalDataAddress
 	}
 	return nil
@@ -225,7 +225,7 @@ func (a *RTUDataStoreAdapter) HandleWriteMultipleRegisters(unitID byte, address 
 	if !a.handler.IsUnitIdEnabled(unitID) {
 		return rtu.ErrIllegalFunction
 	}
-	if err := a.handler.store.SetHoldingRegisters(address, values); err != nil {
+	if err := a.handler.store.WriteWords(AreaHoldingRegs, uint32(address), values); err != nil {
 		return rtu.ErrIllegalDataAddress
 	}
 	return nil

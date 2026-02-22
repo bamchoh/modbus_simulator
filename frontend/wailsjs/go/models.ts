@@ -44,6 +44,106 @@ export namespace application {
 	        this.displayName = source["displayName"];
 	    }
 	}
+	export class DataTypeInfoDTO {
+	    id: string;
+	    displayName: string;
+	    description: string;
+	    wordCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DataTypeInfoDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.displayName = source["displayName"];
+	        this.description = source["description"];
+	        this.wordCount = source["wordCount"];
+	    }
+	}
+	export class StructFieldDTO {
+	    name: string;
+	    dataType: string;
+	    offset: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new StructFieldDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.dataType = source["dataType"];
+	        this.offset = source["offset"];
+	    }
+	}
+	export class StructTypeDTO {
+	    name: string;
+	    fields: StructFieldDTO[];
+	    wordCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new StructTypeDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.fields = this.convertValues(source["fields"], StructFieldDTO);
+	        this.wordCount = source["wordCount"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class DataTypesDTO {
+	    types: DataTypeInfoDTO[];
+	    structTypes?: StructTypeDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new DataTypesDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.types = this.convertValues(source["types"], DataTypeInfoDTO);
+	        this.structTypes = this.convertValues(source["structTypes"], StructTypeDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class OptionDTO {
 	    value: string;
 	    label: string;
@@ -124,6 +224,7 @@ export namespace application {
 	    isBit: boolean;
 	    size: number;
 	    readOnly: boolean;
+	    byteAddressing: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new MemoryAreaDTO(source);
@@ -136,6 +237,7 @@ export namespace application {
 	        this.isBit = source["isBit"];
 	        this.size = source["size"];
 	        this.readOnly = source["readOnly"];
+	        this.byteAddressing = source["byteAddressing"];
 	    }
 	}
 	export class MonitoringItemDTO {
@@ -160,6 +262,70 @@ export namespace application {
 	        this.bitWidth = source["bitWidth"];
 	        this.endianness = source["endianness"];
 	        this.displayFormat = source["displayFormat"];
+	    }
+	}
+	export class OPCUADataTypeDTO {
+	    id: string;
+	    displayName: string;
+	    description: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new OPCUADataTypeDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.displayName = source["displayName"];
+	        this.description = source["description"];
+	    }
+	}
+	export class OPCUADataTypesDTO {
+	    types: OPCUADataTypeDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new OPCUADataTypesDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.types = this.convertValues(source["types"], OPCUADataTypeDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class OPCUAVariableDTO {
+	    name: string;
+	    dataType: string;
+	    value: any;
+	    nodeId: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new OPCUAVariableDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.dataType = source["dataType"];
+	        this.value = source["value"];
+	        this.nodeId = source["nodeId"];
 	    }
 	}
 	
@@ -212,6 +378,24 @@ export namespace application {
 		    }
 		    return a;
 		}
+	}
+	export class ProtocolMappingDTO {
+	    protocolType: string;
+	    memoryArea: string;
+	    address: number;
+	    endianness: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProtocolMappingDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.protocolType = source["protocolType"];
+	        this.memoryArea = source["memoryArea"];
+	        this.address = source["address"];
+	        this.endianness = source["endianness"];
+	    }
 	}
 	export class VariantDTO {
 	    id: string;
@@ -289,6 +473,8 @@ export namespace application {
 	    code: string;
 	    intervalMs: number;
 	    isRunning: boolean;
+	    lastError: string;
+	    errorAt: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ScriptDTO(source);
@@ -301,8 +487,12 @@ export namespace application {
 	        this.code = source["code"];
 	        this.intervalMs = source["intervalMs"];
 	        this.isRunning = source["isRunning"];
+	        this.lastError = source["lastError"];
+	        this.errorAt = source["errorAt"];
 	    }
 	}
+	
+	
 	export class UnitIDSettingsDTO {
 	    min: number;
 	    max: number;
@@ -318,6 +508,44 @@ export namespace application {
 	        this.max = source["max"];
 	        this.disabledIds = source["disabledIds"];
 	    }
+	}
+	export class VariableDTO {
+	    id: string;
+	    name: string;
+	    dataType: string;
+	    value: any;
+	    mappings?: ProtocolMappingDTO[];
+	
+	    static createFrom(source: any = {}) {
+	        return new VariableDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.dataType = source["dataType"];
+	        this.value = source["value"];
+	        this.mappings = this.convertValues(source["mappings"], ProtocolMappingDTO);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }

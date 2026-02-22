@@ -12,6 +12,8 @@ import (
 	// プロトコル実装をレジストリに登録するためのブランクインポート
 	_ "modbus_simulator/internal/infrastructure/fins"
 	_ "modbus_simulator/internal/infrastructure/modbus"
+	_ "modbus_simulator/internal/infrastructure/opcua"
+	_ "modbus_simulator/internal/infrastructure/s7comm"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"go.bug.st/serial"
@@ -189,6 +191,11 @@ func (a *App) RunScriptOnce(code string) (interface{}, error) {
 	return a.plcService.RunScriptOnce(code)
 }
 
+// ClearScriptError はスクリプトのエラー情報をクリアする
+func (a *App) ClearScriptError(id string) {
+	a.plcService.ClearScriptError(id)
+}
+
 // GetIntervalPresets は周期プリセットを取得する
 func (a *App) GetIntervalPresets() []application.IntervalPresetDTO {
 	return a.plcService.GetIntervalPresets()
@@ -307,4 +314,90 @@ func (a *App) GetSerialPorts() []string {
 	}
 	sort.Strings(ports)
 	return ports
+}
+
+// === 変数管理 ===
+
+// GetVariables はすべての変数を返す
+func (a *App) GetVariables() []*application.VariableDTO {
+	return a.plcService.GetVariables()
+}
+
+// CreateVariable は新しい変数を作成する
+func (a *App) CreateVariable(name, dataType string, value interface{}) (*application.VariableDTO, error) {
+	return a.plcService.CreateVariable(name, dataType, value)
+}
+
+// UpdateVariableValue は変数の値を更新する
+func (a *App) UpdateVariableValue(id string, value interface{}) error {
+	return a.plcService.UpdateVariableValue(id, value)
+}
+
+// DeleteVariable は変数を削除する
+func (a *App) DeleteVariable(id string) error {
+	return a.plcService.DeleteVariable(id)
+}
+
+// GetDataTypes はデータ型一覧を返す
+func (a *App) GetDataTypes() *application.DataTypesDTO {
+	return a.plcService.GetDataTypes()
+}
+
+// GetVariableMappings は変数のマッピングを返す
+func (a *App) GetVariableMappings(id string) ([]application.ProtocolMappingDTO, error) {
+	return a.plcService.GetVariableMappings(id)
+}
+
+// UpdateVariableMappings は変数のマッピングを更新する
+func (a *App) UpdateVariableMappings(id string, mappings []application.ProtocolMappingDTO) error {
+	return a.plcService.UpdateVariableMappings(id, mappings)
+}
+
+// === 構造体型管理 ===
+
+// RegisterStructType は構造体型を登録する
+func (a *App) RegisterStructType(dto application.StructTypeDTO) (*application.StructTypeDTO, error) {
+	return a.plcService.RegisterStructType(dto)
+}
+
+// GetStructTypes は全構造体型を返す
+func (a *App) GetStructTypes() []application.StructTypeDTO {
+	return a.plcService.GetStructTypes()
+}
+
+// DeleteStructType は構造体型を削除する
+func (a *App) DeleteStructType(name string) error {
+	return a.plcService.DeleteStructType(name)
+}
+
+// === OPC UA変数管理 ===
+
+// GetOPCUAVariables はOPC UA変数一覧を返す
+func (a *App) GetOPCUAVariables() []*application.OPCUAVariableDTO {
+	return a.plcService.GetOPCUAVariables()
+}
+
+// GetOPCUADataTypes はOPC UAのデータ型一覧を返す
+func (a *App) GetOPCUADataTypes() *application.OPCUADataTypesDTO {
+	return a.plcService.GetOPCUADataTypes()
+}
+
+// CreateOPCUAVariable はOPC UA変数を作成する
+func (a *App) CreateOPCUAVariable(name, dataType string, value interface{}) (*application.OPCUAVariableDTO, error) {
+	return a.plcService.CreateOPCUAVariable(name, dataType, value)
+}
+
+// UpdateOPCUAVariable はOPC UA変数を更新する
+func (a *App) UpdateOPCUAVariable(name string, value interface{}) error {
+	return a.plcService.UpdateOPCUAVariable(name, value)
+}
+
+// DeleteOPCUAVariable はOPC UA変数を削除する
+func (a *App) DeleteOPCUAVariable(name string) error {
+	return a.plcService.DeleteOPCUAVariable(name)
+}
+
+// IsOPCUAProtocol はOPC UAプロトコルがアクティブかどうかを返す
+func (a *App) IsOPCUAProtocol() bool {
+	return a.plcService.IsOPCUAProtocol()
 }

@@ -5,23 +5,27 @@ import (
 	"time"
 
 	"modbus_simulator/internal/domain/script"
-	"modbus_simulator/internal/infrastructure/modbus"
+	"modbus_simulator/internal/domain/variable"
 )
 
-func TestNewScriptEngineWithDataStore(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+func newTestEngine() (*ScriptEngine, *variable.VariableStore) {
+	vs := variable.NewVariableStore()
+	engine := NewScriptEngine(vs)
+	return engine, vs
+}
+
+func TestNewScriptEngine(t *testing.T) {
+	engine, _ := newTestEngine()
 	if engine == nil {
-		t.Fatal("NewScriptEngineWithDataStore returned nil")
+		t.Fatal("NewScriptEngine returned nil")
 	}
-	if engine.dataStore == nil {
-		t.Fatal("dataStore is nil")
+	if engine.variableStore == nil {
+		t.Fatal("variableStore is nil")
 	}
 }
 
 func TestScriptEngine_RunOnce(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+	engine, _ := newTestEngine()
 
 	// 単純な計算
 	result, err := engine.RunOnce("1 + 2")
@@ -34,8 +38,7 @@ func TestScriptEngine_RunOnce(t *testing.T) {
 }
 
 func TestScriptEngine_RunOnce_WithConsole(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+	engine, _ := newTestEngine()
 
 	// console.logは正常に動作するべき
 	_, err := engine.RunOnce(`console.log("test message")`)
@@ -45,8 +48,7 @@ func TestScriptEngine_RunOnce_WithConsole(t *testing.T) {
 }
 
 func TestScriptEngine_RunOnce_SyntaxError(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+	engine, _ := newTestEngine()
 
 	// 構文エラー
 	_, err := engine.RunOnce("invalid syntax {{{")
@@ -55,50 +57,56 @@ func TestScriptEngine_RunOnce_SyntaxError(t *testing.T) {
 	}
 }
 
-func TestScriptEngine_RunOnce_ReadWriteWord(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+func TestScriptEngine_RunOnce_ReadWriteVariable(t *testing.T) {
+	engine, vs := newTestEngine()
 
-	// 汎用APIでワードを書き込む
-	_, err := engine.RunOnce(`plc.writeWord("holdingRegisters", 10, 1234)`)
+	// 変数を作成
+	_, err := vs.CreateVariable("Counter", variable.TypeINT, int16(0))
+	if err != nil {
+		t.Fatalf("CreateVariable failed: %v", err)
+	}
+
+	// スクリプトで書き込む
+	_, err = engine.RunOnce(`plc.writeVariable("Counter", 1234)`)
 	if err != nil {
 		t.Fatalf("RunOnce failed: %v", err)
 	}
 
-	// DataStoreで確認
-	val, _ := store.ReadWord(modbus.AreaHoldingRegs, 10)
-	if val != 1234 {
-		t.Errorf("expected 1234, got %d", val)
+	// VariableStoreで確認
+	v, _ := vs.GetVariableByName("Counter")
+	if v.Value != int16(1234) {
+		t.Errorf("expected int16(1234), got %v (%T)", v.Value, v.Value)
 	}
 
 	// スクリプトで読み取り
-	result, err := engine.RunOnce(`plc.readWord("holdingRegisters", 10)`)
+	result, err := engine.RunOnce(`plc.readVariable("Counter")`)
 	if err != nil {
 		t.Fatalf("RunOnce failed: %v", err)
 	}
 	if result != int64(1234) {
-		t.Errorf("expected 1234, got %v", result)
+		t.Errorf("expected 1234, got %v (%T)", result, result)
 	}
 }
 
-func TestScriptEngine_RunOnce_ReadWriteBit(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+func TestScriptEngine_RunOnce_ReadWriteVariable_BOOL(t *testing.T) {
+	engine, vs := newTestEngine()
 
-	// 汎用APIでビットを書き込む
-	_, err := engine.RunOnce(`plc.writeBit("coils", 5, true)`)
+	_, err := vs.CreateVariable("Flag", variable.TypeBOOL, false)
+	if err != nil {
+		t.Fatalf("CreateVariable failed: %v", err)
+	}
+
+	_, err = engine.RunOnce(`plc.writeVariable("Flag", true)`)
 	if err != nil {
 		t.Fatalf("RunOnce failed: %v", err)
 	}
 
-	// DataStoreで確認
-	val, _ := store.ReadBit(modbus.AreaCoils, 5)
-	if !val {
-		t.Error("expected true, got false")
+	v, _ := vs.GetVariableByName("Flag")
+	if v.Value != true {
+		t.Errorf("expected true, got %v", v.Value)
 	}
 
-	// スクリプトで読み取り
-	result, err := engine.RunOnce(`plc.readBit("coils", 5)`)
+	result, err := engine.RunOnce(`plc.readVariable("Flag")`)
 	if err != nil {
 		t.Fatalf("RunOnce failed: %v", err)
 	}
@@ -107,88 +115,100 @@ func TestScriptEngine_RunOnce_ReadWriteBit(t *testing.T) {
 	}
 }
 
-func TestScriptEngine_RunOnce_ModbusCompatMethods(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+func TestScriptEngine_RunOnce_ReadWriteVariable_REAL(t *testing.T) {
+	engine, vs := newTestEngine()
 
-	// Modbus互換API: setCoil/getCoil
-	_, err := engine.RunOnce(`plc.setCoil(10, true)`)
+	_, err := vs.CreateVariable("Temperature", variable.TypeREAL, float32(0))
 	if err != nil {
-		t.Fatalf("setCoil failed: %v", err)
+		t.Fatalf("CreateVariable failed: %v", err)
 	}
 
-	val, _ := store.GetCoil(10)
-	if !val {
-		t.Error("expected coil[10] to be true")
-	}
-
-	result, err := engine.RunOnce(`plc.getCoil(10)`)
+	_, err = engine.RunOnce(`plc.writeVariable("Temperature", 25.5)`)
 	if err != nil {
-		t.Fatalf("getCoil failed: %v", err)
-	}
-	if result != true {
-		t.Errorf("expected true, got %v", result)
+		t.Fatalf("RunOnce failed: %v", err)
 	}
 
-	// Modbus互換API: setHoldingRegister/getHoldingRegister
-	_, err = engine.RunOnce(`plc.setHoldingRegister(20, 5678)`)
-	if err != nil {
-		t.Fatalf("setHoldingRegister failed: %v", err)
-	}
-
-	word, _ := store.GetHoldingRegister(20)
-	if word != 5678 {
-		t.Errorf("expected 5678, got %d", word)
-	}
-
-	result, err = engine.RunOnce(`plc.getHoldingRegister(20)`)
-	if err != nil {
-		t.Fatalf("getHoldingRegister failed: %v", err)
-	}
-	if result != int64(5678) {
-		t.Errorf("expected 5678, got %v", result)
+	v, _ := vs.GetVariableByName("Temperature")
+	if v.Value != float32(25.5) {
+		t.Errorf("expected float32(25.5), got %v (%T)", v.Value, v.Value)
 	}
 }
 
-func TestScriptEngine_RunOnce_GetAreas(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+func TestScriptEngine_RunOnce_GetVariables(t *testing.T) {
+	engine, vs := newTestEngine()
 
-	result, err := engine.RunOnce(`plc.getAreas()`)
+	vs.CreateVariable("Var1", variable.TypeINT, int16(0))
+	vs.CreateVariable("Var2", variable.TypeBOOL, false)
+
+	result, err := engine.RunOnce(`plc.getVariables()`)
 	if err != nil {
-		t.Fatalf("getAreas failed: %v", err)
+		t.Fatalf("getVariables failed: %v", err)
 	}
 
-	// gojaは[]map[string]interface{}を返す
-	var areas []map[string]interface{}
 	switch v := result.(type) {
 	case []interface{}:
-		areas = make([]map[string]interface{}, len(v))
-		for i, item := range v {
-			areas[i] = item.(map[string]interface{})
+		if len(v) != 2 {
+			t.Errorf("expected 2 variables, got %d", len(v))
 		}
-	case []map[string]interface{}:
-		areas = v
+	case []string:
+		if len(v) != 2 {
+			t.Errorf("expected 2 variables, got %d", len(v))
+		}
 	default:
 		t.Fatalf("unexpected type: %T", result)
 	}
+}
 
-	if len(areas) != 4 {
-		t.Errorf("expected 4 areas, got %d", len(areas))
+func TestScriptEngine_RunOnce_ReadNonexistentVariable(t *testing.T) {
+	engine, _ := newTestEngine()
+
+	result, err := engine.RunOnce(`plc.readVariable("Nonexistent")`)
+	if err != nil {
+		t.Fatalf("RunOnce failed: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil, got %v", result)
+	}
+}
+
+func TestScriptEngine_RunOnce_IncrementVariable(t *testing.T) {
+	engine, vs := newTestEngine()
+
+	_, err := vs.CreateVariable("Count", variable.TypeINT, int16(10))
+	if err != nil {
+		t.Fatalf("CreateVariable failed: %v", err)
+	}
+
+	// readして+1してwrite（ユーザーの実際のユースケース）
+	_, err = engine.RunOnce(`
+		var count = plc.readVariable("Count");
+		plc.writeVariable("Count", count + 1);
+	`)
+	if err != nil {
+		t.Fatalf("RunOnce failed: %v", err)
+	}
+
+	v, _ := vs.GetVariableByName("Count")
+	if v.Value != int16(11) {
+		t.Errorf("expected int16(11), got %v (%T)", v.Value, v.Value)
 	}
 }
 
 func TestScriptEngine_StartStopScript(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+	engine, vs := newTestEngine()
+
+	_, err := vs.CreateVariable("Counter", variable.TypeINT, int16(0))
+	if err != nil {
+		t.Fatalf("CreateVariable failed: %v", err)
+	}
 
 	s := script.NewScript("test-1", "counter", `
-		var val = plc.readWord("holdingRegisters", 0);
-		plc.writeWord("holdingRegisters", 0, val + 1);
+		var val = plc.readVariable("Counter");
+		plc.writeVariable("Counter", val + 1);
 	`, 50*time.Millisecond)
 
 	// スクリプト開始
-	err := engine.StartScript(s)
+	err = engine.StartScript(s)
 	if err != nil {
 		t.Fatalf("StartScript failed: %v", err)
 	}
@@ -201,7 +221,8 @@ func TestScriptEngine_StartStopScript(t *testing.T) {
 	// 少し待ってカウンターが増加していることを確認
 	time.Sleep(200 * time.Millisecond)
 
-	val, _ := store.ReadWord(modbus.AreaHoldingRegs, 0)
+	v, _ := vs.GetVariableByName("Counter")
+	val := v.Value.(int16)
 	if val < 2 {
 		t.Errorf("expected counter >= 2, got %d", val)
 	}
@@ -219,8 +240,7 @@ func TestScriptEngine_StartStopScript(t *testing.T) {
 }
 
 func TestScriptEngine_StopScript_NotFound(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+	engine, _ := newTestEngine()
 
 	err := engine.StopScript("nonexistent")
 	if err == nil {
@@ -229,8 +249,7 @@ func TestScriptEngine_StopScript_NotFound(t *testing.T) {
 }
 
 func TestScriptEngine_StopAll(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+	engine, _ := newTestEngine()
 
 	// 複数のスクリプトを開始
 	s1 := script.NewScript("test-1", "script1", `1+1`, 100*time.Millisecond)
@@ -254,8 +273,7 @@ func TestScriptEngine_StopAll(t *testing.T) {
 }
 
 func TestScriptEngine_GetRunningScripts(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+	engine, _ := newTestEngine()
 
 	// 初期状態
 	if len(engine.GetRunningScripts()) != 0 {
@@ -283,28 +301,29 @@ func TestScriptEngine_GetRunningScripts(t *testing.T) {
 }
 
 func TestScriptEngine_StartScript_ReplaceRunning(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+	engine, vs := newTestEngine()
 
-	s1 := script.NewScript("test-1", "script1", `plc.writeWord("holdingRegisters", 0, 111)`, 50*time.Millisecond)
-	s2 := script.NewScript("test-1", "script1-updated", `plc.writeWord("holdingRegisters", 0, 222)`, 50*time.Millisecond)
+	_, _ = vs.CreateVariable("Val", variable.TypeINT, int16(0))
+
+	s1 := script.NewScript("test-1", "script1", `plc.writeVariable("Val", 111)`, 50*time.Millisecond)
+	s2 := script.NewScript("test-1", "script1-updated", `plc.writeVariable("Val", 222)`, 50*time.Millisecond)
 
 	// 最初のスクリプト開始
 	_ = engine.StartScript(s1)
 	time.Sleep(100 * time.Millisecond)
 
-	val, _ := store.ReadWord(modbus.AreaHoldingRegs, 0)
-	if val != 111 {
-		t.Errorf("expected 111, got %d", val)
+	v, _ := vs.GetVariableByName("Val")
+	if v.Value != int16(111) {
+		t.Errorf("expected int16(111), got %v", v.Value)
 	}
 
 	// 同じIDで別のスクリプトを開始（置き換え）
 	_ = engine.StartScript(s2)
 	time.Sleep(100 * time.Millisecond)
 
-	val, _ = store.ReadWord(modbus.AreaHoldingRegs, 0)
-	if val != 222 {
-		t.Errorf("expected 222, got %d", val)
+	v, _ = vs.GetVariableByName("Val")
+	if v.Value != int16(222) {
+		t.Errorf("expected int16(222), got %v", v.Value)
 	}
 
 	// クリーンアップ
@@ -312,8 +331,7 @@ func TestScriptEngine_StartScript_ReplaceRunning(t *testing.T) {
 }
 
 func TestScriptEngine_StartScript_CompileError(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+	engine, _ := newTestEngine()
 
 	s := script.NewScript("test-1", "invalid", `invalid syntax {{{`, 100*time.Millisecond)
 
@@ -324,8 +342,7 @@ func TestScriptEngine_StartScript_CompileError(t *testing.T) {
 }
 
 func TestScriptEngine_IsRunning(t *testing.T) {
-	store := modbus.NewModbusDataStore(100, 100, 100, 100)
-	engine := NewScriptEngineWithDataStore(store)
+	engine, _ := newTestEngine()
 
 	// 存在しないスクリプト
 	if engine.IsRunning("nonexistent") {

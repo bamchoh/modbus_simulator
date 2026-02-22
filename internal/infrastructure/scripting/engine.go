@@ -6,44 +6,36 @@ import (
 	"sync"
 	"time"
 
-	"modbus_simulator/internal/domain/protocol"
-	"modbus_simulator/internal/domain/register"
 	"modbus_simulator/internal/domain/script"
+	"modbus_simulator/internal/domain/variable"
 
 	"github.com/dop251/goja"
 )
 
 // ScriptEngine はJavaScriptスクリプトを実行するエンジン
 type ScriptEngine struct {
-	mu        sync.Mutex
-	store     *register.RegisterStore
-	dataStore protocol.DataStore
-	scripts   map[string]*runningScript
+	mu            sync.Mutex
+	variableStore *variable.VariableStore
+	scripts       map[string]*runningScript
 }
 
 type runningScript struct {
-	script *script.Script
-	cancel context.CancelFunc
-	vm     *goja.Runtime
+	script    *script.Script
+	cancel    context.CancelFunc
+	vm        *goja.Runtime
+	lastError string
+	errorAt   time.Time
 }
 
-// NewScriptEngine は新しいスクリプトエンジンを作成する（後方互換性のため維持）
-func NewScriptEngine(store *register.RegisterStore) *ScriptEngine {
+// NewScriptEngine は新しいスクリプトエンジンを作成する
+func NewScriptEngine(varStore *variable.VariableStore) *ScriptEngine {
 	return &ScriptEngine{
-		store:   store,
-		scripts: make(map[string]*runningScript),
+		variableStore: varStore,
+		scripts:       make(map[string]*runningScript),
 	}
 }
 
-// NewScriptEngineWithDataStore はDataStoreを使用する新しいスクリプトエンジンを作成する
-func NewScriptEngineWithDataStore(dataStore protocol.DataStore) *ScriptEngine {
-	return &ScriptEngine{
-		dataStore: dataStore,
-		scripts:   make(map[string]*runningScript),
-	}
-}
-
-// createVM は新しいJavaScript VMを作成し、レジスタアクセス関数を登録する
+// createVM は新しいJavaScript VMを作成し、変数アクセス関数を登録する
 func (e *ScriptEngine) createVM() *goja.Runtime {
 	vm := goja.New()
 
@@ -59,15 +51,98 @@ func (e *ScriptEngine) createVM() *goja.Runtime {
 	})
 	vm.Set("console", console)
 
-	// PLCオブジェクト - レジスタアクセス用
+	// PLCオブジェクト - 変数アクセス用
 	plc := vm.NewObject()
 
-	// DataStoreを使用する場合
-	if e.dataStore != nil {
-		e.registerDataStoreMethods(plc)
-	} else if e.store != nil {
-		// 旧RegisterStoreを使用する場合（後方互換性）
-		e.registerLegacyMethods(plc)
+	if e.variableStore != nil {
+		// readVariable(name) - 変数名で値を読む
+		plc.Set("readVariable", func(name string) interface{} {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return nil
+			}
+			// gojaがJavaScript numberとして扱えるようGoの標準型に変換
+			return toJSCompatibleValue(v.Value)
+		})
+
+		// writeVariable(name, value) - 変数名で値を書く
+		plc.Set("writeVariable", func(name string, value interface{}) {
+			e.variableStore.UpdateValueByName(name, value)
+		})
+
+		// readArrayElement(name, index) - 配列要素読み込み
+		plc.Set("readArrayElement", func(name string, index int) interface{} {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return nil
+			}
+			arr, ok := v.Value.([]interface{})
+			if !ok || index < 0 || index >= len(arr) {
+				return nil
+			}
+			return toJSCompatibleValue(arr[index])
+		})
+
+		// writeArrayElement(name, index, value) - 配列要素書き込み
+		plc.Set("writeArrayElement", func(name string, index int, value interface{}) {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return
+			}
+			arr, ok := v.Value.([]interface{})
+			if !ok || index < 0 || index >= len(arr) {
+				return
+			}
+			newArr := make([]interface{}, len(arr))
+			copy(newArr, arr)
+			newArr[index] = value
+			e.variableStore.UpdateValueByName(name, newArr)
+		})
+
+		// readStructField(name, fieldName) - 構造体フィールド読み込み
+		plc.Set("readStructField", func(name string, fieldName string) interface{} {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return nil
+			}
+			m, ok := v.Value.(map[string]interface{})
+			if !ok {
+				return nil
+			}
+			val, exists := m[fieldName]
+			if !exists {
+				return nil
+			}
+			return toJSCompatibleValue(val)
+		})
+
+		// writeStructField(name, fieldName, value) - 構造体フィールド書き込み
+		plc.Set("writeStructField", func(name string, fieldName string, value interface{}) {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return
+			}
+			m, ok := v.Value.(map[string]interface{})
+			if !ok {
+				return
+			}
+			newMap := make(map[string]interface{})
+			for k, val := range m {
+				newMap[k] = val
+			}
+			newMap[fieldName] = value
+			e.variableStore.UpdateValueByName(name, newMap)
+		})
+
+		// getVariables() - 全変数名一覧を取得
+		plc.Set("getVariables", func() []string {
+			vars := e.variableStore.GetAllVariables()
+			names := make([]string, len(vars))
+			for i, v := range vars {
+				names[i] = v.Name
+			}
+			return names
+		})
 	}
 
 	vm.Set("plc", plc)
@@ -75,174 +150,27 @@ func (e *ScriptEngine) createVM() *goja.Runtime {
 	return vm
 }
 
-// registerDataStoreMethods はDataStoreを使用するメソッドを登録する
-func (e *ScriptEngine) registerDataStoreMethods(plc *goja.Object) {
-	// === 汎用メソッド（新API）===
-
-	// readBit(area, address) - ビット値を読み込む
-	plc.Set("readBit", func(area string, address int) bool {
-		val, _ := e.dataStore.ReadBit(area, uint32(address))
-		return val
-	})
-
-	// writeBit(area, address, value) - ビット値を書き込む
-	plc.Set("writeBit", func(area string, address int, value bool) {
-		e.dataStore.WriteBit(area, uint32(address), value)
-	})
-
-	// readWord(area, address) - ワード値を読み込む
-	plc.Set("readWord", func(area string, address int) int {
-		val, _ := e.dataStore.ReadWord(area, uint32(address))
-		return int(val)
-	})
-
-	// writeWord(area, address, value) - ワード値を書き込む
-	plc.Set("writeWord", func(area string, address int, value int) {
-		e.dataStore.WriteWord(area, uint32(address), uint16(value))
-	})
-
-	// getAreas() - 利用可能なエリア一覧を取得
-	plc.Set("getAreas", func() []map[string]interface{} {
-		areas := e.dataStore.GetAreas()
-		result := make([]map[string]interface{}, len(areas))
-		for i, area := range areas {
-			result[i] = map[string]interface{}{
-				"id":          area.ID,
-				"displayName": area.DisplayName,
-				"isBit":       area.IsBit,
-				"size":        area.Size,
-				"readOnly":    area.ReadOnly,
-			}
-		}
-		return result
-	})
-
-	// === Modbus互換メソッド（既存スクリプトとの互換性）===
-	// 注: これらはModbusエリア名を使用しますが、他のプロトコルでは
-	// 対応するエリアがない場合があります。汎用APIの使用を推奨。
-
-	// コイル操作
-	plc.Set("getCoil", func(address int) bool {
-		val, _ := e.dataStore.ReadBit("coils", uint32(address))
-		return val
-	})
-	plc.Set("setCoil", func(address int, value bool) {
-		e.dataStore.WriteBit("coils", uint32(address), value)
-	})
-
-	// ディスクリート入力操作
-	plc.Set("getDiscreteInput", func(address int) bool {
-		val, _ := e.dataStore.ReadBit("discreteInputs", uint32(address))
-		return val
-	})
-	plc.Set("setDiscreteInput", func(address int, value bool) {
-		e.dataStore.WriteBit("discreteInputs", uint32(address), value)
-	})
-
-	// 保持レジスタ操作
-	plc.Set("getHoldingRegister", func(address int) int {
-		val, _ := e.dataStore.ReadWord("holdingRegisters", uint32(address))
-		return int(val)
-	})
-	plc.Set("setHoldingRegister", func(address int, value int) {
-		e.dataStore.WriteWord("holdingRegisters", uint32(address), uint16(value))
-	})
-
-	// 入力レジスタ操作
-	plc.Set("getInputRegister", func(address int) int {
-		val, _ := e.dataStore.ReadWord("inputRegisters", uint32(address))
-		return int(val)
-	})
-	plc.Set("setInputRegister", func(address int, value int) {
-		e.dataStore.WriteWord("inputRegisters", uint32(address), uint16(value))
-	})
-}
-
-// registerLegacyMethods は旧RegisterStoreを使用するメソッドを登録する（後方互換性）
-func (e *ScriptEngine) registerLegacyMethods(plc *goja.Object) {
-	// コイル操作
-	plc.Set("getCoil", func(address int) bool {
-		val, _ := e.store.GetCoil(uint16(address))
-		return val
-	})
-	plc.Set("setCoil", func(address int, value bool) {
-		e.store.SetCoil(uint16(address), value)
-	})
-
-	// ディスクリート入力操作
-	plc.Set("getDiscreteInput", func(address int) bool {
-		val, _ := e.store.GetDiscreteInput(uint16(address))
-		return val
-	})
-	plc.Set("setDiscreteInput", func(address int, value bool) {
-		e.store.SetDiscreteInput(uint16(address), value)
-	})
-
-	// 保持レジスタ操作
-	plc.Set("getHoldingRegister", func(address int) int {
-		val, _ := e.store.GetHoldingRegister(uint16(address))
-		return int(val)
-	})
-	plc.Set("setHoldingRegister", func(address int, value int) {
-		e.store.SetHoldingRegister(uint16(address), uint16(value))
-	})
-
-	// 入力レジスタ操作
-	plc.Set("getInputRegister", func(address int) int {
-		val, _ := e.store.GetInputRegister(uint16(address))
-		return int(val)
-	})
-	plc.Set("setInputRegister", func(address int, value int) {
-		e.store.SetInputRegister(uint16(address), uint16(value))
-	})
-
-	// 汎用メソッドのスタブ（後方互換性のため、Modbus固定で実装）
-	plc.Set("readBit", func(area string, address int) bool {
-		switch area {
-		case "coils":
-			val, _ := e.store.GetCoil(uint16(address))
-			return val
-		case "discreteInputs":
-			val, _ := e.store.GetDiscreteInput(uint16(address))
-			return val
-		}
-		return false
-	})
-	plc.Set("writeBit", func(area string, address int, value bool) {
-		switch area {
-		case "coils":
-			e.store.SetCoil(uint16(address), value)
-		case "discreteInputs":
-			e.store.SetDiscreteInput(uint16(address), value)
-		}
-	})
-	plc.Set("readWord", func(area string, address int) int {
-		switch area {
-		case "holdingRegisters":
-			val, _ := e.store.GetHoldingRegister(uint16(address))
-			return int(val)
-		case "inputRegisters":
-			val, _ := e.store.GetInputRegister(uint16(address))
-			return int(val)
-		}
-		return 0
-	})
-	plc.Set("writeWord", func(area string, address int, value int) {
-		switch area {
-		case "holdingRegisters":
-			e.store.SetHoldingRegister(uint16(address), uint16(value))
-		case "inputRegisters":
-			e.store.SetInputRegister(uint16(address), uint16(value))
-		}
-	})
-	plc.Set("getAreas", func() []map[string]interface{} {
-		return []map[string]interface{}{
-			{"id": "coils", "displayName": "コイル (0x)", "isBit": true, "size": 65536, "readOnly": false},
-			{"id": "discreteInputs", "displayName": "ディスクリート入力 (1x)", "isBit": true, "size": 65536, "readOnly": false},
-			{"id": "holdingRegisters", "displayName": "保持レジスタ (4x)", "isBit": false, "size": 65536, "readOnly": false},
-			{"id": "inputRegisters", "displayName": "入力レジスタ (3x)", "isBit": false, "size": 65536, "readOnly": false},
-		}
-	})
+// toJSCompatibleValue はGoの型をgojaが扱えるJavaScript互換の型に変換する
+// int8/int16/int32 → int64, uint8/uint16/uint32 → int64, float32 → float64
+func toJSCompatibleValue(value interface{}) interface{} {
+	switch v := value.(type) {
+	case int8:
+		return int64(v)
+	case int16:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case uint8:
+		return int64(v)
+	case uint16:
+		return int64(v)
+	case uint32:
+		return int64(v)
+	case float32:
+		return float64(v)
+	default:
+		return value
+	}
 }
 
 // StartScript はスクリプトを開始する
@@ -258,8 +186,9 @@ func (e *ScriptEngine) StartScript(s *script.Script) error {
 
 	vm := e.createVM()
 
-	// スクリプトをコンパイル
-	program, err := goja.Compile(s.Name, s.Code, false)
+	// スクリプトをIIFEでラップしてコンパイル（const/letの再宣言エラーを防止）
+	wrappedCode := "(function(){\n" + s.Code + "\n})();"
+	program, err := goja.Compile(s.Name, wrappedCode, false)
 	if err != nil {
 		return fmt.Errorf("failed to compile script: %w", err)
 	}
@@ -286,12 +215,25 @@ func (e *ScriptEngine) StartScript(s *script.Script) error {
 				func() {
 					defer func() {
 						if r := recover(); r != nil {
+							errMsg := fmt.Sprintf("panic: %v", r)
 							fmt.Printf("Script %s panicked: %v\n", s.Name, r)
+							e.mu.Lock()
+							if cur, ok := e.scripts[s.ID]; ok {
+								cur.lastError = errMsg
+								cur.errorAt = time.Now()
+							}
+							e.mu.Unlock()
 						}
 					}()
-					_, err := vm.RunProgram(program)
-					if err != nil {
-						fmt.Printf("Script %s error: %v\n", s.Name, err)
+					_, runErr := vm.RunProgram(program)
+					if runErr != nil {
+						fmt.Printf("Script %s error: %v\n", s.Name, runErr)
+						e.mu.Lock()
+						if cur, ok := e.scripts[s.ID]; ok {
+							cur.lastError = runErr.Error()
+							cur.errorAt = time.Now()
+						}
+						e.mu.Unlock()
 					}
 				}()
 			}
@@ -347,6 +289,29 @@ func (e *ScriptEngine) GetRunningScripts() []string {
 	return ids
 }
 
+// GetLastError はスクリプトの最新エラー情報を返す
+func (e *ScriptEngine) GetLastError(scriptID string) (string, time.Time) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	rs, ok := e.scripts[scriptID]
+	if !ok {
+		return "", time.Time{}
+	}
+	return rs.lastError, rs.errorAt
+}
+
+// ClearError はスクリプトのエラー情報をクリアする
+func (e *ScriptEngine) ClearError(scriptID string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if rs, ok := e.scripts[scriptID]; ok {
+		rs.lastError = ""
+		rs.errorAt = time.Time{}
+	}
+}
+
 // RunOnce はスクリプトを1回だけ実行する（テスト用）
 func (e *ScriptEngine) RunOnce(code string) (interface{}, error) {
 	vm := e.createVM()
@@ -356,4 +321,3 @@ func (e *ScriptEngine) RunOnce(code string) (interface{}, error) {
 	}
 	return result.Export(), nil
 }
-

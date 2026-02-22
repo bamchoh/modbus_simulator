@@ -12,6 +12,8 @@ import (
 
 	"modbus_simulator/internal/domain/protocol"
 	"modbus_simulator/internal/domain/script"
+	"modbus_simulator/internal/domain/variable"
+	"modbus_simulator/internal/infrastructure/adapter"
 	"modbus_simulator/internal/infrastructure/scripting"
 
 	"github.com/google/uuid"
@@ -21,6 +23,9 @@ import (
 type PLCService struct {
 	mu       sync.RWMutex
 	registry *protocol.Registry
+
+	// 中央変数ストア
+	variableStore *variable.VariableStore
 
 	// アクティブなプロトコル（1つのみ）
 	activeProtocol protocol.ProtocolType
@@ -44,11 +49,22 @@ type PLCService struct {
 
 // NewPLCService は新しいPLCServiceを作成する
 func NewPLCService() *PLCService {
+	varStore := variable.NewVariableStore()
+
 	service := &PLCService{
 		registry:        protocol.DefaultRegistry,
+		variableStore:   varStore,
 		scripts:         make(map[string]*script.Script),
 		monitoringItems: make(map[string]*MonitoringItemDTO),
 	}
+
+	// 変数設定を読み込み
+	_ = service.LoadVariablesConfig()
+
+	// 変数変更時に自動保存
+	varStore.SetOnChange(func() {
+		go service.saveVariablesConfigInternal()
+	})
 
 	// デフォルトでModbus TCPを設定
 	service.SetProtocol("modbus", "tcp")
@@ -150,10 +166,19 @@ func (s *PLCService) SetProtocol(protocolType string, variantID string) error {
 
 	// Factoryに全て任せる
 	config := factory.CreateConfigFromVariant(variantID)
-	dataStore := factory.CreateDataStore()
+	innerDataStore := factory.CreateDataStore()
+
+	// VariableBackedDataStoreでラップ（変数マッピング連動）
+	dataStore := adapter.NewVariableBackedDataStore(innerDataStore, s.variableStore, protocolType)
+
 	server, err := factory.CreateServer(config, dataStore)
 	if err != nil {
 		return err
+	}
+
+	// 旧アダプターがあれば解除
+	if old, ok := s.dataStore.(*adapter.VariableBackedDataStore); ok {
+		old.Detach()
 	}
 
 	s.factory = factory
@@ -162,7 +187,7 @@ func (s *PLCService) SetProtocol(protocolType string, variantID string) error {
 	s.config = config
 	s.dataStore = dataStore
 	s.server = server
-	s.scriptEngine = scripting.NewScriptEngineWithDataStore(dataStore)
+	s.scriptEngine = scripting.NewScriptEngine(s.variableStore)
 
 	// イベントエミッターをサーバーに設定
 	if s.eventEmitter != nil {
@@ -395,11 +420,12 @@ func (s *PLCService) GetMemoryAreas() []MemoryAreaDTO {
 	result := make([]MemoryAreaDTO, len(areas))
 	for i, area := range areas {
 		result[i] = MemoryAreaDTO{
-			ID:          area.ID,
-			DisplayName: area.DisplayName,
-			IsBit:       area.IsBit,
-			Size:        int(area.Size),
-			ReadOnly:    area.ReadOnly,
+			ID:             area.ID,
+			DisplayName:    area.DisplayName,
+			IsBit:          area.IsBit,
+			Size:           int(area.Size),
+			ReadOnly:       area.ReadOnly,
+			ByteAddressing: area.ByteAddressing,
 		}
 	}
 	return result
@@ -469,7 +495,7 @@ func (s *PLCService) CreateScript(name, code string, intervalMs int) (*ScriptDTO
 	sc := script.NewScript(id, name, code, time.Duration(intervalMs)*time.Millisecond)
 	s.scripts[id] = sc
 
-	return scriptToDTO(sc, false), nil
+	return scriptToDTO(sc, false, "", 0), nil
 }
 
 // UpdateScript はスクリプトを更新する
@@ -522,7 +548,16 @@ func (s *PLCService) GetScripts() []*ScriptDTO {
 	result := make([]*ScriptDTO, 0, len(s.scripts))
 	for _, sc := range s.scripts {
 		isRunning := s.scriptEngine.IsRunning(sc.ID)
-		result = append(result, scriptToDTO(sc, isRunning))
+		var lastError string
+		var errorAtMs int64
+		if isRunning {
+			errMsg, errAt := s.scriptEngine.GetLastError(sc.ID)
+			lastError = errMsg
+			if !errAt.IsZero() {
+				errorAtMs = errAt.UnixMilli()
+			}
+		}
+		result = append(result, scriptToDTO(sc, isRunning, lastError, errorAtMs))
 	}
 	return result
 }
@@ -538,7 +573,16 @@ func (s *PLCService) GetScript(id string) (*ScriptDTO, error) {
 	}
 
 	isRunning := s.scriptEngine.IsRunning(id)
-	return scriptToDTO(sc, isRunning), nil
+	var lastError string
+	var errorAtMs int64
+	if isRunning {
+		errMsg, errAt := s.scriptEngine.GetLastError(id)
+		lastError = errMsg
+		if !errAt.IsZero() {
+			errorAtMs = errAt.UnixMilli()
+		}
+	}
+	return scriptToDTO(sc, isRunning, lastError, errorAtMs), nil
 }
 
 // StartScript はスクリプトを開始する
@@ -562,6 +606,11 @@ func (s *PLCService) StopScript(id string) error {
 // RunScriptOnce はスクリプトを1回だけ実行する
 func (s *PLCService) RunScriptOnce(code string) (interface{}, error) {
 	return s.scriptEngine.RunOnce(code)
+}
+
+// ClearScriptError はスクリプトのエラー情報をクリアする
+func (s *PLCService) ClearScriptError(id string) {
+	s.scriptEngine.ClearError(id)
 }
 
 // Shutdown はサービスをシャットダウンする
@@ -641,13 +690,15 @@ func (s *PLCService) GetIntervalPresets() []IntervalPresetDTO {
 	return result
 }
 
-func scriptToDTO(sc *script.Script, isRunning bool) *ScriptDTO {
+func scriptToDTO(sc *script.Script, isRunning bool, lastError string, errorAtMs int64) *ScriptDTO {
 	return &ScriptDTO{
 		ID:         sc.ID,
 		Name:       sc.Name,
 		Code:       sc.Code,
 		IntervalMs: int(sc.Interval.Milliseconds()),
 		IsRunning:  isRunning,
+		LastError:  lastError,
+		ErrorAt:    errorAtMs,
 	}
 }
 
@@ -711,6 +762,13 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 		monitoringItems = append(monitoringItems, item)
 	}
 
+	// 構造体型定義を取得
+	allStructTypes := s.variableStore.GetAllStructTypes()
+	structTypeDTOs := make([]StructTypeDTO, len(allStructTypes))
+	for i, st := range allStructTypes {
+		structTypeDTOs[i] = structTypeToDTO(st)
+	}
+
 	return &ProjectDataDTO{
 		Version:         2, // 新バージョン
 		ProtocolType:    string(s.activeProtocol),
@@ -720,6 +778,7 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 		UnitIDSettings:  unitIDSettings,
 		Scripts:         scripts,
 		MonitoringItems: monitoringItems,
+		StructTypes:     structTypeDTOs,
 	}
 }
 
@@ -781,6 +840,24 @@ func (s *PLCService) ImportProject(data *ProjectDataDTO) error {
 				uint8Ids[i] = uint8(id)
 			}
 			us.SetDisabledUnitIDs(uint8Ids)
+		}
+	}
+
+	// 構造体型を復元（変数より先に復元する必要がある）
+	if data.StructTypes != nil {
+		for _, stDTO := range data.StructTypes {
+			fields := make([]variable.StructField, len(stDTO.Fields))
+			for i, f := range stDTO.Fields {
+				fields[i] = variable.StructField{
+					Name:     f.Name,
+					DataType: variable.DataType(f.DataType),
+				}
+			}
+			st, err := variable.NewStructTypeDef(stDTO.Name, fields, s.variableStore)
+			if err != nil {
+				continue
+			}
+			s.variableStore.RegisterStructType(st)
 		}
 	}
 
@@ -1099,4 +1176,367 @@ func (s *PLCService) LoadMonitoringConfig() error {
 	}
 
 	return nil
+}
+
+// === OPC UA変数管理 ===
+
+// GetOPCUAVariables はOPC UA変数一覧を返す
+func (s *PLCService) GetOPCUAVariables() []*OPCUAVariableDTO {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.activeProtocol != protocol.ProtocolOPCUA {
+		return nil
+	}
+
+	// OPCUADataStore の GetAllVariablesDTOs を呼び出す
+	type variableStore interface {
+		GetAllVariablesDTOs() []*OPCUAVariableDTO
+	}
+
+	vs, ok := s.dataStore.(variableStore)
+	if !ok {
+		return nil
+	}
+
+	return vs.GetAllVariablesDTOs()
+}
+
+// GetOPCUADataTypes はOPC UAのデータ型一覧を返す
+func (s *PLCService) GetOPCUADataTypes() *OPCUADataTypesDTO {
+	return &OPCUADataTypesDTO{
+		Types: []OPCUADataTypeDTO{
+			{ID: "BOOL", DisplayName: "BOOL", Description: "ブール値 (true/false)"},
+			{ID: "SINT", DisplayName: "SINT", Description: "符号付き8ビット整数 (-128 ~ 127)"},
+			{ID: "INT", DisplayName: "INT", Description: "符号付き16ビット整数 (-32768 ~ 32767)"},
+			{ID: "DINT", DisplayName: "DINT", Description: "符号付き32ビット整数"},
+			{ID: "USINT", DisplayName: "USINT", Description: "符号なし8ビット整数 (0 ~ 255)"},
+			{ID: "UINT", DisplayName: "UINT", Description: "符号なし16ビット整数 (0 ~ 65535)"},
+			{ID: "UDINT", DisplayName: "UDINT", Description: "符号なし32ビット整数"},
+			{ID: "REAL", DisplayName: "REAL", Description: "32ビット浮動小数点"},
+			{ID: "LREAL", DisplayName: "LREAL", Description: "64ビット浮動小数点"},
+			{ID: "STRING", DisplayName: "STRING", Description: "文字列"},
+		},
+	}
+}
+
+// CreateOPCUAVariable はOPC UA変数を作成する
+func (s *PLCService) CreateOPCUAVariable(name, dataType string, value interface{}) (*OPCUAVariableDTO, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.activeProtocol != protocol.ProtocolOPCUA {
+		return nil, fmt.Errorf("OPC UA protocol is not active")
+	}
+
+	type variableCreator interface {
+		CreateVariable(name, dataType string, value interface{}) (*OPCUAVariableDTO, error)
+	}
+
+	vc, ok := s.dataStore.(variableCreator)
+	if !ok {
+		return nil, fmt.Errorf("datastore does not support variable creation")
+	}
+
+	return vc.CreateVariable(name, dataType, value)
+}
+
+// UpdateOPCUAVariable はOPC UA変数を更新する
+func (s *PLCService) UpdateOPCUAVariable(name string, value interface{}) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.activeProtocol != protocol.ProtocolOPCUA {
+		return fmt.Errorf("OPC UA protocol is not active")
+	}
+
+	type variableUpdater interface {
+		UpdateVariable(name string, value interface{}) error
+	}
+
+	vu, ok := s.dataStore.(variableUpdater)
+	if !ok {
+		return fmt.Errorf("datastore does not support variable update")
+	}
+
+	return vu.UpdateVariable(name, value)
+}
+
+// DeleteOPCUAVariable はOPC UA変数を削除する
+func (s *PLCService) DeleteOPCUAVariable(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.activeProtocol != protocol.ProtocolOPCUA {
+		return fmt.Errorf("OPC UA protocol is not active")
+	}
+
+	type variableDeleter interface {
+		DeleteVariableByName(name string) error
+	}
+
+	vd, ok := s.dataStore.(variableDeleter)
+	if !ok {
+		return fmt.Errorf("datastore does not support variable deletion")
+	}
+
+	return vd.DeleteVariableByName(name)
+}
+
+// IsOPCUAProtocol はOPC UAプロトコルがアクティブかどうかを返す
+func (s *PLCService) IsOPCUAProtocol() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.activeProtocol == protocol.ProtocolOPCUA
+}
+
+// === 変数管理API ===
+
+// GetVariableStore は変数ストアを返す
+func (s *PLCService) GetVariableStore() *variable.VariableStore {
+	return s.variableStore
+}
+
+// GetVariables はすべての変数を返す
+func (s *PLCService) GetVariables() []*VariableDTO {
+	vars := s.variableStore.GetAllVariables()
+	result := make([]*VariableDTO, len(vars))
+	for i, v := range vars {
+		result[i] = s.variableToDTO(v)
+	}
+	// 名前順でソート
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	return result
+}
+
+// CreateVariable は新しい変数を作成する
+func (s *PLCService) CreateVariable(name, dataType string, initialValue interface{}) (*VariableDTO, error) {
+	dt := variable.DataType(dataType)
+	v, err := s.variableStore.CreateVariable(name, dt, initialValue)
+	if err != nil {
+		return nil, err
+	}
+	return s.variableToDTO(v), nil
+}
+
+// UpdateVariableValue は変数の値を更新する
+func (s *PLCService) UpdateVariableValue(id string, value interface{}) error {
+	return s.variableStore.UpdateValue(id, value)
+}
+
+// DeleteVariable は変数を削除する
+func (s *PLCService) DeleteVariable(id string) error {
+	return s.variableStore.DeleteVariable(id)
+}
+
+// GetVariableMappings は変数のマッピングを返す
+func (s *PLCService) GetVariableMappings(id string) ([]ProtocolMappingDTO, error) {
+	mappings := s.variableStore.GetMappings(id)
+	result := make([]ProtocolMappingDTO, len(mappings))
+	for i, m := range mappings {
+		result[i] = ProtocolMappingDTO{
+			ProtocolType: m.ProtocolType,
+			MemoryArea:   m.MemoryArea,
+			Address:      int(m.Address),
+			Endianness:   m.Endianness,
+		}
+	}
+	return result, nil
+}
+
+// UpdateVariableMappings は変数のマッピングを更新する
+func (s *PLCService) UpdateVariableMappings(id string, mappingDTOs []ProtocolMappingDTO) error {
+	mappings := make([]variable.ProtocolMapping, len(mappingDTOs))
+	for i, dto := range mappingDTOs {
+		mappings[i] = variable.ProtocolMapping{
+			ProtocolType: dto.ProtocolType,
+			MemoryArea:   dto.MemoryArea,
+			Address:      uint32(dto.Address),
+			Endianness:   dto.Endianness,
+		}
+	}
+	return s.variableStore.SetMappings(id, mappings)
+}
+
+// GetDataTypes はデータ型一覧を返す
+func (s *PLCService) GetDataTypes() *DataTypesDTO {
+	types := variable.AllDataTypes()
+	result := make([]DataTypeInfoDTO, 0, len(types))
+	for _, dt := range types {
+		// STRING は STRING[n] としてUIで動的生成するため除外
+		if dt == variable.TypeSTRING {
+			continue
+		}
+		result = append(result, DataTypeInfoDTO{
+			ID:          string(dt),
+			DisplayName: string(dt),
+			Description: dataTypeDescription(dt),
+			WordCount:   dt.WordCount(),
+		})
+	}
+
+	// 構造体型情報を含める
+	structTypes := s.variableStore.GetAllStructTypes()
+	structDTOs := make([]StructTypeDTO, len(structTypes))
+	for i, st := range structTypes {
+		structDTOs[i] = structTypeToDTO(st)
+	}
+
+	return &DataTypesDTO{Types: result, StructTypes: structDTOs}
+}
+
+// === 構造体型管理 ===
+
+// RegisterStructType は構造体型を登録する
+func (s *PLCService) RegisterStructType(dto StructTypeDTO) (*StructTypeDTO, error) {
+	fields := make([]variable.StructField, len(dto.Fields))
+	for i, f := range dto.Fields {
+		fields[i] = variable.StructField{
+			Name:     f.Name,
+			DataType: variable.DataType(f.DataType),
+		}
+	}
+
+	st, err := variable.NewStructTypeDef(dto.Name, fields, s.variableStore)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.variableStore.RegisterStructType(st); err != nil {
+		return nil, err
+	}
+
+	result := structTypeToDTO(st)
+	return &result, nil
+}
+
+// GetStructTypes は全構造体型を返す
+func (s *PLCService) GetStructTypes() []StructTypeDTO {
+	structTypes := s.variableStore.GetAllStructTypes()
+	result := make([]StructTypeDTO, len(structTypes))
+	for i, st := range structTypes {
+		result[i] = structTypeToDTO(st)
+	}
+	return result
+}
+
+// DeleteStructType は構造体型を削除する
+func (s *PLCService) DeleteStructType(name string) error {
+	return s.variableStore.DeleteStructType(name)
+}
+
+// structTypeToDTO は構造体型をDTOに変換する
+func structTypeToDTO(st *variable.StructTypeDef) StructTypeDTO {
+	fields := make([]StructFieldDTO, len(st.Fields))
+	for i, f := range st.Fields {
+		fields[i] = StructFieldDTO{
+			Name:     f.Name,
+			DataType: string(f.DataType),
+			Offset:   f.Offset,
+		}
+	}
+	return StructTypeDTO{
+		Name:      st.Name,
+		Fields:    fields,
+		WordCount: st.WordCount,
+	}
+}
+
+// variableToDTO は変数をDTOに変換する
+func (s *PLCService) variableToDTO(v *variable.Variable) *VariableDTO {
+	mappings := s.variableStore.GetMappings(v.ID)
+	mappingDTOs := make([]ProtocolMappingDTO, len(mappings))
+	for i, m := range mappings {
+		mappingDTOs[i] = ProtocolMappingDTO{
+			ProtocolType: m.ProtocolType,
+			MemoryArea:   m.MemoryArea,
+			Address:      int(m.Address),
+			Endianness:   m.Endianness,
+		}
+	}
+	return &VariableDTO{
+		ID:       v.ID,
+		Name:     v.Name,
+		DataType: string(v.DataType),
+		Value:    v.Value,
+		Mappings: mappingDTOs,
+	}
+}
+
+// dataTypeDescription はデータ型の説明を返す
+func dataTypeDescription(dt variable.DataType) string {
+	switch dt {
+	case variable.TypeBOOL:
+		return "ブール値 (1ビット)"
+	case variable.TypeSINT:
+		return "符号付き8ビット整数"
+	case variable.TypeINT:
+		return "符号付き16ビット整数"
+	case variable.TypeDINT:
+		return "符号付き32ビット整数"
+	case variable.TypeUSINT:
+		return "符号なし8ビット整数"
+	case variable.TypeUINT:
+		return "符号なし16ビット整数"
+	case variable.TypeUDINT:
+		return "符号なし32ビット整数"
+	case variable.TypeREAL:
+		return "32ビット浮動小数点"
+	case variable.TypeLREAL:
+		return "64ビット浮動小数点"
+	case variable.TypeSTRING:
+		return "文字列"
+	default:
+		return ""
+	}
+}
+
+// === 変数設定の永続化 ===
+
+// LoadVariablesConfig は変数設定をファイルから読み込む
+func (s *PLCService) LoadVariablesConfig() error {
+	configPath := s.getVariablesConfigPath()
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil // ファイルがなければ無視
+	}
+
+	var snapshot map[string]interface{}
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return fmt.Errorf("failed to parse variables config: %w", err)
+	}
+
+	return s.variableStore.Restore(snapshot)
+}
+
+// saveVariablesConfigInternal は変数設定をファイルに保存する（内部用）
+func (s *PLCService) saveVariablesConfigInternal() {
+	configPath := s.getVariablesConfigPath()
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		fmt.Printf("Failed to create config directory: %v\n", err)
+		return
+	}
+
+	snapshot := s.variableStore.Snapshot()
+	data, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		fmt.Printf("Failed to marshal variables config: %v\n", err)
+		return
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		fmt.Printf("Failed to write variables config: %v\n", err)
+	}
+}
+
+// getVariablesConfigPath は変数設定ファイルのパスを返す
+func (s *PLCService) getVariablesConfigPath() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		configDir = "."
+	}
+	return filepath.Join(configDir, "PLCSimulator", "variables_config.json")
 }

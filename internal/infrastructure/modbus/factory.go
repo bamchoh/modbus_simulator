@@ -36,12 +36,7 @@ func (f *ModbusServerFactory) CreateServer(config protocol.ProtocolConfig, store
 		return nil, fmt.Errorf("invalid config type: expected ModbusConfig")
 	}
 
-	modbusStore, ok := store.(*ModbusDataStore)
-	if !ok {
-		return nil, fmt.Errorf("invalid store type: expected ModbusDataStore")
-	}
-
-	return NewModbusServer(modbusConfig, modbusStore), nil
+	return NewModbusServer(modbusConfig, store), nil
 }
 
 // CreateDataStore はプロトコル用のデータストアを作成する
@@ -306,7 +301,7 @@ func DefaultASCIIConfig() *ModbusConfig {
 // ModbusServer はModbusプロトコルサーバー
 type ModbusServer struct {
 	config         *ModbusConfig
-	store          *ModbusDataStore
+	store          protocol.DataStore
 	handler        *DataStoreHandler
 	innerServer    *Server
 	status         protocol.ServerStatus
@@ -315,7 +310,7 @@ type ModbusServer struct {
 }
 
 // NewModbusServer は新しいModbusServerを作成する
-func NewModbusServer(config *ModbusConfig, store *ModbusDataStore) *ModbusServer {
+func NewModbusServer(config *ModbusConfig, store protocol.DataStore) *ModbusServer {
 	return &ModbusServer{
 		config:  config,
 		store:   store,
@@ -434,12 +429,12 @@ func (s *ModbusServer) SetSessionManager(manager *protocol.SessionManager) {
 
 // DataStoreHandler はDataStoreを使用するModbusハンドラー
 type DataStoreHandler struct {
-	store           *ModbusDataStore
+	store           protocol.DataStore
 	disabledUnitIDs map[uint8]bool
 }
 
 // NewDataStoreHandler は新しいDataStoreHandlerを作成する
-func NewDataStoreHandler(store *ModbusDataStore) *DataStoreHandler {
+func NewDataStoreHandler(store protocol.DataStore) *DataStoreHandler {
 	return &DataStoreHandler{
 		store:           store,
 		disabledUnitIDs: make(map[uint8]bool),

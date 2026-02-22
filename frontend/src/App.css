@@ -858,3 +858,89 @@ button:disabled {
   background: #f59e0b;
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
 }
+
+/* OPC UA Variable View */
+.opcua-variable-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.opcua-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: #0f3460;
+  border-radius: 4px;
+}
+
+.opcua-toolbar .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.opcua-variable-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.opcua-variable-table th,
+.opcua-variable-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #0f3460;
+}
+
+.opcua-variable-table th {
+  background: #0f3460;
+  font-weight: 500;
+  color: #e94560;
+}
+
+.opcua-variable-table tbody tr:hover {
+  background: rgba(233, 69, 96, 0.05);
+}
+
+.opcua-variable-table .var-name {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-weight: 500;
+  color: #eaeaea;
+}
+
+.opcua-variable-table .var-type {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  background: #1a1a2e;
+  padding: 0.125rem 0.5rem;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.opcua-variable-table .var-value {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-weight: 500;
+  color: #10b981;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.opcua-variable-table .var-value:hover {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.opcua-variable-table .var-nodeid {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.opcua-variable-table .var-actions {
+  display: flex;
+  gap: 0.5rem;
+}

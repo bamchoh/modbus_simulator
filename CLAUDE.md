@@ -8,7 +8,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-このプロジェクトは PLC シミュレーター です。マルチプロトコル対応で、Modbus（TCP/RTU/RTU ASCII）およびOMRON FINSプロトコルをサポートしています。スクリプトを記述することで周期処理を記述することができます。スクリプトは Javascript で記述します。GUIも持っており、各種レジスタの情報が一覧表示できます。もちろん GUI からレジスタの値を操作することも可能です。モニタリング機能により、任意のレジスタを登録してリアルタイムで監視・操作できます。
+このプロジェクトは PLC シミュレーター です。マルチプロトコル対応で、Modbus（TCP/RTU/RTU ASCII）およびOMRON FINSプロトコルをサポートしています。
+
+### 主な機能
+
+- **マルチプロトコル対応**: Modbus（TCP/RTU/ASCII）、OMRON FINS/UDP
+- **変数管理**: IEC 61131-3準拠のデータ型（スカラー、配列、構造体、STRING[n]）をサポート
+- **スクリプト機能**: JavaScriptで周期処理を記述。const/let対応（IIFE wrapping）、実行エラーのGUI表示
+- **レジスタ操作**: GUIからメモリエリアの値を直接操作可能
+- **モニタリング**: 任意のレジスタをリアルタイム監視・書き込み（ドラッグ&ドロップ並べ替え対応）
+- **プロトコルマッピング**: 変数を複数プロトコルのメモリアドレスにマッピング可能
 
 ## Build and Development Commands
 
@@ -67,7 +76,11 @@ internal/
 - **DataStore** (`internal/domain/protocol/server.go`): プロトコル共通のメモリ操作インターフェース
   - `ReadBits()`, `WriteBit()`, `ReadWords()`, `WriteWord()`: 汎用メモリ操作
   - `Snapshot()`, `Restore()`: Export/Import用
-- **ScriptEngine** (`internal/infrastructure/scripting/engine.go`): gojaベースのJavaScript実行エンジン。`plc`オブジェクトでDataStoreにアクセス可能
+- **ScriptEngine** (`internal/infrastructure/scripting/engine.go`): gojaベースのJavaScript実行エンジン
+  - `plc`オブジェクトでDataStoreにアクセス可能
+  - スクリプトコードをIIFE `(function(){...})();` でラップして、const/let再宣言エラーを回避
+  - 実行時エラーを保存して`GetLastError()`で取得可能
+  - 周期実行中のpanicをキャッチしてエラーとして記録
 
 ### フロントエンド構成（スキーマ駆動UI）
 
@@ -77,24 +90,100 @@ frontend/src/
 │   ├── ServerPanel.tsx     # スキーマ駆動のサーバー設定UI
 │   ├── RegisterPanel.tsx   # 汎用メモリ操作UI（サブタブで一覧/モニタリング切替）
 │   ├── MonitoringView.tsx  # カスタムレジスタモニタリング
-│   └── ScriptPanel.tsx     # スクリプト管理
+│   ├── VariableView.tsx    # 変数管理UI（IEC 61131-3データ型対応）
+│   └── ScriptPanel.tsx     # スクリプト管理（エラー表示機能付き）
 └── App.tsx                 # タブベースのメインUI
 ```
 
-ServerPanel.tsxは`GetProtocolSchema()`から取得したスキーマに基づき、`DynamicField`コンポーネントで動的にフォームを生成します。
+#### ServerPanel.tsx
+`GetProtocolSchema()`から取得したスキーマに基づき、`DynamicField`コンポーネントで動的にフォームを生成します。
 
-RegisterPanel.tsxは「一覧表示」と「モニタリング」のサブタブを持ち、モニタリングでは任意のレジスタを登録してリアルタイム監視・書き込みが可能です。モニタリング項目はドラッグ＆ドロップで並び替え可能（@dnd-kit使用）。プロトコル変更時はメモリエリアが異なるため、確認ダイアログ後にモニタリングリストがクリアされます。
+#### RegisterPanel.tsx
+「一覧表示」と「モニタリング」のサブタブを持ちます。
+- **一覧表示**: メモリエリアごとのレジスタ値を表示・編集
+- **モニタリング**: 任意のレジスタを登録してリアルタイム監視・書き込み可能
+  - ドラッグ＆ドロップで並び替え可能（@dnd-kit使用）
+  - プロトコル変更時は確認ダイアログ後にリストクリア
+
+#### VariableView.tsx
+IEC 61131-3準拠の変数管理機能。
+- **データ型サポート**:
+  - スカラー型: BOOL, SINT, INT, DINT, USINT, UINT, UDINT, REAL, LREAL, STRING[n]
+  - 配列型: ARRAY[型;サイズ]（例: ARRAY[INT;10]）
+  - 構造体型: カスタム構造体定義（ネスト可能）
+- **変数表示**: 構造体フィールドと配列要素をフラット化して行単位で表示
+  - 展開/折りたたみ機能（構造体・配列のヘッダー行）
+  - アドレスオフセット計算（フィールド・要素ごと）
+- **値編集ダイアログ**:
+  - 再帰的エディタで複雑なデータ構造に対応
+  - 構造体配列要素は折りたたみ可能（`StructArrayElementEditor`）
+  - 数値入力は10進、16進（0x）、2進（0b）対応
+- **プロトコルマッピング**: 変数を複数プロトコルのメモリアドレスにマッピング可能
+- **構造体型管理**: 構造体型の登録・削除機能
+
+#### ScriptPanel.tsx
+JavaScript（goja）でPLC動作を記述。
+- **エラー表示**: 実行時エラーをGUIに表示（タイムスタンプ付き、クリアボタン）
+- **const/let対応**: スクリプトコードをIIFEでラップして再宣言エラーを回避
+- **plcオブジェクト**: `plc.readBit()`, `plc.writeBit()`, `plc.readWord()`, `plc.writeWord()`でメモリアクセス
 
 ### Wailsバインディング
 
 `app.go`でフロントエンドに公開するメソッドを定義。`wails generate module`でTypeScript型定義を自動生成。
 
 主要API:
-- `GetProtocolSchema(protocolType)`: プロトコルのスキーマ（バリアント、フィールド定義）を取得
-- `GetCurrentConfig()`: 現在の設定を取得
-- `UpdateConfig(dto)`: 設定を更新
-- `ReadBits()`, `WriteBit()`, `ReadWords()`, `WriteWord()`: 汎用メモリ操作
-- `GetMonitoringItems()`, `AddMonitoringItem()`, `UpdateMonitoringItem()`, `DeleteMonitoringItem()`, `ReorderMonitoringItem()`, `ClearMonitoringItems()`: モニタリング項目管理
+- **プロトコル設定**:
+  - `GetProtocolSchema(protocolType)`: プロトコルのスキーマ（バリアント、フィールド定義）を取得
+  - `GetCurrentConfig()`: 現在の設定を取得
+  - `UpdateConfig(dto)`: 設定を更新
+- **メモリ操作**:
+  - `ReadBits()`, `WriteBit()`, `ReadWords()`, `WriteWord()`: 汎用メモリ操作
+- **モニタリング**:
+  - `GetMonitoringItems()`, `AddMonitoringItem()`, `UpdateMonitoringItem()`, `DeleteMonitoringItem()`, `ReorderMonitoringItem()`, `ClearMonitoringItems()`
+- **変数管理**:
+  - `GetVariables()`, `CreateVariable()`, `UpdateVariableValue()`, `DeleteVariable()`: 変数CRUD操作
+  - `GetDataTypes()`: サポートされているデータ型一覧を取得
+  - `GetStructTypes()`, `RegisterStructType()`, `DeleteStructType()`: 構造体型管理
+  - `UpdateVariableMappings()`: 変数のプロトコルマッピング設定
+- **スクリプト**:
+  - `GetScripts()`, `GetScript()`, `CreateScript()`, `UpdateScript()`, `DeleteScript()`: スクリプトCRUD操作
+  - `StartScript()`, `StopScript()`: スクリプト実行制御
+  - `ClearScriptError()`: スクリプトエラーをクリア
+
+### 変数管理とデータ型システム
+
+#### IEC 61131-3準拠のデータ型
+
+変数は以下のデータ型をサポート：
+
+1. **スカラー型**:
+   - 整数: SINT(8bit), INT(16bit), DINT(32bit), USINT, UINT, UDINT
+   - 浮動小数点: REAL(32bit), LREAL(64bit)
+   - 論理: BOOL
+   - 文字列: STRING[n] (固定長、nはバイト数)
+
+2. **配列型**: `ARRAY[要素型;要素数]`
+   - 例: `ARRAY[INT;10]`, `ARRAY[MyStruct;5]`
+   - 多次元配列は `ARRAY[ARRAY[INT;5];3]` のように表現
+
+3. **構造体型**: カスタム定義可能
+   - フィールドはスカラー、配列、構造体のいずれか
+   - 再帰的なネストに対応
+   - ワードオフセットは自動計算
+
+#### 変数の内部構造
+
+- **フラット化表示**: 構造体フィールドと配列要素を行単位で展開
+- **アドレスオフセット**: 各フィールド・要素のワードオフセットを計算して表示
+- **展開/折りたたみ**: 構造体・配列のヘッダー行で子要素の表示を制御
+- **再帰的編集**: ネストされたデータ構造を再帰的に編集可能
+
+#### プロトコルマッピング
+
+変数を複数プロトコルのメモリアドレスにマッピング可能：
+- 各マッピングは `protocolType`, `memoryArea`, `address`, `endianness` を指定
+- フィールド・要素のアドレスは自動計算（ベースアドレス + オフセット）
+- エンディアンは変数ごとに設定可能（big/little）
 
 ### 設定ファイル
 
@@ -111,6 +200,25 @@ RegisterPanel.tsxは「一覧表示」と「モニタリング」のサブタブ
    - `datastore.go`: `DataStore`インターフェースを実装
 3. `factory.go`の`init()`で`protocol.Register()`を呼び出してレジストリに登録
 4. **フロントエンド変更不要** - スキーマから自動生成
+
+## 重要な実装ポイント
+
+### Reactコンポーネントの状態管理
+
+- **コンポーネントの定義位置**: 関数コンポーネント内で別のコンポーネントを定義すると、再レンダリング時に新しいコンポーネントとして扱われ、`useState`などの状態がリセットされる
+  - 例: `StructArrayElementEditor`は`VariableView`の外で定義
+  - 内部で使用する関数は props で渡す
+- **キーの設定**: リスト描画時は安定した`key`を設定（インデックスだけでなく、パスベースのキーを使用）
+
+### スクリプトエンジン
+
+- **const/let対応**: goja VMで同じプログラムを周期的に実行すると再宣言エラーが発生するため、IIFEでラップ
+- **エラーハンドリング**: runtime panic をキャッチして`lastError`フィールドに保存し、GUI表示可能に
+
+### 値編集ダイアログ
+
+- **スクロール**: ダイアログ全体で1つのスクロール領域を使用（配列要素部分に独自スクロールを設定しない）
+- **再帰的エディタ**: `renderValueEditor`は`depth`パラメータで再帰の深さを追跡し、インデントを調整
 
 ## License
 

@@ -10,16 +10,40 @@ export function ClearMonitoringItems() {
   return window['go']['main']['App']['ClearMonitoringItems']();
 }
 
+export function ClearScriptError(arg1) {
+  return window['go']['main']['App']['ClearScriptError'](arg1);
+}
+
+export function CreateOPCUAVariable(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CreateOPCUAVariable'](arg1, arg2, arg3);
+}
+
 export function CreateScript(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateScript'](arg1, arg2, arg3);
+}
+
+export function CreateVariable(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CreateVariable'](arg1, arg2, arg3);
 }
 
 export function DeleteMonitoringItem(arg1) {
   return window['go']['main']['App']['DeleteMonitoringItem'](arg1);
 }
 
+export function DeleteOPCUAVariable(arg1) {
+  return window['go']['main']['App']['DeleteOPCUAVariable'](arg1);
+}
+
 export function DeleteScript(arg1) {
   return window['go']['main']['App']['DeleteScript'](arg1);
+}
+
+export function DeleteStructType(arg1) {
+  return window['go']['main']['App']['DeleteStructType'](arg1);
+}
+
+export function DeleteVariable(arg1) {
+  return window['go']['main']['App']['DeleteVariable'](arg1);
 }
 
 export function ExportProject() {
@@ -42,6 +66,10 @@ export function GetCurrentConfig() {
   return window['go']['main']['App']['GetCurrentConfig']();
 }
 
+export function GetDataTypes() {
+  return window['go']['main']['App']['GetDataTypes']();
+}
+
 export function GetDisabledUnitIDs() {
   return window['go']['main']['App']['GetDisabledUnitIDs']();
 }
@@ -56,6 +84,14 @@ export function GetMemoryAreas() {
 
 export function GetMonitoringItems() {
   return window['go']['main']['App']['GetMonitoringItems']();
+}
+
+export function GetOPCUADataTypes() {
+  return window['go']['main']['App']['GetOPCUADataTypes']();
+}
+
+export function GetOPCUAVariables() {
+  return window['go']['main']['App']['GetOPCUAVariables']();
 }
 
 export function GetProtocolSchema(arg1) {
@@ -78,12 +114,28 @@ export function GetServerStatus() {
   return window['go']['main']['App']['GetServerStatus']();
 }
 
+export function GetStructTypes() {
+  return window['go']['main']['App']['GetStructTypes']();
+}
+
 export function GetUnitIDSettings() {
   return window['go']['main']['App']['GetUnitIDSettings']();
 }
 
+export function GetVariableMappings(arg1) {
+  return window['go']['main']['App']['GetVariableMappings'](arg1);
+}
+
+export function GetVariables() {
+  return window['go']['main']['App']['GetVariables']();
+}
+
 export function ImportProject() {
   return window['go']['main']['App']['ImportProject']();
+}
+
+export function IsOPCUAProtocol() {
+  return window['go']['main']['App']['IsOPCUAProtocol']();
 }
 
 export function MoveMonitoringItem(arg1, arg2) {
@@ -96,6 +148,10 @@ export function ReadBits(arg1, arg2, arg3) {
 
 export function ReadWords(arg1, arg2, arg3) {
   return window['go']['main']['App']['ReadWords'](arg1, arg2, arg3);
+}
+
+export function RegisterStructType(arg1) {
+  return window['go']['main']['App']['RegisterStructType'](arg1);
 }
 
 export function ReorderMonitoringItem(arg1, arg2) {
@@ -142,8 +198,20 @@ export function UpdateMonitoringItem(arg1) {
   return window['go']['main']['App']['UpdateMonitoringItem'](arg1);
 }
 
+export function UpdateOPCUAVariable(arg1, arg2) {
+  return window['go']['main']['App']['UpdateOPCUAVariable'](arg1, arg2);
+}
+
 export function UpdateScript(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['UpdateScript'](arg1, arg2, arg3, arg4);
+}
+
+export function UpdateVariableMappings(arg1, arg2) {
+  return window['go']['main']['App']['UpdateVariableMappings'](arg1, arg2);
+}
+
+export function UpdateVariableValue(arg1, arg2) {
+  return window['go']['main']['App']['UpdateVariableValue'](arg1, arg2);
 }
 
 export function WriteBit(arg1, arg2, arg3) {

@@ -77,11 +77,12 @@ type ConfigVariantDTO struct {
 
 // MemoryAreaDTO はメモリエリア情報のDTO
 type MemoryAreaDTO struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"displayName"`
-	IsBit       bool   `json:"isBit"`
-	Size        int    `json:"size"`
-	ReadOnly    bool   `json:"readOnly"`
+	ID             string `json:"id"`
+	DisplayName    string `json:"displayName"`
+	IsBit          bool   `json:"isBit"`
+	Size           int    `json:"size"`
+	ReadOnly       bool   `json:"readOnly"`
+	ByteAddressing bool   `json:"byteAddressing"`
 }
 
 // === UnitID設定DTO ===
@@ -102,6 +103,8 @@ type ScriptDTO struct {
 	Code       string `json:"code"`
 	IntervalMs int    `json:"intervalMs"`
 	IsRunning  bool   `json:"isRunning"`
+	LastError  string `json:"lastError"`
+	ErrorAt    int64  `json:"errorAt"`
 }
 
 // IntervalPresetDTO は周期プリセットのDTO
@@ -129,6 +132,75 @@ type MonitoringConfigDTO struct {
 	Items   []*MonitoringItemDTO `json:"items"`
 }
 
+// === OPC UA変数DTO ===
+
+// OPCUAVariableDTO はOPC UA変数のDTO
+type OPCUAVariableDTO struct {
+	Name     string      `json:"name"`
+	DataType string      `json:"dataType"`
+	Value    interface{} `json:"value"`
+	NodeID   uint32      `json:"nodeId"`
+}
+
+// OPCUADataTypesDTO はOPC UAのデータ型一覧のDTO
+type OPCUADataTypesDTO struct {
+	Types []OPCUADataTypeDTO `json:"types"`
+}
+
+// OPCUADataTypeDTO はOPC UAのデータ型のDTO
+type OPCUADataTypeDTO struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
+}
+
+// === 変数DTO ===
+
+// VariableDTO は変数のDTO
+type VariableDTO struct {
+	ID       string               `json:"id"`
+	Name     string               `json:"name"`
+	DataType string               `json:"dataType"`
+	Value    interface{}          `json:"value"`
+	Mappings []ProtocolMappingDTO `json:"mappings,omitempty"`
+}
+
+// ProtocolMappingDTO はプロトコルマッピングのDTO
+type ProtocolMappingDTO struct {
+	ProtocolType string `json:"protocolType"`
+	MemoryArea   string `json:"memoryArea"`
+	Address      int    `json:"address"`
+	Endianness   string `json:"endianness"`
+}
+
+// DataTypesDTO はデータ型一覧のDTO
+type DataTypesDTO struct {
+	Types       []DataTypeInfoDTO `json:"types"`
+	StructTypes []StructTypeDTO   `json:"structTypes,omitempty"`
+}
+
+// StructFieldDTO は構造体フィールドのDTO
+type StructFieldDTO struct {
+	Name     string `json:"name"`
+	DataType string `json:"dataType"`
+	Offset   int    `json:"offset"`
+}
+
+// StructTypeDTO は構造体型定義のDTO
+type StructTypeDTO struct {
+	Name      string           `json:"name"`
+	Fields    []StructFieldDTO `json:"fields"`
+	WordCount int              `json:"wordCount"`
+}
+
+// DataTypeInfoDTO はデータ型情報のDTO
+type DataTypeInfoDTO struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Description string `json:"description"`
+	WordCount   int    `json:"wordCount"`
+}
+
 // === プロジェクトエクスポート/インポートDTO ===
 
 // ProjectDataDTO はプロジェクト全体のエクスポート/インポート用DTO
@@ -141,4 +213,6 @@ type ProjectDataDTO struct {
 	UnitIDSettings  *UnitIDSettingsDTO     `json:"unitIdSettings,omitempty"`
 	Scripts         []*ScriptDTO           `json:"scripts"`
 	MonitoringItems []*MonitoringItemDTO   `json:"monitoringItems,omitempty"`
+	Variables       []*VariableDTO         `json:"variables,omitempty"`
+	StructTypes     []StructTypeDTO        `json:"structTypes,omitempty"`
 }

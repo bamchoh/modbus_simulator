@@ -6,11 +6,23 @@ export function AddMonitoringItem(arg1:application.MonitoringItemDTO):Promise<ap
 
 export function ClearMonitoringItems():Promise<void>;
 
+export function ClearScriptError(arg1:string):Promise<void>;
+
+export function CreateOPCUAVariable(arg1:string,arg2:string,arg3:any):Promise<application.OPCUAVariableDTO>;
+
 export function CreateScript(arg1:string,arg2:string,arg3:number):Promise<application.ScriptDTO>;
+
+export function CreateVariable(arg1:string,arg2:string,arg3:any):Promise<application.VariableDTO>;
 
 export function DeleteMonitoringItem(arg1:string):Promise<void>;
 
+export function DeleteOPCUAVariable(arg1:string):Promise<void>;
+
 export function DeleteScript(arg1:string):Promise<void>;
+
+export function DeleteStructType(arg1:string):Promise<void>;
+
+export function DeleteVariable(arg1:string):Promise<void>;
 
 export function ExportProject():Promise<void>;
 
@@ -22,6 +34,8 @@ export function GetAvailableProtocols():Promise<Array<application.ProtocolInfoDT
 
 export function GetCurrentConfig():Promise<application.ProtocolConfigDTO>;
 
+export function GetDataTypes():Promise<application.DataTypesDTO>;
+
 export function GetDisabledUnitIDs():Promise<Array<number>>;
 
 export function GetIntervalPresets():Promise<Array<application.IntervalPresetDTO>>;
@@ -29,6 +43,10 @@ export function GetIntervalPresets():Promise<Array<application.IntervalPresetDTO
 export function GetMemoryAreas():Promise<Array<application.MemoryAreaDTO>>;
 
 export function GetMonitoringItems():Promise<Array<application.MonitoringItemDTO>>;
+
+export function GetOPCUADataTypes():Promise<application.OPCUADataTypesDTO>;
+
+export function GetOPCUAVariables():Promise<Array<application.OPCUAVariableDTO>>;
 
 export function GetProtocolSchema(arg1:string):Promise<application.ProtocolSchemaDTO>;
 
@@ -40,15 +58,25 @@ export function GetSerialPorts():Promise<Array<string>>;
 
 export function GetServerStatus():Promise<string>;
 
+export function GetStructTypes():Promise<Array<application.StructTypeDTO>>;
+
 export function GetUnitIDSettings():Promise<application.UnitIDSettingsDTO>;
 
+export function GetVariableMappings(arg1:string):Promise<Array<application.ProtocolMappingDTO>>;
+
+export function GetVariables():Promise<Array<application.VariableDTO>>;
+
 export function ImportProject():Promise<void>;
+
+export function IsOPCUAProtocol():Promise<boolean>;
 
 export function MoveMonitoringItem(arg1:string,arg2:string):Promise<void>;
 
 export function ReadBits(arg1:string,arg2:number,arg3:number):Promise<Array<boolean>>;
 
 export function ReadWords(arg1:string,arg2:number,arg3:number):Promise<Array<number>>;
+
+export function RegisterStructType(arg1:application.StructTypeDTO):Promise<application.StructTypeDTO>;
 
 export function ReorderMonitoringItem(arg1:string,arg2:number):Promise<void>;
 
@@ -72,7 +100,13 @@ export function UpdateConfig(arg1:application.ProtocolConfigDTO):Promise<void>;
 
 export function UpdateMonitoringItem(arg1:application.MonitoringItemDTO):Promise<void>;
 
+export function UpdateOPCUAVariable(arg1:string,arg2:any):Promise<void>;
+
 export function UpdateScript(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
+
+export function UpdateVariableMappings(arg1:string,arg2:Array<application.ProtocolMappingDTO>):Promise<void>;
+
+export function UpdateVariableValue(arg1:string,arg2:any):Promise<void>;
 
 export function WriteBit(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 

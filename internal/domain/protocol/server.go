@@ -8,11 +8,10 @@ import (
 type ProtocolType string
 
 const (
-	ProtocolModbus ProtocolType = "modbus"
-	ProtocolFINS   ProtocolType = "fins"
-	// 将来追加予定:
-	// ProtocolMC      ProtocolType = "mc"
-	// ProtocolOPCUA   ProtocolType = "opcua"
+	ProtocolModbus  ProtocolType = "modbus"
+	ProtocolFINS    ProtocolType = "fins"
+	ProtocolOPCUA   ProtocolType = "opcua"
+	ProtocolS7Comm  ProtocolType = "s7comm"
 )
 
 // ServerStatus はサーバーの状態を表す
@@ -116,11 +115,12 @@ type DataStore interface {
 
 // MemoryArea はメモリエリアの定義
 type MemoryArea struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"displayName"`
-	IsBit       bool   `json:"isBit"`
-	Size        uint32 `json:"size"`
-	ReadOnly    bool   `json:"readOnly"`
+	ID             string `json:"id"`
+	DisplayName    string `json:"displayName"`
+	IsBit          bool   `json:"isBit"`
+	Size           uint32 `json:"size"`
+	ReadOnly       bool   `json:"readOnly"`
+	ByteAddressing bool   `json:"byteAddressing"` // trueの場合、アドレスをバイトベースで表示
 }
 
 // ConfigField は設定フィールドの定義

@@ -1,13 +1,14 @@
 import { useState } from "react";
 import "./App.css";
 import { ServerPanel } from "./components/ServerPanel";
+import { VariableView } from "./components/VariableView";
 import { RegisterPanel } from "./components/RegisterPanel";
 import { ScriptPanel } from "./components/ScriptPanel";
 import { CommunicationIndicator } from "./components/CommunicationIndicator";
 
 const APP_VERSION = "v0.0.7";
 
-type Tab = "server" | "registers" | "scripts";
+type Tab = "server" | "variables" | "registers" | "scripts";
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>("server");
@@ -23,6 +24,12 @@ function App() {
             onClick={() => setActiveTab("server")}
           >
             サーバー
+          </button>
+          <button
+            className={`tab-button ${activeTab === "variables" ? "active" : ""}`}
+            onClick={() => setActiveTab("variables")}
+          >
+            変数
           </button>
           <button
             className={`tab-button ${activeTab === "registers" ? "active" : ""}`}
@@ -41,6 +48,7 @@ function App() {
 
       <main className="app-main">
         {activeTab === "server" && <ServerPanel />}
+        {activeTab === "variables" && <VariableView />}
         {activeTab === "registers" && <RegisterPanel />}
         {activeTab === "scripts" && <ScriptPanel />}
       </main>
