@@ -73,6 +73,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
   // 構造体型定義フォーム
   const [structTypeName, setStructTypeName] = useState('');
+  const [editingStructTypeName, setEditingStructTypeName] = useState<string | null>(null);
   const [structTypeFields, setStructTypeFields] = useState<{
     name: string;
     category: 'scalar' | 'struct' | 'array';
@@ -524,7 +525,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     return `ARRAY[${elemType};${field.arraySize}]`;
   };
 
-  // 構造体型を登録
+  // 構造体型を登録または更新
   const handleRegisterStructType = async () => {
     if (!structTypeName.trim()) return;
     const validFields = structTypeFields.filter(f => f.name.trim());
@@ -533,19 +534,80 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       return;
     }
     try {
+      // 編集モードの場合、既存の型を削除してから新しい型を登録
+      if (editingStructTypeName) {
+        await DeleteStructType(editingStructTypeName);
+      }
       await RegisterStructType({
         name: structTypeName.trim(),
         fields: validFields.map(f => ({ name: f.name.trim(), dataType: resolveFieldDataType(f), offset: 0 })),
         wordCount: 0,
       } as application.StructTypeDTO);
       await loadStructTypes();
-      setIsStructTypeDialogOpen(false);
       setStructTypeName('');
+      setEditingStructTypeName(null);
       setStructTypeFields([{ name: '', category: 'scalar', dataType: 'INT', stringLength: 20, arrayElemType: 'INT', arrayElemCategory: 'scalar', arraySize: 10 }]);
     } catch (e) {
       console.error('Failed to register struct type:', e);
       alert('構造体型の登録に失敗しました: ' + e);
     }
+  };
+
+  // 構造体型を編集
+  const handleEditStructType = (st: application.StructTypeDTO) => {
+    setEditingStructTypeName(st.name);
+    setStructTypeName(st.name);
+
+    // フィールドをフォーム形式に変換
+    const formFields = st.fields.map(f => {
+      const field: typeof structTypeFields[0] = {
+        name: f.name,
+        category: 'scalar',
+        dataType: f.dataType,
+        stringLength: 20,
+        arrayElemType: 'INT',
+        arrayElemCategory: 'scalar',
+        arraySize: 10,
+      };
+
+      // データ型を解析してカテゴリを判定
+      if (f.dataType.startsWith('ARRAY[')) {
+        field.category = 'array';
+        const match = f.dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
+        if (match) {
+          let elemType = match[1];
+          field.arraySize = parseInt(match[2]);
+
+          if (elemType.startsWith('STRING[')) {
+            field.arrayElemCategory = 'scalar';
+            field.arrayElemType = 'STRING';
+            const lenMatch = elemType.match(/^STRING\[(\d+)\]$/);
+            if (lenMatch) field.stringLength = parseInt(lenMatch[1]);
+          } else if (structTypes.some(s => s.name === elemType)) {
+            field.arrayElemCategory = 'struct';
+            field.arrayElemType = elemType;
+          } else {
+            field.arrayElemCategory = 'scalar';
+            field.arrayElemType = elemType;
+          }
+        }
+      } else if (f.dataType.startsWith('STRING[')) {
+        field.category = 'scalar';
+        field.dataType = 'STRING';
+        const match = f.dataType.match(/^STRING\[(\d+)\]$/);
+        if (match) field.stringLength = parseInt(match[1]);
+      } else if (structTypes.some(s => s.name === f.dataType)) {
+        field.category = 'struct';
+        field.dataType = f.dataType;
+      } else {
+        field.category = 'scalar';
+        field.dataType = f.dataType;
+      }
+
+      return field;
+    });
+
+    setStructTypeFields(formFields);
   };
 
   // 構造体型を削除
@@ -1204,9 +1266,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       {/* 構造体型管理ダイアログ */}
       {isStructTypeDialogOpen && (
         <div className="dialog-overlay">
-          <div className="dialog" style={{ minWidth: '500px' }}>
+          <div className="dialog" style={{ minWidth: '500px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
             <h3>構造体型管理</h3>
-            <div className="dialog-content">
+            <div className="dialog-content" style={{ flex: 1, overflowY: 'auto' }}>
               {/* 既存の構造体型一覧 */}
               {structTypes.length > 0 && (
                 <div className="dialog-section">
@@ -1227,6 +1289,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                           <td>{st.fields.map(f => `${f.name}:${f.dataType}`).join(', ')}</td>
                           <td>{st.wordCount}</td>
                           <td>
+                            <button onClick={() => handleEditStructType(st)} className="btn-small btn-secondary" style={{ marginRight: '0.5rem' }}>
+                              編集
+                            </button>
                             <button onClick={() => handleDeleteStructType(st.name)} className="btn-small btn-danger">
                               削除
                             </button>
@@ -1239,7 +1304,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               )}
 
               {/* 新規構造体型登録 */}
-              <h4 className="dialog-section-title">新規構造体型</h4>
+              <h4 className="dialog-section-title">{editingStructTypeName ? '構造体型を編集' : '新規構造体型'}</h4>
               <div className="dialog-row">
                 <label>型名:</label>
                 <input
@@ -1247,6 +1312,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                   value={structTypeName}
                   onChange={(e) => setStructTypeName(e.target.value)}
                   placeholder="例: MotorData"
+                  disabled={!!editingStructTypeName}
                 />
               </div>
               <div className="dialog-section">
@@ -1446,8 +1512,13 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               </div>
             </div>
             <div className="dialog-buttons">
-              <button onClick={() => setIsStructTypeDialogOpen(false)} className="btn-secondary">閉じる</button>
-              <button onClick={handleRegisterStructType} className="btn-primary">型を登録</button>
+              <button onClick={() => {
+                setIsStructTypeDialogOpen(false);
+                setEditingStructTypeName(null);
+                setStructTypeName('');
+                setStructTypeFields([{ name: '', category: 'scalar', dataType: 'INT', stringLength: 20, arrayElemType: 'INT', arrayElemCategory: 'scalar', arraySize: 10 }]);
+              }} className="btn-secondary">閉じる</button>
+              <button onClick={handleRegisterStructType} className="btn-primary">{editingStructTypeName ? '更新' : '型を登録'}</button>
             </div>
           </div>
         </div>
