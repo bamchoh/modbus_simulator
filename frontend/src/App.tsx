@@ -6,7 +6,7 @@ import { RegisterPanel } from "./components/RegisterPanel";
 import { ScriptPanel } from "./components/ScriptPanel";
 import { CommunicationIndicator } from "./components/CommunicationIndicator";
 
-const APP_VERSION = "v0.0.9";
+const APP_VERSION = "v0.0.10";
 
 type Tab = "server" | "variables" | "registers" | "scripts";
 
