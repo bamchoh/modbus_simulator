@@ -6,7 +6,7 @@ import { RegisterPanel, RegisterTab } from "./components/RegisterPanel";
 import { ScriptPanel } from "./components/ScriptPanel";
 import { CommunicationIndicator } from "./components/CommunicationIndicator";
 
-const APP_VERSION = "v0.0.10";
+const APP_VERSION = "v0.0.11";
 
 type Tab = "server" | "variables" | "registers" | "scripts";
 
@@ -50,7 +50,12 @@ function App() {
       <main className="app-main">
         {activeTab === "server" && <ServerPanel />}
         {activeTab === "variables" && <VariableView />}
-        {activeTab === "registers" && <RegisterPanel activeSubTab={registerSubTab} onSubTabChange={setRegisterSubTab} />}
+        {activeTab === "registers" && (
+          <RegisterPanel
+            activeSubTab={registerSubTab}
+            onSubTabChange={setRegisterSubTab}
+          />
+        )}
         {activeTab === "scripts" && <ScriptPanel />}
       </main>
     </div>
