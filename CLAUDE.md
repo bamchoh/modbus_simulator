@@ -132,6 +132,10 @@ IEC 61131-3準拠の変数管理機能。
 #### ScriptPanel.tsx
 JavaScript（goja）でPLC動作を記述。
 - **エラー表示**: 実行時エラーをGUIに表示（タイムスタンプ付き、クリアボタン）
+- **コンソールログ表示**: スクリプト一覧の下に「コンソール」セクションを常時表示
+  - `console.log()` の出力をタイムスタンプ・スクリプト名付きで一覧表示
+  - 新しいログ追加時に自動スクロール、クリアボタン付き
+  - テスト実行（「テスト実行」ボタン）時の出力もスクリプト名「テスト実行」で表示
 - **const/let対応**: スクリプトコードをIIFEでラップして再宣言エラーを回避
 - **plcオブジェクト**:
   - メモリアクセス: `plc.readBit()`, `plc.writeBit()`, `plc.readWord()`, `plc.writeWord()`
@@ -161,6 +165,7 @@ JavaScript（goja）でPLC動作を記述。
   - `GetScripts()`, `GetScript()`, `CreateScript()`, `UpdateScript()`, `DeleteScript()`: スクリプトCRUD操作
   - `StartScript()`, `StopScript()`: スクリプト実行制御
   - `ClearScriptError()`: スクリプトエラーをクリア
+  - `GetConsoleLogs()`, `ClearConsoleLogs()`: コンソールログの取得・クリア
 
 ### 変数管理とデータ型システム
 
@@ -242,6 +247,9 @@ JavaScript（goja）でPLC動作を記述。
 
 - **const/let対応**: goja VMで同じプログラムを周期的に実行すると再宣言エラーが発生するため、IIFEでラップ
 - **エラーハンドリング**: runtime panic をキャッチして`lastError`フィールドに保存し、GUI表示可能に
+- **コンソールログ**: `console.log()` はバッファ（最大500件）に蓄積。`ConsoleLogEntry` に scriptID・scriptName・message・At を保存。フロントエンドは1秒ポーリングで `GetConsoleLogs()` を取得して表示。ミューテックスで保護
+  - `createVM(scriptID, scriptName string)` にスクリプト識別子を渡すことで、どのスクリプトの出力かを記録
+  - テスト実行（`RunOnce`）は scriptID="" / scriptName="テスト実行" でバッファに追加
 
 ### ダイアログスタイルの統一
 

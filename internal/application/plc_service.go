@@ -614,6 +614,26 @@ func (s *PLCService) ClearScriptError(id string) {
 	s.scriptEngine.ClearError(id)
 }
 
+// GetConsoleLogs はコンソールログの一覧を返す
+func (s *PLCService) GetConsoleLogs() []ConsoleLogDTO {
+	entries := s.scriptEngine.GetConsoleLogs()
+	result := make([]ConsoleLogDTO, len(entries))
+	for i, e := range entries {
+		result[i] = ConsoleLogDTO{
+			ScriptID:   e.ScriptID,
+			ScriptName: e.ScriptName,
+			Message:    e.Message,
+			At:         e.At.UnixMilli(),
+		}
+	}
+	return result
+}
+
+// ClearConsoleLogs はコンソールログをクリアする
+func (s *PLCService) ClearConsoleLogs() {
+	s.scriptEngine.ClearConsoleLogs()
+}
+
 // Shutdown はサービスをシャットダウンする
 func (s *PLCService) Shutdown() {
 	s.mu.Lock()

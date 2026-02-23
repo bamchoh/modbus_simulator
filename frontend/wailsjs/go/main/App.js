@@ -6,6 +6,10 @@ export function AddMonitoringItem(arg1) {
   return window['go']['main']['App']['AddMonitoringItem'](arg1);
 }
 
+export function ClearConsoleLogs() {
+  return window['go']['main']['App']['ClearConsoleLogs']();
+}
+
 export function ClearMonitoringItems() {
   return window['go']['main']['App']['ClearMonitoringItems']();
 }
@@ -60,6 +64,10 @@ export function GetActiveVariant() {
 
 export function GetAvailableProtocols() {
   return window['go']['main']['App']['GetAvailableProtocols']();
+}
+
+export function GetConsoleLogs() {
+  return window['go']['main']['App']['GetConsoleLogs']();
 }
 
 export function GetCurrentConfig() {

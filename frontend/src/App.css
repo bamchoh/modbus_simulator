@@ -514,6 +514,59 @@ button:disabled {
   cursor: help;
 }
 
+.console-section {
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.console-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 0.85em;
+  font-weight: bold;
+}
+
+.console-output {
+  background: #111;
+  padding: 0.5rem 0.75rem;
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.8em;
+}
+
+.console-empty {
+  color: #555;
+  font-style: italic;
+}
+
+.console-entry {
+  display: flex;
+  gap: 0.5em;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.console-time {
+  color: #555;
+  flex-shrink: 0;
+}
+
+.console-script {
+  color: #7cb9e8;
+  flex-shrink: 0;
+}
+
+.console-message {
+  color: #d4d4d4;
+}
+
 .register-navigation {
   display: flex;
   align-items: center;

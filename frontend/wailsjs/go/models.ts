@@ -44,6 +44,24 @@ export namespace application {
 	        this.displayName = source["displayName"];
 	    }
 	}
+	export class ConsoleLogDTO {
+	    scriptId: string;
+	    scriptName: string;
+	    message: string;
+	    at: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ConsoleLogDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.scriptId = source["scriptId"];
+	        this.scriptName = source["scriptName"];
+	        this.message = source["message"];
+	        this.at = source["at"];
+	    }
+	}
 	export class DataTypeInfoDTO {
 	    id: string;
 	    displayName: string;

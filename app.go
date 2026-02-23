@@ -196,6 +196,16 @@ func (a *App) ClearScriptError(id string) {
 	a.plcService.ClearScriptError(id)
 }
 
+// GetConsoleLogs はスクリプトのコンソールログを返す
+func (a *App) GetConsoleLogs() []application.ConsoleLogDTO {
+	return a.plcService.GetConsoleLogs()
+}
+
+// ClearConsoleLogs はコンソールログをクリアする
+func (a *App) ClearConsoleLogs() {
+	a.plcService.ClearConsoleLogs()
+}
+
 // GetIntervalPresets は周期プリセットを取得する
 func (a *App) GetIntervalPresets() []application.IntervalPresetDTO {
 	return a.plcService.GetIntervalPresets()

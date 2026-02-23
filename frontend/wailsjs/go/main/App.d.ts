@@ -4,6 +4,8 @@ import {application} from '../models';
 
 export function AddMonitoringItem(arg1:application.MonitoringItemDTO):Promise<application.MonitoringItemDTO>;
 
+export function ClearConsoleLogs():Promise<void>;
+
 export function ClearMonitoringItems():Promise<void>;
 
 export function ClearScriptError(arg1:string):Promise<void>;
@@ -31,6 +33,8 @@ export function GetActiveProtocol():Promise<string>;
 export function GetActiveVariant():Promise<string>;
 
 export function GetAvailableProtocols():Promise<Array<application.ProtocolInfoDTO>>;
+
+export function GetConsoleLogs():Promise<Array<application.ConsoleLogDTO>>;
 
 export function GetCurrentConfig():Promise<application.ProtocolConfigDTO>;
 

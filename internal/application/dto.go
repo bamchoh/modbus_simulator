@@ -97,6 +97,14 @@ type UnitIDSettingsDTO struct {
 
 // === スクリプトDTO ===
 
+// ConsoleLogDTO はconsole.logの1エントリのDTO
+type ConsoleLogDTO struct {
+	ScriptID   string `json:"scriptId"`
+	ScriptName string `json:"scriptName"`
+	Message    string `json:"message"`
+	At         int64  `json:"at"` // Unix ミリ秒
+}
+
 // ScriptDTO はスクリプトのDTO
 type ScriptDTO struct {
 	ID         string `json:"id"`

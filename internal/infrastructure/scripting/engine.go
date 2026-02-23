@@ -3,6 +3,7 @@ package scripting
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,11 +13,22 @@ import (
 	"github.com/dop251/goja"
 )
 
+const maxConsoleLogs = 500
+
+// ConsoleLogEntry はconsole.logの1エントリ
+type ConsoleLogEntry struct {
+	ScriptID   string
+	ScriptName string
+	Message    string
+	At         time.Time
+}
+
 // ScriptEngine はJavaScriptスクリプトを実行するエンジン
 type ScriptEngine struct {
 	mu            sync.Mutex
 	variableStore *variable.VariableStore
 	scripts       map[string]*runningScript
+	consoleLogs   []ConsoleLogEntry
 }
 
 type runningScript struct {
@@ -36,17 +48,30 @@ func NewScriptEngine(varStore *variable.VariableStore) *ScriptEngine {
 }
 
 // createVM は新しいJavaScript VMを作成し、変数アクセス関数を登録する
-func (e *ScriptEngine) createVM() *goja.Runtime {
+func (e *ScriptEngine) createVM(scriptID, scriptName string) *goja.Runtime {
 	vm := goja.New()
 
 	// コンソールオブジェクト
 	console := vm.NewObject()
 	console.Set("log", func(call goja.FunctionCall) goja.Value {
-		args := make([]any, len(call.Arguments))
+		parts := make([]string, len(call.Arguments))
 		for i, arg := range call.Arguments {
-			args[i] = arg.Export()
+			parts[i] = fmt.Sprintf("%v", arg.Export())
 		}
-		fmt.Println(args...)
+		message := strings.Join(parts, " ")
+		fmt.Printf("[%s] %s\n", scriptName, message)
+		entry := ConsoleLogEntry{
+			ScriptID:   scriptID,
+			ScriptName: scriptName,
+			Message:    message,
+			At:         time.Now(),
+		}
+		e.mu.Lock()
+		e.consoleLogs = append(e.consoleLogs, entry)
+		if len(e.consoleLogs) > maxConsoleLogs {
+			e.consoleLogs = e.consoleLogs[len(e.consoleLogs)-maxConsoleLogs:]
+		}
+		e.mu.Unlock()
 		return goja.Undefined()
 	})
 	vm.Set("console", console)
@@ -326,7 +351,7 @@ func (e *ScriptEngine) StartScript(s *script.Script) error {
 		delete(e.scripts, s.ID)
 	}
 
-	vm := e.createVM()
+	vm := e.createVM(s.ID, s.Name)
 
 	// スクリプトをIIFEでラップしてコンパイル（const/letの再宣言エラーを防止）
 	wrappedCode := "(function(){\n" + s.Code + "\n})();"
@@ -454,9 +479,25 @@ func (e *ScriptEngine) ClearError(scriptID string) {
 	}
 }
 
+// GetConsoleLogs はコンソールログの一覧を返す
+func (e *ScriptEngine) GetConsoleLogs() []ConsoleLogEntry {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	result := make([]ConsoleLogEntry, len(e.consoleLogs))
+	copy(result, e.consoleLogs)
+	return result
+}
+
+// ClearConsoleLogs はコンソールログをクリアする
+func (e *ScriptEngine) ClearConsoleLogs() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.consoleLogs = nil
+}
+
 // RunOnce はスクリプトを1回だけ実行する（テスト用）
 func (e *ScriptEngine) RunOnce(code string) (any, error) {
-	vm := e.createVM()
+	vm := e.createVM("", "テスト実行")
 	result, err := vm.RunString(code)
 	if err != nil {
 		return nil, err

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   GetScripts,
   GetIntervalPresets,
@@ -8,7 +8,9 @@ import {
   StartScript,
   StopScript,
   RunScriptOnce,
-  ClearScriptError
+  ClearScriptError,
+  GetConsoleLogs,
+  ClearConsoleLogs,
 } from '../../wailsjs/go/main/App';
 import { application } from '../../wailsjs/go/models';
 
@@ -42,12 +44,23 @@ export function ScriptPanel() {
   const [editInterval, setEditInterval] = useState(1000);
   const [testOutput, setTestOutput] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [consoleLogs, setConsoleLogs] = useState<application.ConsoleLogDTO[]>([]);
+  const consoleRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadScripts, 1000);
+    const interval = setInterval(() => {
+      loadScripts();
+      loadConsoleLogs();
+    }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (consoleRef.current) {
+      consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
+    }
+  }, [consoleLogs]);
 
   const loadData = async () => {
     await Promise.all([loadScripts(), loadPresets()]);
@@ -68,6 +81,24 @@ export function ScriptPanel() {
       setPresets(p || []);
     } catch (e) {
       console.error('Failed to load presets:', e);
+    }
+  };
+
+  const loadConsoleLogs = async () => {
+    try {
+      const logs = await GetConsoleLogs();
+      setConsoleLogs(logs || []);
+    } catch (e) {
+      console.error('Failed to load console logs:', e);
+    }
+  };
+
+  const handleClearConsoleLogs = async () => {
+    try {
+      await ClearConsoleLogs();
+      setConsoleLogs([]);
+    } catch (e) {
+      console.error('Failed to clear console logs:', e);
     }
   };
 
@@ -305,6 +336,30 @@ export function ScriptPanel() {
             </div>
           ))
         )}
+      </div>
+
+      <div className="console-section">
+        <div className="console-header">
+          <span>コンソール</span>
+          <button onClick={handleClearConsoleLogs} className="btn-secondary">
+            クリア
+          </button>
+        </div>
+        <div className="console-output" ref={consoleRef}>
+          {consoleLogs.length === 0 ? (
+            <span className="console-empty">出力なし</span>
+          ) : (
+            consoleLogs.map((log, i) => (
+              <div key={i} className="console-entry">
+                <span className="console-time">
+                  {new Date(log.at).toLocaleTimeString()}
+                </span>
+                <span className="console-script">[{log.scriptName}]</span>
+                <span className="console-message">{log.message}</span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
