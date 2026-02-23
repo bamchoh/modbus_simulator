@@ -263,6 +263,7 @@ export namespace application {
 	export class MonitoringItemDTO {
 	    id: string;
 	    order: number;
+	    protocolType: string;
 	    memoryArea: string;
 	    address: number;
 	    bitWidth: number;
@@ -277,6 +278,7 @@ export namespace application {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.order = source["order"];
+	        this.protocolType = source["protocolType"];
 	        this.memoryArea = source["memoryArea"];
 	        this.address = source["address"];
 	        this.bitWidth = source["bitWidth"];
@@ -349,22 +351,6 @@ export namespace application {
 	    }
 	}
 	
-	export class ProtocolConfigDTO {
-	    protocolType: string;
-	    variant: string;
-	    settings: Record<string, any>;
-	
-	    static createFrom(source: any = {}) {
-	        return new ProtocolConfigDTO(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.protocolType = source["protocolType"];
-	        this.variant = source["variant"];
-	        this.settings = source["settings"];
-	    }
-	}
 	export class ProtocolInfoDTO {
 	    type: string;
 	    displayName: string;
@@ -509,6 +495,40 @@ export namespace application {
 	        this.isRunning = source["isRunning"];
 	        this.lastError = source["lastError"];
 	        this.errorAt = source["errorAt"];
+	    }
+	}
+	export class ServerConfigDTO {
+	    protocolType: string;
+	    variant: string;
+	    settings: Record<string, any>;
+	
+	    static createFrom(source: any = {}) {
+	        return new ServerConfigDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.protocolType = source["protocolType"];
+	        this.variant = source["variant"];
+	        this.settings = source["settings"];
+	    }
+	}
+	export class ServerInstanceDTO {
+	    protocolType: string;
+	    displayName: string;
+	    variant: string;
+	    status: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ServerInstanceDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.protocolType = source["protocolType"];
+	        this.displayName = source["displayName"];
+	        this.variant = source["variant"];
+	        this.status = source["status"];
 	    }
 	}
 	

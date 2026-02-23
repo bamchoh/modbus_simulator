@@ -19,6 +19,16 @@ import (
 	"github.com/google/uuid"
 )
 
+// serverInstance はサーバーインスタンスの内部表現
+type serverInstance struct {
+	protocolType protocol.ProtocolType
+	variant      string
+	factory      protocol.ServerFactory
+	dataStore    protocol.DataStore
+	config       protocol.ProtocolConfig
+	server       protocol.ProtocolServer
+}
+
 // PLCService はPLCシミュレーターのメインサービス
 type PLCService struct {
 	mu       sync.RWMutex
@@ -27,13 +37,8 @@ type PLCService struct {
 	// 中央変数ストア
 	variableStore *variable.VariableStore
 
-	// アクティブなプロトコル（1つのみ）
-	activeProtocol protocol.ProtocolType
-	activeVariant  string
-	factory        protocol.ServerFactory
-	dataStore      protocol.DataStore
-	server         protocol.ProtocolServer
-	config         protocol.ProtocolConfig
+	// 複数サーバーインスタンス（protocolType → instance）
+	servers map[protocol.ProtocolType]*serverInstance
 
 	// スクリプト
 	scriptEngine *scripting.ScriptEngine
@@ -54,6 +59,8 @@ func NewPLCService() *PLCService {
 	service := &PLCService{
 		registry:        protocol.DefaultRegistry,
 		variableStore:   varStore,
+		servers:         make(map[protocol.ProtocolType]*serverInstance),
+		scriptEngine:    scripting.NewScriptEngine(varStore),
 		scripts:         make(map[string]*script.Script),
 		monitoringItems: make(map[string]*MonitoringItemDTO),
 	}
@@ -66,8 +73,8 @@ func NewPLCService() *PLCService {
 		go service.saveVariablesConfigInternal()
 	})
 
-	// デフォルトでModbus TCPを設定
-	service.SetProtocol("modbus", "tcp")
+	// デフォルトでModbus TCPを追加
+	_ = service.AddServer("modbus", "tcp")
 
 	// モニタリング設定を読み込み
 	_ = service.LoadMonitoringConfig()
@@ -75,37 +82,162 @@ func NewPLCService() *PLCService {
 	return service
 }
 
+// === サーバーインスタンス管理 ===
+
+// GetServerInstances はサーバーインスタンス一覧を返す
+func (s *PLCService) GetServerInstances() []ServerInstanceDTO {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]ServerInstanceDTO, 0, len(s.servers))
+	for _, inst := range s.servers {
+		status := "Stopped"
+		if inst.server != nil {
+			status = inst.server.Status().String()
+		}
+		result = append(result, ServerInstanceDTO{
+			ProtocolType: string(inst.protocolType),
+			DisplayName:  inst.factory.DisplayName(),
+			Variant:      inst.variant,
+			Status:       status,
+		})
+	}
+
+	// プロトコルタイプ順にソート（安定した順序）
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ProtocolType < result[j].ProtocolType
+	})
+
+	return result
+}
+
+// AddServer は新しいサーバーインスタンスを追加する
+func (s *PLCService) AddServer(protocolType string, variantID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pt := protocol.ProtocolType(protocolType)
+
+	// 既に存在する場合はエラー
+	if _, exists := s.servers[pt]; exists {
+		return fmt.Errorf("server already exists for protocol: %s", protocolType)
+	}
+
+	// ファクトリーを取得
+	factory, err := s.registry.Get(pt)
+	if err != nil {
+		return err
+	}
+
+	// サーバーインスタンスを作成
+	config := factory.CreateConfigFromVariant(variantID)
+	innerDataStore := factory.CreateDataStore()
+	dataStore := adapter.NewVariableBackedDataStore(innerDataStore, s.variableStore, protocolType)
+
+	server, err := factory.CreateServer(config, dataStore)
+	if err != nil {
+		return err
+	}
+
+	inst := &serverInstance{
+		protocolType: pt,
+		variant:      variantID,
+		factory:      factory,
+		dataStore:    dataStore,
+		config:       config,
+		server:       server,
+	}
+
+	s.servers[pt] = inst
+
+	// イベントエミッターをサーバーに設定
+	if s.eventEmitter != nil {
+		s.setEmitterToServerInstance(inst)
+	}
+
+	return nil
+}
+
+// RemoveServer はサーバーインスタンスを削除する
+func (s *PLCService) RemoveServer(protocolType string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pt := protocol.ProtocolType(protocolType)
+	inst, exists := s.servers[pt]
+	if !exists {
+		return fmt.Errorf("server not found for protocol: %s", protocolType)
+	}
+
+	// 実行中なら停止
+	if inst.server != nil && inst.server.Status() == protocol.StatusRunning {
+		if err := inst.server.Stop(); err != nil {
+			return fmt.Errorf("failed to stop server: %w", err)
+		}
+	}
+
+	// アダプターを解除
+	if ds, ok := inst.dataStore.(*adapter.VariableBackedDataStore); ok {
+		ds.Detach()
+	}
+
+	delete(s.servers, pt)
+	return nil
+}
+
+// getServerInstance は指定プロトコルのサーバーインスタンスを取得する（ロック済み前提）
+func (s *PLCService) getServerInstance(protocolType string) (*serverInstance, error) {
+	pt := protocol.ProtocolType(protocolType)
+	inst, exists := s.servers[pt]
+	if !exists {
+		return nil, fmt.Errorf("server not found for protocol: %s", protocolType)
+	}
+	return inst, nil
+}
+
 // === サーバー管理 ===
 
 // StartServer はサーバーを起動する
-func (s *PLCService) StartServer() error {
+func (s *PLCService) StartServer(protocolType string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.server == nil {
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
+		return err
+	}
+	if inst.server == nil {
 		return fmt.Errorf("server not initialized")
 	}
-	return s.server.Start(context.Background())
+	return inst.server.Start(context.Background())
 }
 
 // StopServer はサーバーを停止する
-func (s *PLCService) StopServer() error {
+func (s *PLCService) StopServer(protocolType string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.server != nil {
-		return s.server.Stop()
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
+		return err
+	}
+	if inst.server != nil {
+		return inst.server.Stop()
 	}
 	return nil
 }
 
 // GetServerStatus はサーバーのステータスを返す
-func (s *PLCService) GetServerStatus() string {
+func (s *PLCService) GetServerStatus(protocolType string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.server != nil {
-		return s.server.Status().String()
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
+		return "Stopped"
+	}
+	if inst.server != nil {
+		return inst.server.Status().String()
 	}
 	return "Stopped"
 }
@@ -132,69 +264,6 @@ func (s *PLCService) GetAvailableProtocols() []ProtocolInfoDTO {
 		}
 	}
 	return result
-}
-
-// GetActiveProtocol はアクティブなプロトコルタイプを返す
-func (s *PLCService) GetActiveProtocol() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return string(s.activeProtocol)
-}
-
-// GetActiveVariant はアクティブなバリアントIDを返す
-func (s *PLCService) GetActiveVariant() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.activeVariant
-}
-
-// SetProtocol はプロトコルを設定する
-func (s *PLCService) SetProtocol(protocolType string, variantID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// サーバーが動作中なら停止
-	if s.server != nil && s.server.Status() == protocol.StatusRunning {
-		return fmt.Errorf("cannot change protocol while server is running")
-	}
-
-	// ファクトリーを取得
-	factory, err := s.registry.Get(protocol.ProtocolType(protocolType))
-	if err != nil {
-		return err
-	}
-
-	// Factoryに全て任せる
-	config := factory.CreateConfigFromVariant(variantID)
-	innerDataStore := factory.CreateDataStore()
-
-	// VariableBackedDataStoreでラップ（変数マッピング連動）
-	dataStore := adapter.NewVariableBackedDataStore(innerDataStore, s.variableStore, protocolType)
-
-	server, err := factory.CreateServer(config, dataStore)
-	if err != nil {
-		return err
-	}
-
-	// 旧アダプターがあれば解除
-	if old, ok := s.dataStore.(*adapter.VariableBackedDataStore); ok {
-		old.Detach()
-	}
-
-	s.factory = factory
-	s.activeProtocol = protocol.ProtocolType(protocolType)
-	s.activeVariant = variantID
-	s.config = config
-	s.dataStore = dataStore
-	s.server = server
-	s.scriptEngine = scripting.NewScriptEngine(s.variableStore)
-
-	// イベントエミッターをサーバーに設定
-	if s.eventEmitter != nil {
-		s.setEmitterToServer()
-	}
-
-	return nil
 }
 
 // GetProtocolSchema はプロトコルスキーマを返す
@@ -249,90 +318,90 @@ func (s *PLCService) GetProtocolSchema(protocolType string) (*ProtocolSchemaDTO,
 	}, nil
 }
 
-// GetCurrentConfig は現在の設定を返す
-func (s *PLCService) GetCurrentConfig() *ProtocolConfigDTO {
+// GetServerConfig は指定サーバーの現在の設定を返す
+func (s *PLCService) GetServerConfig(protocolType string) *ServerConfigDTO {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.factory == nil || s.config == nil {
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
 		return nil
 	}
 
-	return &ProtocolConfigDTO{
-		ProtocolType: string(s.activeProtocol),
-		Variant:      s.activeVariant,
-		Settings:     s.factory.ConfigToMap(s.config),
+	return &ServerConfigDTO{
+		ProtocolType: protocolType,
+		Variant:      inst.variant,
+		Settings:     inst.factory.ConfigToMap(inst.config),
 	}
 }
 
-// UpdateConfig は設定を更新する
-func (s *PLCService) UpdateConfig(dto *ProtocolConfigDTO) error {
+// UpdateServerConfig はサーバーの設定を更新する
+func (s *PLCService) UpdateServerConfig(dto *ServerConfigDTO) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.server != nil && s.server.Status() == protocol.StatusRunning {
-		return fmt.Errorf("cannot update config while server is running")
-	}
-
-	// プロトコルが変わる場合はSetProtocolを使う
-	if dto.ProtocolType != string(s.activeProtocol) {
-		s.mu.Unlock()
-		err := s.SetProtocol(dto.ProtocolType, dto.Variant)
-		s.mu.Lock()
-		if err != nil {
-			return err
-		}
-	}
-
-	// バリアントが変わる場合
-	if dto.Variant != s.activeVariant {
-		config := s.factory.CreateConfigFromVariant(dto.Variant)
-		server, err := s.factory.CreateServer(config, s.dataStore)
-		if err != nil {
-			return err
-		}
-		s.activeVariant = dto.Variant
-		s.config = config
-		s.server = server
-	}
-
-	// 設定を更新
-	newConfig, err := s.factory.MapToConfig(s.activeVariant, dto.Settings)
+	inst, err := s.getServerInstance(dto.ProtocolType)
 	if err != nil {
 		return err
 	}
 
-	if err := s.server.UpdateConfig(newConfig); err != nil {
+	if inst.server != nil && inst.server.Status() == protocol.StatusRunning {
+		return fmt.Errorf("cannot update config while server is running")
+	}
+
+	// バリアントが変わる場合は新しいサーバーを作成
+	if dto.Variant != inst.variant {
+		config := inst.factory.CreateConfigFromVariant(dto.Variant)
+		server, err := inst.factory.CreateServer(config, inst.dataStore)
+		if err != nil {
+			return err
+		}
+		inst.variant = dto.Variant
+		inst.config = config
+		inst.server = server
+
+		if s.eventEmitter != nil {
+			s.setEmitterToServerInstance(inst)
+		}
+	}
+
+	// 設定を更新
+	newConfig, err := inst.factory.MapToConfig(inst.variant, dto.Settings)
+	if err != nil {
 		return err
 	}
 
-	s.config = newConfig
+	if err := inst.server.UpdateConfig(newConfig); err != nil {
+		return err
+	}
+
+	inst.config = newConfig
 	return nil
 }
 
 // === UnitID設定 ===
 
-// GetUnitIDSettings はUnitID設定を返す（プロトコルがサポートしない場合はnil）
-func (s *PLCService) GetUnitIDSettings() *UnitIDSettingsDTO {
+// GetUnitIDSettings はUnitID設定を返す
+func (s *PLCService) GetUnitIDSettings(protocolType string) *UnitIDSettingsDTO {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.factory == nil {
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
 		return nil
 	}
 
-	caps := s.factory.GetProtocolCapabilities()
+	caps := inst.factory.GetProtocolCapabilities()
 	if !caps.SupportsUnitID {
 		return nil
 	}
 
-	// サーバーからdisabled IDsを取得
 	type unitIDSupporter interface {
 		GetDisabledUnitIDs() []uint8
 	}
 
 	var disabledIDs []int
-	if us, ok := s.server.(unitIDSupporter); ok {
+	if us, ok := inst.server.(unitIDSupporter); ok {
 		ids := us.GetDisabledUnitIDs()
 		disabledIDs = make([]int, len(ids))
 		for i, id := range ids {
@@ -348,15 +417,20 @@ func (s *PLCService) GetUnitIDSettings() *UnitIDSettingsDTO {
 }
 
 // SetUnitIDEnabled は指定したUnitIdの応答を有効/無効にする
-func (s *PLCService) SetUnitIDEnabled(unitId int, enabled bool) error {
+func (s *PLCService) SetUnitIDEnabled(protocolType string, unitId int, enabled bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
+		return err
+	}
 
 	type unitIDSupporter interface {
 		SetUnitIdEnabled(unitId uint8, enabled bool)
 	}
 
-	if us, ok := s.server.(unitIDSupporter); ok {
+	if us, ok := inst.server.(unitIDSupporter); ok {
 		us.SetUnitIdEnabled(uint8(unitId), enabled)
 		return nil
 	}
@@ -365,15 +439,20 @@ func (s *PLCService) SetUnitIDEnabled(unitId int, enabled bool) error {
 }
 
 // GetDisabledUnitIDs は無効化されたUnitIDのリストを返す
-func (s *PLCService) GetDisabledUnitIDs() []int {
+func (s *PLCService) GetDisabledUnitIDs(protocolType string) []int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
+		return nil
+	}
 
 	type unitIDSupporter interface {
 		GetDisabledUnitIDs() []uint8
 	}
 
-	if us, ok := s.server.(unitIDSupporter); ok {
+	if us, ok := inst.server.(unitIDSupporter); ok {
 		ids := us.GetDisabledUnitIDs()
 		result := make([]int, len(ids))
 		for i, id := range ids {
@@ -385,15 +464,20 @@ func (s *PLCService) GetDisabledUnitIDs() []int {
 }
 
 // SetDisabledUnitIDs は無効化するUnitIDのリストを設定する
-func (s *PLCService) SetDisabledUnitIDs(ids []int) error {
+func (s *PLCService) SetDisabledUnitIDs(protocolType string, ids []int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
+		return err
+	}
 
 	type unitIDSupporter interface {
 		SetDisabledUnitIDs(ids []uint8)
 	}
 
-	if us, ok := s.server.(unitIDSupporter); ok {
+	if us, ok := inst.server.(unitIDSupporter); ok {
 		uint8Ids := make([]uint8, len(ids))
 		for i, id := range ids {
 			uint8Ids[i] = uint8(id)
@@ -408,15 +492,16 @@ func (s *PLCService) SetDisabledUnitIDs(ids []int) error {
 // === 汎用メモリ操作API ===
 
 // GetMemoryAreas は利用可能なメモリエリアの一覧を返す
-func (s *PLCService) GetMemoryAreas() []MemoryAreaDTO {
+func (s *PLCService) GetMemoryAreas(protocolType string) []MemoryAreaDTO {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.dataStore == nil {
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
 		return nil
 	}
 
-	areas := s.dataStore.GetAreas()
+	areas := inst.dataStore.GetAreas()
 	result := make([]MemoryAreaDTO, len(areas))
 	for i, area := range areas {
 		result[i] = MemoryAreaDTO{
@@ -433,37 +518,40 @@ func (s *PLCService) GetMemoryAreas() []MemoryAreaDTO {
 }
 
 // ReadBits は指定エリアの複数ビット値を読み込む
-func (s *PLCService) ReadBits(area string, address, count int) ([]bool, error) {
+func (s *PLCService) ReadBits(protocolType, area string, address, count int) ([]bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.dataStore == nil {
-		return nil, fmt.Errorf("data store not initialized")
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
+		return nil, err
 	}
-	return s.dataStore.ReadBits(area, uint32(address), uint16(count))
+	return inst.dataStore.ReadBits(area, uint32(address), uint16(count))
 }
 
 // WriteBit は指定エリアのビット値を書き込む
-func (s *PLCService) WriteBit(area string, address int, value bool) error {
+func (s *PLCService) WriteBit(protocolType, area string, address int, value bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.dataStore == nil {
-		return fmt.Errorf("data store not initialized")
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
+		return err
 	}
-	return s.dataStore.WriteBit(area, uint32(address), value)
+	return inst.dataStore.WriteBit(area, uint32(address), value)
 }
 
 // ReadWords は指定エリアの複数ワード値を読み込む
-func (s *PLCService) ReadWords(area string, address, count int) ([]int, error) {
+func (s *PLCService) ReadWords(protocolType, area string, address, count int) ([]int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.dataStore == nil {
-		return nil, fmt.Errorf("data store not initialized")
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
+		return nil, err
 	}
 
-	vals, err := s.dataStore.ReadWords(area, uint32(address), uint16(count))
+	vals, err := inst.dataStore.ReadWords(area, uint32(address), uint16(count))
 	if err != nil {
 		return nil, err
 	}
@@ -475,14 +563,15 @@ func (s *PLCService) ReadWords(area string, address, count int) ([]int, error) {
 }
 
 // WriteWord は指定エリアのワード値を書き込む
-func (s *PLCService) WriteWord(area string, address int, value int) error {
+func (s *PLCService) WriteWord(protocolType, area string, address int, value int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.dataStore == nil {
-		return fmt.Errorf("data store not initialized")
+	inst, err := s.getServerInstance(protocolType)
+	if err != nil {
+		return err
 	}
-	return s.dataStore.WriteWord(area, uint32(address), uint16(value))
+	return inst.dataStore.WriteWord(area, uint32(address), uint16(value))
 }
 
 // === スクリプト管理 ===
@@ -642,8 +731,10 @@ func (s *PLCService) Shutdown() {
 	if s.scriptEngine != nil {
 		s.scriptEngine.StopAll()
 	}
-	if s.server != nil {
-		s.server.Stop()
+	for _, inst := range s.servers {
+		if inst.server != nil {
+			inst.server.Stop()
+		}
 	}
 	if s.sessionManager != nil {
 		s.sessionManager.Stop()
@@ -657,13 +748,13 @@ func (s *PLCService) SetEventEmitter(emitter protocol.CommunicationEventEmitter)
 
 	s.eventEmitter = emitter
 
-	// セッションマネージャーを作成（Modbus TCP用、5秒タイムアウト）
+	// セッションマネージャーを作成
 	s.sessionManager = protocol.NewSessionManager(5*time.Second, emitter)
 	s.sessionManager.Start()
 
-	// サーバーにもエミッターを設定
-	if s.server != nil {
-		s.setEmitterToServer()
+	// 全サーバーにエミッターを設定
+	for _, inst := range s.servers {
+		s.setEmitterToServerInstance(inst)
 	}
 }
 
@@ -681,8 +772,8 @@ func (s *PLCService) GetSessionManager() *protocol.SessionManager {
 	return s.sessionManager
 }
 
-// setEmitterToServer はサーバーにイベントエミッターを設定する（ロック済み前提）
-func (s *PLCService) setEmitterToServer() {
+// setEmitterToServerInstance はサーバーインスタンスにイベントエミッターを設定する（ロック済み前提）
+func (s *PLCService) setEmitterToServerInstance(inst *serverInstance) {
 	type eventAware interface {
 		SetEventEmitter(emitter protocol.CommunicationEventEmitter)
 	}
@@ -690,10 +781,10 @@ func (s *PLCService) setEmitterToServer() {
 		SetSessionManager(manager *protocol.SessionManager)
 	}
 
-	if ea, ok := s.server.(eventAware); ok {
+	if ea, ok := inst.server.(eventAware); ok {
 		ea.SetEventEmitter(s.eventEmitter)
 	}
-	if sa, ok := s.server.(sessionAware); ok {
+	if sa, ok := inst.server.(sessionAware); ok {
 		sa.SetSessionManager(s.sessionManager)
 	}
 }
@@ -730,27 +821,26 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// 設定を取得
-	var settings map[string]interface{}
-	if s.factory != nil && s.config != nil {
-		settings = s.factory.ConfigToMap(s.config)
-	}
+	// 全サーバーのスナップショットを取得
+	servers := make([]ServerSnapshotDTO, 0, len(s.servers))
+	for _, inst := range s.servers {
+		var settings map[string]interface{}
+		if inst.config != nil {
+			settings = inst.factory.ConfigToMap(inst.config)
+		}
 
-	// メモリスナップショットを取得
-	var memorySnapshot map[string]interface{}
-	if s.dataStore != nil {
-		memorySnapshot = s.dataStore.Snapshot()
-	}
+		var memorySnapshot map[string]interface{}
+		if inst.dataStore != nil {
+			memorySnapshot = inst.dataStore.Snapshot()
+		}
 
-	// UnitID設定を取得
-	var unitIDSettings *UnitIDSettingsDTO
-	if s.factory != nil {
-		caps := s.factory.GetProtocolCapabilities()
+		var unitIDSettings *UnitIDSettingsDTO
+		caps := inst.factory.GetProtocolCapabilities()
 		if caps.SupportsUnitID {
 			type unitIDSupporter interface {
 				GetDisabledUnitIDs() []uint8
 			}
-			if us, ok := s.server.(unitIDSupporter); ok {
+			if us, ok := inst.server.(unitIDSupporter); ok {
 				ids := us.GetDisabledUnitIDs()
 				disabledIDs := make([]int, len(ids))
 				for i, id := range ids {
@@ -763,6 +853,14 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 				}
 			}
 		}
+
+		servers = append(servers, ServerSnapshotDTO{
+			ProtocolType:   string(inst.protocolType),
+			Variant:        inst.variant,
+			Settings:       settings,
+			MemorySnapshot: memorySnapshot,
+			UnitIDSettings: unitIDSettings,
+		})
 	}
 
 	// スクリプトを取得
@@ -773,7 +871,7 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 			Name:       sc.Name,
 			Code:       sc.Code,
 			IntervalMs: int(sc.Interval.Milliseconds()),
-			IsRunning:  false, // エクスポート時は実行状態を保存しない
+			IsRunning:  false,
 		})
 	}
 
@@ -791,12 +889,8 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 	}
 
 	return &ProjectDataDTO{
-		Version:         2, // 新バージョン
-		ProtocolType:    string(s.activeProtocol),
-		Variant:         s.activeVariant,
-		Settings:        settings,
-		MemorySnapshot:  memorySnapshot,
-		UnitIDSettings:  unitIDSettings,
+		Version:         3,
+		Servers:         servers,
 		Scripts:         scripts,
 		MonitoringItems: monitoringItems,
 		StructTypes:     structTypeDTOs,
@@ -813,56 +907,16 @@ func (s *PLCService) ImportProject(data *ProjectDataDTO) error {
 		s.scriptEngine.StopAll()
 	}
 
-	// プロトコルを設定
-	protocolType := data.ProtocolType
-	variant := data.Variant
-
-	// 古い形式の互換性対応
-	if protocolType == "" {
-		protocolType = "modbus"
-		variant = "tcp"
-	}
-
-	// プロトコル変更（ロックを一時解除）
-	s.mu.Unlock()
-	if err := s.SetProtocol(protocolType, variant); err != nil {
-		s.mu.Lock()
-		return err
-	}
-	s.mu.Lock()
-
-	// 設定を更新
-	if data.Settings != nil && s.factory != nil {
-		newConfig, err := s.factory.MapToConfig(variant, data.Settings)
-		if err != nil {
-			return err
+	// 全サーバーを停止・削除
+	for _, inst := range s.servers {
+		if inst.server != nil {
+			inst.server.Stop()
 		}
-		if err := s.server.UpdateConfig(newConfig); err != nil {
-			return err
-		}
-		s.config = newConfig
-	}
-
-	// メモリデータを復元
-	if data.MemorySnapshot != nil && s.dataStore != nil {
-		if err := s.dataStore.Restore(data.MemorySnapshot); err != nil {
-			return err
+		if ds, ok := inst.dataStore.(*adapter.VariableBackedDataStore); ok {
+			ds.Detach()
 		}
 	}
-
-	// UnitID設定を復元
-	if data.UnitIDSettings != nil {
-		type unitIDSupporter interface {
-			SetDisabledUnitIDs(ids []uint8)
-		}
-		if us, ok := s.server.(unitIDSupporter); ok {
-			uint8Ids := make([]uint8, len(data.UnitIDSettings.DisabledIDs))
-			for i, id := range data.UnitIDSettings.DisabledIDs {
-				uint8Ids[i] = uint8(id)
-			}
-			us.SetDisabledUnitIDs(uint8Ids)
-		}
-	}
+	s.servers = make(map[protocol.ProtocolType]*serverInstance)
 
 	// 構造体型を復元（変数より先に復元する必要がある）
 	if data.StructTypes != nil {
@@ -879,6 +933,92 @@ func (s *PLCService) ImportProject(data *ProjectDataDTO) error {
 				continue
 			}
 			s.variableStore.RegisterStructType(st)
+		}
+	}
+
+	if data.Version >= 3 && len(data.Servers) > 0 {
+		// Version 3以降: Serversフィールドを使用
+		for _, snap := range data.Servers {
+			s.mu.Unlock()
+			err := s.AddServer(snap.ProtocolType, snap.Variant)
+			s.mu.Lock()
+			if err != nil {
+				return err
+			}
+
+			inst := s.servers[protocol.ProtocolType(snap.ProtocolType)]
+
+			// 設定を更新
+			if snap.Settings != nil && inst.factory != nil {
+				newConfig, err := inst.factory.MapToConfig(snap.Variant, snap.Settings)
+				if err == nil {
+					if err := inst.server.UpdateConfig(newConfig); err == nil {
+						inst.config = newConfig
+					}
+				}
+			}
+
+			// メモリデータを復元
+			if snap.MemorySnapshot != nil && inst.dataStore != nil {
+				inst.dataStore.Restore(snap.MemorySnapshot)
+			}
+
+			// UnitID設定を復元
+			if snap.UnitIDSettings != nil {
+				type unitIDSupporter interface {
+					SetDisabledUnitIDs(ids []uint8)
+				}
+				if us, ok := inst.server.(unitIDSupporter); ok {
+					uint8Ids := make([]uint8, len(snap.UnitIDSettings.DisabledIDs))
+					for i, id := range snap.UnitIDSettings.DisabledIDs {
+						uint8Ids[i] = uint8(id)
+					}
+					us.SetDisabledUnitIDs(uint8Ids)
+				}
+			}
+		}
+	} else {
+		// Version <= 2 後方互換
+		protocolType := data.ProtocolType
+		variant := data.Variant
+		if protocolType == "" {
+			protocolType = "modbus"
+			variant = "tcp"
+		}
+
+		s.mu.Unlock()
+		err := s.AddServer(protocolType, variant)
+		s.mu.Lock()
+		if err != nil {
+			return err
+		}
+
+		inst := s.servers[protocol.ProtocolType(protocolType)]
+
+		if data.Settings != nil && inst.factory != nil {
+			newConfig, err := inst.factory.MapToConfig(variant, data.Settings)
+			if err == nil {
+				if err := inst.server.UpdateConfig(newConfig); err == nil {
+					inst.config = newConfig
+				}
+			}
+		}
+
+		if data.MemorySnapshot != nil && inst.dataStore != nil {
+			inst.dataStore.Restore(data.MemorySnapshot)
+		}
+
+		if data.UnitIDSettings != nil {
+			type unitIDSupporter interface {
+				SetDisabledUnitIDs(ids []uint8)
+			}
+			if us, ok := inst.server.(unitIDSupporter); ok {
+				uint8Ids := make([]uint8, len(data.UnitIDSettings.DisabledIDs))
+				for i, id := range data.UnitIDSettings.DisabledIDs {
+					uint8Ids[i] = uint8(id)
+				}
+				us.SetDisabledUnitIDs(uint8Ids)
+			}
 		}
 	}
 
@@ -1191,8 +1331,19 @@ func (s *PLCService) LoadMonitoringConfig() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// デフォルトサーバーのプロトコルタイプを取得（後方互換用）
+	defaultProtocol := "modbus"
+	for pt := range s.servers {
+		defaultProtocol = string(pt)
+		break
+	}
+
 	s.monitoringItems = make(map[string]*MonitoringItemDTO)
 	for _, item := range config.Items {
+		// ProtocolType が空の場合はデフォルトを設定
+		if item.ProtocolType == "" {
+			item.ProtocolType = defaultProtocol
+		}
 		s.monitoringItems[item.ID] = item
 	}
 
@@ -1201,21 +1352,29 @@ func (s *PLCService) LoadMonitoringConfig() error {
 
 // === OPC UA変数管理 ===
 
+// IsOPCUAProtocol はOPC UAプロトコルがアクティブかどうかを返す
+func (s *PLCService) IsOPCUAProtocol() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, exists := s.servers[protocol.ProtocolOPCUA]
+	return exists
+}
+
 // GetOPCUAVariables はOPC UA変数一覧を返す
 func (s *PLCService) GetOPCUAVariables() []*OPCUAVariableDTO {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if s.activeProtocol != protocol.ProtocolOPCUA {
+	inst, exists := s.servers[protocol.ProtocolOPCUA]
+	if !exists {
 		return nil
 	}
 
-	// OPCUADataStore の GetAllVariablesDTOs を呼び出す
 	type variableStore interface {
 		GetAllVariablesDTOs() []*OPCUAVariableDTO
 	}
 
-	vs, ok := s.dataStore.(variableStore)
+	vs, ok := inst.dataStore.(variableStore)
 	if !ok {
 		return nil
 	}
@@ -1246,7 +1405,8 @@ func (s *PLCService) CreateOPCUAVariable(name, dataType string, value interface{
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.activeProtocol != protocol.ProtocolOPCUA {
+	inst, exists := s.servers[protocol.ProtocolOPCUA]
+	if !exists {
 		return nil, fmt.Errorf("OPC UA protocol is not active")
 	}
 
@@ -1254,7 +1414,7 @@ func (s *PLCService) CreateOPCUAVariable(name, dataType string, value interface{
 		CreateVariable(name, dataType string, value interface{}) (*OPCUAVariableDTO, error)
 	}
 
-	vc, ok := s.dataStore.(variableCreator)
+	vc, ok := inst.dataStore.(variableCreator)
 	if !ok {
 		return nil, fmt.Errorf("datastore does not support variable creation")
 	}
@@ -1267,7 +1427,8 @@ func (s *PLCService) UpdateOPCUAVariable(name string, value interface{}) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.activeProtocol != protocol.ProtocolOPCUA {
+	inst, exists := s.servers[protocol.ProtocolOPCUA]
+	if !exists {
 		return fmt.Errorf("OPC UA protocol is not active")
 	}
 
@@ -1275,7 +1436,7 @@ func (s *PLCService) UpdateOPCUAVariable(name string, value interface{}) error {
 		UpdateVariable(name string, value interface{}) error
 	}
 
-	vu, ok := s.dataStore.(variableUpdater)
+	vu, ok := inst.dataStore.(variableUpdater)
 	if !ok {
 		return fmt.Errorf("datastore does not support variable update")
 	}
@@ -1288,7 +1449,8 @@ func (s *PLCService) DeleteOPCUAVariable(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.activeProtocol != protocol.ProtocolOPCUA {
+	inst, exists := s.servers[protocol.ProtocolOPCUA]
+	if !exists {
 		return fmt.Errorf("OPC UA protocol is not active")
 	}
 
@@ -1296,19 +1458,12 @@ func (s *PLCService) DeleteOPCUAVariable(name string) error {
 		DeleteVariableByName(name string) error
 	}
 
-	vd, ok := s.dataStore.(variableDeleter)
+	vd, ok := inst.dataStore.(variableDeleter)
 	if !ok {
 		return fmt.Errorf("datastore does not support variable deletion")
 	}
 
 	return vd.DeleteVariableByName(name)
-}
-
-// IsOPCUAProtocol はOPC UAプロトコルがアクティブかどうかを返す
-func (s *PLCService) IsOPCUAProtocol() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.activeProtocol == protocol.ProtocolOPCUA
 }
 
 // === 変数管理API ===

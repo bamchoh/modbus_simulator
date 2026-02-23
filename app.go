@@ -46,21 +46,38 @@ func (a *App) shutdown(ctx context.Context) {
 	a.plcService.Shutdown()
 }
 
+// === サーバーインスタンス管理 ===
+
+// GetServerInstances はサーバーインスタンス一覧を返す
+func (a *App) GetServerInstances() []application.ServerInstanceDTO {
+	return a.plcService.GetServerInstances()
+}
+
+// AddServer は新しいサーバーインスタンスを追加する
+func (a *App) AddServer(protocolType string, variantID string) error {
+	return a.plcService.AddServer(protocolType, variantID)
+}
+
+// RemoveServer はサーバーインスタンスを削除する
+func (a *App) RemoveServer(protocolType string) error {
+	return a.plcService.RemoveServer(protocolType)
+}
+
 // === サーバー管理 ===
 
 // StartServer はサーバーを起動する
-func (a *App) StartServer() error {
-	return a.plcService.StartServer()
+func (a *App) StartServer(protocolType string) error {
+	return a.plcService.StartServer(protocolType)
 }
 
 // StopServer はサーバーを停止する
-func (a *App) StopServer() error {
-	return a.plcService.StopServer()
+func (a *App) StopServer(protocolType string) error {
+	return a.plcService.StopServer(protocolType)
 }
 
 // GetServerStatus はサーバーのステータスを返す
-func (a *App) GetServerStatus() string {
-	return a.plcService.GetServerStatus()
+func (a *App) GetServerStatus(protocolType string) string {
+	return a.plcService.GetServerStatus(protocolType)
 }
 
 // === プロトコル管理API ===
@@ -70,83 +87,68 @@ func (a *App) GetAvailableProtocols() []application.ProtocolInfoDTO {
 	return a.plcService.GetAvailableProtocols()
 }
 
-// GetActiveProtocol はアクティブなプロトコルタイプを返す
-func (a *App) GetActiveProtocol() string {
-	return a.plcService.GetActiveProtocol()
-}
-
-// GetActiveVariant はアクティブなバリアントIDを返す
-func (a *App) GetActiveVariant() string {
-	return a.plcService.GetActiveVariant()
-}
-
-// SetProtocol はプロトコルを設定する
-func (a *App) SetProtocol(protocolType string, variantID string) error {
-	return a.plcService.SetProtocol(protocolType, variantID)
-}
-
 // GetProtocolSchema はプロトコルスキーマを返す
 func (a *App) GetProtocolSchema(protocolType string) (*application.ProtocolSchemaDTO, error) {
 	return a.plcService.GetProtocolSchema(protocolType)
 }
 
-// GetCurrentConfig は現在の設定を返す
-func (a *App) GetCurrentConfig() *application.ProtocolConfigDTO {
-	return a.plcService.GetCurrentConfig()
+// GetServerConfig は指定サーバーの現在の設定を返す
+func (a *App) GetServerConfig(protocolType string) *application.ServerConfigDTO {
+	return a.plcService.GetServerConfig(protocolType)
 }
 
-// UpdateConfig は設定を更新する
-func (a *App) UpdateConfig(dto *application.ProtocolConfigDTO) error {
-	return a.plcService.UpdateConfig(dto)
+// UpdateServerConfig はサーバーの設定を更新する
+func (a *App) UpdateServerConfig(dto *application.ServerConfigDTO) error {
+	return a.plcService.UpdateServerConfig(dto)
 }
 
 // === UnitID設定API ===
 
-// GetUnitIDSettings はUnitID設定を返す（プロトコルがサポートしない場合はnil）
-func (a *App) GetUnitIDSettings() *application.UnitIDSettingsDTO {
-	return a.plcService.GetUnitIDSettings()
+// GetUnitIDSettings はUnitID設定を返す
+func (a *App) GetUnitIDSettings(protocolType string) *application.UnitIDSettingsDTO {
+	return a.plcService.GetUnitIDSettings(protocolType)
 }
 
 // SetUnitIDEnabled は指定したUnitIdの応答を有効/無効にする
-func (a *App) SetUnitIDEnabled(unitId int, enabled bool) error {
-	return a.plcService.SetUnitIDEnabled(unitId, enabled)
+func (a *App) SetUnitIDEnabled(protocolType string, unitId int, enabled bool) error {
+	return a.plcService.SetUnitIDEnabled(protocolType, unitId, enabled)
 }
 
 // GetDisabledUnitIDs は無効化されたUnitIDのリストを返す
-func (a *App) GetDisabledUnitIDs() []int {
-	return a.plcService.GetDisabledUnitIDs()
+func (a *App) GetDisabledUnitIDs(protocolType string) []int {
+	return a.plcService.GetDisabledUnitIDs(protocolType)
 }
 
 // SetDisabledUnitIDs は無効化するUnitIDのリストを設定する
-func (a *App) SetDisabledUnitIDs(ids []int) error {
-	return a.plcService.SetDisabledUnitIDs(ids)
+func (a *App) SetDisabledUnitIDs(protocolType string, ids []int) error {
+	return a.plcService.SetDisabledUnitIDs(protocolType, ids)
 }
 
 // === 汎用メモリ操作API ===
 
 // GetMemoryAreas は利用可能なメモリエリアの一覧を返す
-func (a *App) GetMemoryAreas() []application.MemoryAreaDTO {
-	return a.plcService.GetMemoryAreas()
+func (a *App) GetMemoryAreas(protocolType string) []application.MemoryAreaDTO {
+	return a.plcService.GetMemoryAreas(protocolType)
 }
 
 // ReadBits は指定エリアの複数ビット値を読み込む
-func (a *App) ReadBits(area string, address, count int) ([]bool, error) {
-	return a.plcService.ReadBits(area, address, count)
+func (a *App) ReadBits(protocolType, area string, address, count int) ([]bool, error) {
+	return a.plcService.ReadBits(protocolType, area, address, count)
 }
 
 // WriteBit は指定エリアのビット値を書き込む
-func (a *App) WriteBit(area string, address int, value bool) error {
-	return a.plcService.WriteBit(area, address, value)
+func (a *App) WriteBit(protocolType, area string, address int, value bool) error {
+	return a.plcService.WriteBit(protocolType, area, address, value)
 }
 
 // ReadWords は指定エリアの複数ワード値を読み込む
-func (a *App) ReadWords(area string, address, count int) ([]int, error) {
-	return a.plcService.ReadWords(area, address, count)
+func (a *App) ReadWords(protocolType, area string, address, count int) ([]int, error) {
+	return a.plcService.ReadWords(protocolType, area, address, count)
 }
 
 // WriteWord は指定エリアのワード値を書き込む
-func (a *App) WriteWord(area string, address int, value int) error {
-	return a.plcService.WriteWord(area, address, value)
+func (a *App) WriteWord(protocolType, area string, address int, value int) error {
+	return a.plcService.WriteWord(protocolType, area, address, value)
 }
 
 // === スクリプト管理 ===

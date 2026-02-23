@@ -6,6 +6,10 @@ export function AddMonitoringItem(arg1) {
   return window['go']['main']['App']['AddMonitoringItem'](arg1);
 }
 
+export function AddServer(arg1, arg2) {
+  return window['go']['main']['App']['AddServer'](arg1, arg2);
+}
+
 export function ClearConsoleLogs() {
   return window['go']['main']['App']['ClearConsoleLogs']();
 }
@@ -54,14 +58,6 @@ export function ExportProject() {
   return window['go']['main']['App']['ExportProject']();
 }
 
-export function GetActiveProtocol() {
-  return window['go']['main']['App']['GetActiveProtocol']();
-}
-
-export function GetActiveVariant() {
-  return window['go']['main']['App']['GetActiveVariant']();
-}
-
 export function GetAvailableProtocols() {
   return window['go']['main']['App']['GetAvailableProtocols']();
 }
@@ -70,24 +66,20 @@ export function GetConsoleLogs() {
   return window['go']['main']['App']['GetConsoleLogs']();
 }
 
-export function GetCurrentConfig() {
-  return window['go']['main']['App']['GetCurrentConfig']();
-}
-
 export function GetDataTypes() {
   return window['go']['main']['App']['GetDataTypes']();
 }
 
-export function GetDisabledUnitIDs() {
-  return window['go']['main']['App']['GetDisabledUnitIDs']();
+export function GetDisabledUnitIDs(arg1) {
+  return window['go']['main']['App']['GetDisabledUnitIDs'](arg1);
 }
 
 export function GetIntervalPresets() {
   return window['go']['main']['App']['GetIntervalPresets']();
 }
 
-export function GetMemoryAreas() {
-  return window['go']['main']['App']['GetMemoryAreas']();
+export function GetMemoryAreas(arg1) {
+  return window['go']['main']['App']['GetMemoryAreas'](arg1);
 }
 
 export function GetMonitoringItems() {
@@ -118,16 +110,24 @@ export function GetSerialPorts() {
   return window['go']['main']['App']['GetSerialPorts']();
 }
 
-export function GetServerStatus() {
-  return window['go']['main']['App']['GetServerStatus']();
+export function GetServerConfig(arg1) {
+  return window['go']['main']['App']['GetServerConfig'](arg1);
+}
+
+export function GetServerInstances() {
+  return window['go']['main']['App']['GetServerInstances']();
+}
+
+export function GetServerStatus(arg1) {
+  return window['go']['main']['App']['GetServerStatus'](arg1);
 }
 
 export function GetStructTypes() {
   return window['go']['main']['App']['GetStructTypes']();
 }
 
-export function GetUnitIDSettings() {
-  return window['go']['main']['App']['GetUnitIDSettings']();
+export function GetUnitIDSettings(arg1) {
+  return window['go']['main']['App']['GetUnitIDSettings'](arg1);
 }
 
 export function GetVariableMappings(arg1) {
@@ -150,16 +150,20 @@ export function MoveMonitoringItem(arg1, arg2) {
   return window['go']['main']['App']['MoveMonitoringItem'](arg1, arg2);
 }
 
-export function ReadBits(arg1, arg2, arg3) {
-  return window['go']['main']['App']['ReadBits'](arg1, arg2, arg3);
+export function ReadBits(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ReadBits'](arg1, arg2, arg3, arg4);
 }
 
-export function ReadWords(arg1, arg2, arg3) {
-  return window['go']['main']['App']['ReadWords'](arg1, arg2, arg3);
+export function ReadWords(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ReadWords'](arg1, arg2, arg3, arg4);
 }
 
 export function RegisterStructType(arg1) {
   return window['go']['main']['App']['RegisterStructType'](arg1);
+}
+
+export function RemoveServer(arg1) {
+  return window['go']['main']['App']['RemoveServer'](arg1);
 }
 
 export function ReorderMonitoringItem(arg1, arg2) {
@@ -170,36 +174,28 @@ export function RunScriptOnce(arg1) {
   return window['go']['main']['App']['RunScriptOnce'](arg1);
 }
 
-export function SetDisabledUnitIDs(arg1) {
-  return window['go']['main']['App']['SetDisabledUnitIDs'](arg1);
+export function SetDisabledUnitIDs(arg1, arg2) {
+  return window['go']['main']['App']['SetDisabledUnitIDs'](arg1, arg2);
 }
 
-export function SetProtocol(arg1, arg2) {
-  return window['go']['main']['App']['SetProtocol'](arg1, arg2);
-}
-
-export function SetUnitIDEnabled(arg1, arg2) {
-  return window['go']['main']['App']['SetUnitIDEnabled'](arg1, arg2);
+export function SetUnitIDEnabled(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetUnitIDEnabled'](arg1, arg2, arg3);
 }
 
 export function StartScript(arg1) {
   return window['go']['main']['App']['StartScript'](arg1);
 }
 
-export function StartServer() {
-  return window['go']['main']['App']['StartServer']();
+export function StartServer(arg1) {
+  return window['go']['main']['App']['StartServer'](arg1);
 }
 
 export function StopScript(arg1) {
   return window['go']['main']['App']['StopScript'](arg1);
 }
 
-export function StopServer() {
-  return window['go']['main']['App']['StopServer']();
-}
-
-export function UpdateConfig(arg1) {
-  return window['go']['main']['App']['UpdateConfig'](arg1);
+export function StopServer(arg1) {
+  return window['go']['main']['App']['StopServer'](arg1);
 }
 
 export function UpdateMonitoringItem(arg1) {
@@ -214,6 +210,10 @@ export function UpdateScript(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['UpdateScript'](arg1, arg2, arg3, arg4);
 }
 
+export function UpdateServerConfig(arg1) {
+  return window['go']['main']['App']['UpdateServerConfig'](arg1);
+}
+
 export function UpdateVariableMappings(arg1, arg2) {
   return window['go']['main']['App']['UpdateVariableMappings'](arg1, arg2);
 }
@@ -222,10 +222,10 @@ export function UpdateVariableValue(arg1, arg2) {
   return window['go']['main']['App']['UpdateVariableValue'](arg1, arg2);
 }
 
-export function WriteBit(arg1, arg2, arg3) {
-  return window['go']['main']['App']['WriteBit'](arg1, arg2, arg3);
+export function WriteBit(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['WriteBit'](arg1, arg2, arg3, arg4);
 }
 
-export function WriteWord(arg1, arg2, arg3) {
-  return window['go']['main']['App']['WriteWord'](arg1, arg2, arg3);
+export function WriteWord(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['WriteWord'](arg1, arg2, arg3, arg4);
 }

@@ -18,6 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   GetMonitoringItems,
+  GetMemoryAreas,
   AddMonitoringItem,
   UpdateMonitoringItem,
   DeleteMonitoringItem,
@@ -161,21 +162,24 @@ interface MonitoringItemWithValue {
 }
 
 interface Props {
-  memoryAreas: application.MemoryAreaDTO[];
+  serverInstances: application.ServerInstanceDTO[];
 }
 
 // ドラッグ可能な行コンポーネント
 interface SortableRowProps {
   itemWithValue: MonitoringItemWithValue;
-  memoryAreas: application.MemoryAreaDTO[];
+  memoryAreasByProtocol: Record<string, application.MemoryAreaDTO[]>;
+  serverInstances: application.ServerInstanceDTO[];
   onSettingChange: (item: MonitoringItemWithValue, field: 'displayFormat' | 'bitWidth' | 'endianness', value: string | number) => void;
   onValueClick: (item: MonitoringItemWithValue) => void;
   onDelete: (id: string) => void;
 }
 
-function SortableRow({ itemWithValue, memoryAreas, onSettingChange, onValueClick, onDelete }: SortableRowProps) {
+function SortableRow({ itemWithValue, memoryAreasByProtocol, serverInstances, onSettingChange, onValueClick, onDelete }: SortableRowProps) {
   const item = itemWithValue.item;
-  const area = memoryAreas.find(a => a.id === item.memoryArea);
+  const areas = memoryAreasByProtocol[item.protocolType] || [];
+  const area = areas.find(a => a.id === item.memoryArea);
+  const server = serverInstances.find(s => s.protocolType === item.protocolType);
 
   const {
     attributes,
@@ -198,6 +202,9 @@ function SortableRow({ itemWithValue, memoryAreas, onSettingChange, onValueClick
       <td className="monitoring-drag-handle" {...attributes} {...listeners}>
         <span className="drag-handle">⠿</span>
       </td>
+      {serverInstances.length > 1 && (
+        <td style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{server?.displayName || item.protocolType}</td>
+      )}
       <td>{area?.displayName || item.memoryArea}</td>
       <td>{area?.oneOrigin ? item.address + 1 : item.address}</td>
       <td>
@@ -260,9 +267,10 @@ function SortableRow({ itemWithValue, memoryAreas, onSettingChange, onValueClick
   );
 }
 
-export function MonitoringView({ memoryAreas }: Props) {
+export function MonitoringView({ serverInstances }: Props) {
   const [items, setItems] = useState<MonitoringItemWithValue[]>([]);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [memoryAreasByProtocol, setMemoryAreasByProtocol] = useState<Record<string, application.MemoryAreaDTO[]>>({});
 
   // ドラッグ＆ドロップ用センサー
   const sensors = useSensors(
@@ -274,6 +282,7 @@ export function MonitoringView({ memoryAreas }: Props) {
 
   // 追加ダイアログ
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [formProtocolType, setFormProtocolType] = useState('');
   const [formArea, setFormArea] = useState('');
   const [formAddress, setFormAddress] = useState(0);
   const [formCount, setFormCount] = useState(1);
@@ -288,6 +297,28 @@ export function MonitoringView({ memoryAreas }: Props) {
   const [writeInputFormat, setWriteInputFormat] = useState<DisplayFormat>('decimal');
   const dialogInputRef = useRef<HTMLInputElement>(null);
 
+  // プロトコルセットが変わった時だけメモリエリアを再ロード
+  const protocolTypesKey = serverInstances.map(i => i.protocolType).join(',');
+  useEffect(() => {
+    const loadMemoryAreas = async () => {
+      const areasMap: Record<string, application.MemoryAreaDTO[]> = {};
+      for (const inst of serverInstances) {
+        if (inst.protocolType === 'opcua') continue;
+        try {
+          const areas = await GetMemoryAreas(inst.protocolType);
+          areasMap[inst.protocolType] = areas || [];
+        } catch {
+          areasMap[inst.protocolType] = [];
+        }
+      }
+      setMemoryAreasByProtocol(areasMap);
+    };
+    if (serverInstances.length > 0) {
+      loadMemoryAreas();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [protocolTypesKey]);
+
   // 項目一覧を読み込み
   const loadItems = useCallback(async () => {
     try {
@@ -300,7 +331,8 @@ export function MonitoringView({ memoryAreas }: Props) {
       // 各項目の現在値を取得
       const itemsWithValues: MonitoringItemWithValue[] = await Promise.all(
         monitoringItems.map(async (item) => {
-          const area = memoryAreas.find(a => a.id === item.memoryArea);
+          const areas = memoryAreasByProtocol[item.protocolType] || [];
+          const area = areas.find(a => a.id === item.memoryArea);
           const isBit = area?.isBit ?? false;
           const bitWidth = (item.bitWidth as BitWidth) || 16;
           const endianness = (item.endianness as Endianness) || 'big';
@@ -308,7 +340,7 @@ export function MonitoringView({ memoryAreas }: Props) {
 
           try {
             if (isBit) {
-              const bits = await ReadBits(item.memoryArea, item.address, 1);
+              const bits = await ReadBits(item.protocolType, item.memoryArea, item.address, 1);
               const bitValue = bits?.[0] ?? false;
               return {
                 item,
@@ -319,7 +351,7 @@ export function MonitoringView({ memoryAreas }: Props) {
               };
             } else {
               const wordCount = getWordCount(bitWidth);
-              const words = await ReadWords(item.memoryArea, item.address, wordCount);
+              const words = await ReadWords(item.protocolType, item.memoryArea, item.address, wordCount);
               if (!words || words.length < wordCount) {
                 return {
                   item,
@@ -359,7 +391,7 @@ export function MonitoringView({ memoryAreas }: Props) {
     } catch (e) {
       console.error('Failed to load monitoring items:', e);
     }
-  }, [memoryAreas]);
+  }, [memoryAreasByProtocol]);
 
   // 初回読み込み
   useEffect(() => {
@@ -384,7 +416,10 @@ export function MonitoringView({ memoryAreas }: Props) {
 
   // 追加ダイアログを開く
   const handleAdd = () => {
-    setFormArea(memoryAreas.find(a => !a.isBit)?.id || memoryAreas[0]?.id || '');
+    const firstProtocol = serverInstances.find(i => i.protocolType !== 'opcua')?.protocolType || serverInstances[0]?.protocolType || '';
+    const firstAreas = memoryAreasByProtocol[firstProtocol] || [];
+    setFormProtocolType(firstProtocol);
+    setFormArea(firstAreas.find(a => !a.isBit)?.id || firstAreas[0]?.id || '');
     setFormAddress(0);
     setFormCount(1);
     setFormBitWidth(16);
@@ -393,17 +428,26 @@ export function MonitoringView({ memoryAreas }: Props) {
     setIsAddDialogOpen(true);
   };
 
+  // フォームのプロトコル変更
+  const handleFormProtocolChange = (protocolType: string) => {
+    setFormProtocolType(protocolType);
+    const areas = memoryAreasByProtocol[protocolType] || [];
+    setFormArea(areas.find(a => !a.isBit)?.id || areas[0]?.id || '');
+  };
+
   // 保存（複数追加対応）
   const handleSave = async () => {
     try {
+      const formAreas = memoryAreasByProtocol[formProtocolType] || [];
       for (let i = 0; i < formCount; i++) {
-        const area = memoryAreas.find(a => a.id === formArea);
+        const area = formAreas.find(a => a.id === formArea);
         const isBit = area?.isBit ?? false;
         const addressIncrement = isBit ? 1 : getWordCount(formBitWidth);
 
         const itemData: application.MonitoringItemDTO = {
           id: '',
           order: 0,
+          protocolType: formProtocolType,
           memoryArea: formArea,
           address: formAddress + i * addressIncrement,
           bitWidth: formBitWidth,
@@ -515,12 +559,13 @@ export function MonitoringView({ memoryAreas }: Props) {
 
     try {
       const item = writingItem.item;
-      const area = memoryAreas.find(a => a.id === item.memoryArea);
+      const areas = memoryAreasByProtocol[item.protocolType] || [];
+      const area = areas.find(a => a.id === item.memoryArea);
       const isBit = area?.isBit ?? false;
 
       if (isBit) {
         const newValue = writeValue === 'true' || writeValue === '1' || writeValue.toLowerCase() === 'on';
-        await WriteBit(item.memoryArea, item.address, newValue);
+        await WriteBit(item.protocolType, item.memoryArea, item.address, newValue);
       } else {
         const bitWidth = (item.bitWidth as BitWidth) || 16;
         const endianness = (item.endianness as Endianness) || 'big';
@@ -531,13 +576,13 @@ export function MonitoringView({ memoryAreas }: Props) {
             console.error('Invalid number format');
             return;
           }
-          await WriteWord(item.memoryArea, item.address, newValue);
+          await WriteWord(item.protocolType, item.memoryArea, item.address, newValue);
         } else {
           const bigValue = parseBigIntInput(writeValue, writeInputFormat);
           const wordCount = getWordCount(bitWidth);
           const words = splitToWords(bigValue, wordCount, endianness);
           for (let i = 0; i < words.length; i++) {
-            await WriteWord(item.memoryArea, item.address + i, words[i]);
+            await WriteWord(item.protocolType, item.memoryArea, item.address + i, words[i]);
           }
         }
       }
@@ -569,8 +614,15 @@ export function MonitoringView({ memoryAreas }: Props) {
   };
 
   // 選択されたエリアがビットタイプかどうか
-  const selectedAreaIsBit = memoryAreas.find(a => a.id === formArea)?.isBit ?? false;
-  const isModbusFormArea = memoryAreas.find(a => a.id === formArea)?.oneOrigin ?? false;
+  const formAreas = memoryAreasByProtocol[formProtocolType] || [];
+  const selectedAreaIsBit = formAreas.find(a => a.id === formArea)?.isBit ?? false;
+  const isModbusFormArea = formAreas.find(a => a.id === formArea)?.oneOrigin ?? false;
+
+  // 書き込みダイアログ用エリア情報
+  const writingAreas = writingItem ? memoryAreasByProtocol[writingItem.item.protocolType] || [] : [];
+
+  // OPC UA以外のサーバーインスタンス（追加ダイアログ用）
+  const nonOpcuaInstances = serverInstances.filter(i => i.protocolType !== 'opcua');
 
   return (
     <div className="monitoring-view">
@@ -605,6 +657,7 @@ export function MonitoringView({ memoryAreas }: Props) {
             <thead>
               <tr>
                 <th></th>
+                {serverInstances.length > 1 && <th>プロトコル</th>}
                 <th>エリア</th>
                 <th>アドレス</th>
                 <th>ビット幅</th>
@@ -623,7 +676,8 @@ export function MonitoringView({ memoryAreas }: Props) {
                   <SortableRow
                     key={itemWithValue.item.id}
                     itemWithValue={itemWithValue}
-                    memoryAreas={memoryAreas}
+                    memoryAreasByProtocol={memoryAreasByProtocol}
+                    serverInstances={serverInstances}
                     onSettingChange={handleSettingChange}
                     onValueClick={handleValueClick}
                     onDelete={handleDelete}
@@ -642,10 +696,23 @@ export function MonitoringView({ memoryAreas }: Props) {
             <h3>モニタリング項目を追加</h3>
 
             <div className="dialog-content">
+              {nonOpcuaInstances.length > 1 && (
+                <div className="dialog-row">
+                  <label>プロトコル:</label>
+                  <select value={formProtocolType} onChange={(e) => handleFormProtocolChange(e.target.value)}>
+                    {nonOpcuaInstances.map(inst => (
+                      <option key={inst.protocolType} value={inst.protocolType}>
+                        {inst.displayName} ({inst.variant})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="dialog-row">
                 <label>メモリエリア:</label>
                 <select value={formArea} onChange={(e) => setFormArea(e.target.value)}>
-                  {memoryAreas.map(area => (
+                  {formAreas.map(area => (
                     <option key={area.id} value={area.id}>{area.displayName}</option>
                   ))}
                 </select>
@@ -739,7 +806,7 @@ export function MonitoringView({ memoryAreas }: Props) {
               <div className="dialog-row">
                 <label>アドレス:</label>
                 <span className="dialog-value">
-                  {memoryAreas.find(a => a.id === writingItem.item.memoryArea)?.oneOrigin ? writingItem.item.address + 1 : writingItem.item.address}
+                  {writingAreas.find(a => a.id === writingItem.item.memoryArea)?.oneOrigin ? writingItem.item.address + 1 : writingItem.item.address}
                 </span>
               </div>
 

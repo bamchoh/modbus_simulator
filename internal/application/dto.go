@@ -122,12 +122,39 @@ type IntervalPresetDTO struct {
 	Ms    int    `json:"ms"`
 }
 
+// === サーバーインスタンスDTO ===
+
+// ServerInstanceDTO はサーバーインスタンス一覧表示用
+type ServerInstanceDTO struct {
+	ProtocolType string `json:"protocolType"`
+	DisplayName  string `json:"displayName"`
+	Variant      string `json:"variant"`
+	Status       string `json:"status"` // "Running" | "Stopped" | "Error"
+}
+
+// ServerConfigDTO は特定サーバーの設定
+type ServerConfigDTO struct {
+	ProtocolType string                 `json:"protocolType"`
+	Variant      string                 `json:"variant"`
+	Settings     map[string]interface{} `json:"settings"`
+}
+
+// ServerSnapshotDTO は Export/Import 用の単一サーバースナップショット
+type ServerSnapshotDTO struct {
+	ProtocolType   string                 `json:"protocolType"`
+	Variant        string                 `json:"variant"`
+	Settings       map[string]interface{} `json:"settings"`
+	MemorySnapshot map[string]interface{} `json:"memorySnapshot,omitempty"`
+	UnitIDSettings *UnitIDSettingsDTO     `json:"unitIdSettings,omitempty"`
+}
+
 // === モニタリングDTO ===
 
 // MonitoringItemDTO はモニタリング項目のDTO
 type MonitoringItemDTO struct {
 	ID            string `json:"id"`
 	Order         int    `json:"order"`
+	ProtocolType  string `json:"protocolType"`
 	MemoryArea    string `json:"memoryArea"`
 	Address       int    `json:"address"`
 	BitWidth      int    `json:"bitWidth"`
@@ -214,14 +241,18 @@ type DataTypeInfoDTO struct {
 
 // ProjectDataDTO はプロジェクト全体のエクスポート/インポート用DTO
 type ProjectDataDTO struct {
-	Version         int                    `json:"version"`
-	ProtocolType    string                 `json:"protocolType"`
-	Variant         string                 `json:"variant"`
-	Settings        map[string]interface{} `json:"settings"`
-	MemorySnapshot  map[string]interface{} `json:"memorySnapshot"`
-	UnitIDSettings  *UnitIDSettingsDTO     `json:"unitIdSettings,omitempty"`
-	Scripts         []*ScriptDTO           `json:"scripts"`
-	MonitoringItems []*MonitoringItemDTO   `json:"monitoringItems,omitempty"`
-	Variables       []*VariableDTO         `json:"variables,omitempty"`
-	StructTypes     []StructTypeDTO        `json:"structTypes,omitempty"`
+	Version int `json:"version"`
+	// Version <= 2 互換フィールド
+	ProtocolType   string                 `json:"protocolType,omitempty"`
+	Variant        string                 `json:"variant,omitempty"`
+	Settings       map[string]interface{} `json:"settings,omitempty"`
+	MemorySnapshot map[string]interface{} `json:"memorySnapshot,omitempty"`
+	UnitIDSettings *UnitIDSettingsDTO     `json:"unitIdSettings,omitempty"`
+	// Version 3 以降
+	Servers []ServerSnapshotDTO `json:"servers,omitempty"`
+	// 共通
+	Scripts         []*ScriptDTO         `json:"scripts"`
+	MonitoringItems []*MonitoringItemDTO `json:"monitoringItems,omitempty"`
+	Variables       []*VariableDTO       `json:"variables,omitempty"`
+	StructTypes     []StructTypeDTO      `json:"structTypes,omitempty"`
 }

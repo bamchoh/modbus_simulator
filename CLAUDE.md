@@ -13,6 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 主な機能
 
 - **マルチプロトコル対応**: Modbus（TCP/RTU/ASCII）、OMRON FINS/UDP
+- **複数サーバー同時実行**: 異なるプロトコル（例: Modbus TCP + FINS/UDP）を同時に起動可能。各サーバーは独立したメモリ空間を持つ
 - **変数管理**: IEC 61131-3準拠のデータ型（スカラー、配列、構造体、STRING[n]）をサポート
 - **スクリプト機能**: JavaScriptで周期処理を記述。const/let対応（IIFE wrapping）、実行エラーのGUI表示
 - **レジスタ操作**: GUIからメモリエリアの値を直接操作可能
@@ -68,7 +69,10 @@ internal/
 
 ### 主要コンポーネント
 
-- **PLCService** (`internal/application/plc_service.go`): メインサービス。プロトコル非依存で、アクティブな1つのプロトコルのみを管理
+- **PLCService** (`internal/application/plc_service.go`): メインサービス。プロトコル非依存で、複数のサーバーインスタンスを同時管理
+  - `servers map[protocol.ProtocolType]*serverInstance` で各プロトコルのサーバーを保持
+  - 各プロトコルタイプは最大1インスタンス（プロトコルタイプをサーバー識別子として利用）
+  - `variableStore` と `scriptEngine` は全サーバーで共有
 - **ServerFactory** (`internal/domain/protocol/server.go`): プロトコルサーバーを作成するファクトリーインターフェース
   - `GetConfigFields()`: スキーマ駆動UIのためのフィールド定義を返す
   - `GetProtocolCapabilities()`: UnitIDサポート等の機能情報を返す
@@ -98,15 +102,28 @@ frontend/src/
 ```
 
 #### ServerPanel.tsx
-`GetProtocolSchema()`から取得したスキーマに基づき、`DynamicField`コンポーネントで動的にフォームを生成します。
+サーバーインスタンスの一覧を表示・管理します。
+- **サーバー一覧**: `GetServerInstances()` で1秒ポーリングして全サーバーのステータスを更新
+- **サーバー追加**: 「サーバーを追加」ダイアログで未追加のプロトコルから選択して追加（`AddServer(protocolType, variant)`）
+- **個別操作**: 各サーバーの開始/停止/設定変更/削除が独立して可能
+- **設定パネル**: `GetProtocolSchema(protocolType)` から取得したスキーマに基づき `DynamicField` で動的フォームを生成
+- `ServerInstanceRow` と `DynamicField` は `ServerPanel` 関数の外部に定義（state リセット防止）
 
 #### RegisterPanel.tsx
 「一覧表示」と「モニタリング」のサブタブを持ちます。
-- **一覧表示**: メモリエリアごとのレジスタ値を表示・編集
+- **プロトコル選択**: 複数サーバー起動時は上部にプロトコル選択セレクトを表示
+- **一覧表示**: 選択中プロトコルのメモリエリアごとのレジスタ値を表示・編集
 - **モニタリング**: 任意のレジスタを登録してリアルタイム監視・書き込み可能
   - ドラッグ＆ドロップで並び替え可能（@dnd-kit使用）
-  - プロトコル変更時は確認ダイアログ後にリストクリア
 - **1オリジンアドレス表示**: `area.oneOrigin` が true のエリアはアドレス表示を+1（内部値は0ベースを維持）
+
+#### MonitoringView.tsx
+プロトコルを横断したレジスタモニタリング。
+- **Props**: `serverInstances: ServerInstanceDTO[]`（RegisterPanel から渡す）
+- **プロトコル別メモリエリア**: `memoryAreasByProtocol: Record<string, MemoryAreaDTO[]>` でプロトコルごとにエリア一覧をキャッシュ
+- **項目追加ダイアログ**: 複数サーバー時はプロトコル選択セレクトを表示
+- **サーバー変化の検出**: `protocolTypesKey = serverInstances.map(i => i.protocolType).join(',')` でサーバー構成変化を効率的に検出してエリアを再取得
+- **API 呼び出し**: `ReadWords(item.protocolType, item.memoryArea, ...)` など全 API に `protocolType` を渡す
 
 #### VariableView.tsx
 IEC 61131-3準拠の変数管理機能。
@@ -121,7 +138,9 @@ IEC 61131-3準拠の変数管理機能。
   - 再帰的エディタで複雑なデータ構造に対応
   - 構造体配列要素は折りたたみ可能（`StructArrayElementEditor`）
   - 数値入力は10進、16進（0x）、2進（0b）対応
-- **プロトコルマッピング**: 変数を複数プロトコルのメモリアドレスにマッピング可能
+- **プロトコルマッピング**: 変数を複数の起動中サーバーのメモリアドレスにマッピング可能
+  - マッピングダイアログのプロトコル選択は `GetServerInstances()` で取得した起動中サーバーから生成
+  - メモリエリア選択は `memoryAreasByProtocol[m.protocolType]` で取得
   - 2行表示レイアウト（ヘッダ行 + コントロール行）
   - マッピング競合警告: 他の変数と同じレジスタを使用している場合、ダイアログ内と変数一覧の両方に警告を表示
 - **構造体型管理**: 構造体型の登録・編集・削除機能
@@ -148,12 +167,23 @@ JavaScript（goja）でPLC動作を記述。
 `app.go`でフロントエンドに公開するメソッドを定義。`wails generate module`でTypeScript型定義を自動生成。
 
 主要API:
-- **プロトコル設定**:
+- **サーバー管理**:
+  - `GetServerInstances()`: 全サーバーインスタンスの一覧（protocolType, displayName, variant, status）を取得
+  - `AddServer(protocolType, variantID)`: 新しいサーバーインスタンスを追加
+  - `RemoveServer(protocolType)`: サーバーインスタンスを削除
+  - `StartServer(protocolType)`, `StopServer(protocolType)`: サーバーの起動/停止
+  - `GetServerStatus(protocolType)`: サーバーのステータス取得
   - `GetProtocolSchema(protocolType)`: プロトコルのスキーマ（バリアント、フィールド定義）を取得
-  - `GetCurrentConfig()`: 現在の設定を取得
-  - `UpdateConfig(dto)`: 設定を更新
-- **メモリ操作**:
-  - `ReadBits()`, `WriteBit()`, `ReadWords()`, `WriteWord()`: 汎用メモリ操作
+  - `GetServerConfig(protocolType)`: 特定サーバーの設定を取得
+  - `UpdateServerConfig(dto)`: サーバー設定を更新（`ServerConfigDTO.protocolType` で対象を指定）
+  - `GetAvailableProtocols()`: 追加可能なプロトコル一覧を取得
+- **UnitID 設定**:
+  - `GetUnitIDSettings(protocolType)`, `SetUnitIDEnabled(protocolType, unitId, enabled)`: UnitID 応答設定
+  - `GetDisabledUnitIDs(protocolType)`, `SetDisabledUnitIDs(protocolType, ids)`: 無効 UnitID の一括管理
+- **メモリ操作**（全て `protocolType string` を第1引数に取る）:
+  - `GetMemoryAreas(protocolType)`: メモリエリア一覧を取得
+  - `ReadBits(protocolType, area, address, count)`, `WriteBit(protocolType, area, address, value)`
+  - `ReadWords(protocolType, area, address, count)`, `WriteWord(protocolType, area, address, value)`
 - **モニタリング**:
   - `GetMonitoringItems()`, `AddMonitoringItem()`, `UpdateMonitoringItem()`, `DeleteMonitoringItem()`, `ReorderMonitoringItem()`, `ClearMonitoringItems()`
 - **変数管理**:
@@ -211,11 +241,20 @@ JavaScript（goja）でPLC動作を記述。
   - 変数一覧: マッピング列の先頭に `.mapping-conflict-icon` で ⚠ アイコン（ホバーでツールチップ）
   - 同一レジスタに複数変数をマッピングした場合の動作は未定義（last-writer-wins、読み取りは非決定的）
 
+### 主要 DTO
+
+`internal/application/dto.go` に定義:
+- **`ServerInstanceDTO`**: サーバーインスタンス一覧表示用（`protocolType`, `displayName`, `variant`, `status`）
+- **`ServerConfigDTO`**: サーバー設定の取得/更新用（`protocolType`, `variant`, `settings`）
+- **`ServerSnapshotDTO`**: Export/Import 用の単一サーバースナップショット
+- **`MonitoringItemDTO`**: `protocolType` フィールドを含む（どのサーバーのアドレスかを示す）
+- **`ProjectDataDTO`**: Version 3 形式で `Servers []ServerSnapshotDTO` にマルチサーバー構成を保存。Version 1/2 との後方互換性あり
+
 ### 設定ファイル
 
 アプリケーションの設定は以下の場所に保存されます：
 - **モニタリング設定**: `%APPDATA%\PLCSimulator\monitoring_config.json`
-  - 登録したモニタリング項目（メモリエリア、アドレス、ビット幅、エンディアン、表示形式）
+  - 登録したモニタリング項目（プロトコルタイプ、メモリエリア、アドレス、ビット幅、エンディアン、表示形式）
 
 ## 新プロトコル追加手順
 

@@ -4,6 +4,8 @@ import {application} from '../models';
 
 export function AddMonitoringItem(arg1:application.MonitoringItemDTO):Promise<application.MonitoringItemDTO>;
 
+export function AddServer(arg1:string,arg2:string):Promise<void>;
+
 export function ClearConsoleLogs():Promise<void>;
 
 export function ClearMonitoringItems():Promise<void>;
@@ -28,23 +30,17 @@ export function DeleteVariable(arg1:string):Promise<void>;
 
 export function ExportProject():Promise<void>;
 
-export function GetActiveProtocol():Promise<string>;
-
-export function GetActiveVariant():Promise<string>;
-
 export function GetAvailableProtocols():Promise<Array<application.ProtocolInfoDTO>>;
 
 export function GetConsoleLogs():Promise<Array<application.ConsoleLogDTO>>;
 
-export function GetCurrentConfig():Promise<application.ProtocolConfigDTO>;
-
 export function GetDataTypes():Promise<application.DataTypesDTO>;
 
-export function GetDisabledUnitIDs():Promise<Array<number>>;
+export function GetDisabledUnitIDs(arg1:string):Promise<Array<number>>;
 
 export function GetIntervalPresets():Promise<Array<application.IntervalPresetDTO>>;
 
-export function GetMemoryAreas():Promise<Array<application.MemoryAreaDTO>>;
+export function GetMemoryAreas(arg1:string):Promise<Array<application.MemoryAreaDTO>>;
 
 export function GetMonitoringItems():Promise<Array<application.MonitoringItemDTO>>;
 
@@ -60,11 +56,15 @@ export function GetScripts():Promise<Array<application.ScriptDTO>>;
 
 export function GetSerialPorts():Promise<Array<string>>;
 
-export function GetServerStatus():Promise<string>;
+export function GetServerConfig(arg1:string):Promise<application.ServerConfigDTO>;
+
+export function GetServerInstances():Promise<Array<application.ServerInstanceDTO>>;
+
+export function GetServerStatus(arg1:string):Promise<string>;
 
 export function GetStructTypes():Promise<Array<application.StructTypeDTO>>;
 
-export function GetUnitIDSettings():Promise<application.UnitIDSettingsDTO>;
+export function GetUnitIDSettings(arg1:string):Promise<application.UnitIDSettingsDTO>;
 
 export function GetVariableMappings(arg1:string):Promise<Array<application.ProtocolMappingDTO>>;
 
@@ -76,31 +76,29 @@ export function IsOPCUAProtocol():Promise<boolean>;
 
 export function MoveMonitoringItem(arg1:string,arg2:string):Promise<void>;
 
-export function ReadBits(arg1:string,arg2:number,arg3:number):Promise<Array<boolean>>;
+export function ReadBits(arg1:string,arg2:string,arg3:number,arg4:number):Promise<Array<boolean>>;
 
-export function ReadWords(arg1:string,arg2:number,arg3:number):Promise<Array<number>>;
+export function ReadWords(arg1:string,arg2:string,arg3:number,arg4:number):Promise<Array<number>>;
 
 export function RegisterStructType(arg1:application.StructTypeDTO):Promise<application.StructTypeDTO>;
+
+export function RemoveServer(arg1:string):Promise<void>;
 
 export function ReorderMonitoringItem(arg1:string,arg2:number):Promise<void>;
 
 export function RunScriptOnce(arg1:string):Promise<any>;
 
-export function SetDisabledUnitIDs(arg1:Array<number>):Promise<void>;
+export function SetDisabledUnitIDs(arg1:string,arg2:Array<number>):Promise<void>;
 
-export function SetProtocol(arg1:string,arg2:string):Promise<void>;
-
-export function SetUnitIDEnabled(arg1:number,arg2:boolean):Promise<void>;
+export function SetUnitIDEnabled(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function StartScript(arg1:string):Promise<void>;
 
-export function StartServer():Promise<void>;
+export function StartServer(arg1:string):Promise<void>;
 
 export function StopScript(arg1:string):Promise<void>;
 
-export function StopServer():Promise<void>;
-
-export function UpdateConfig(arg1:application.ProtocolConfigDTO):Promise<void>;
+export function StopServer(arg1:string):Promise<void>;
 
 export function UpdateMonitoringItem(arg1:application.MonitoringItemDTO):Promise<void>;
 
@@ -108,10 +106,12 @@ export function UpdateOPCUAVariable(arg1:string,arg2:any):Promise<void>;
 
 export function UpdateScript(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
 
+export function UpdateServerConfig(arg1:application.ServerConfigDTO):Promise<void>;
+
 export function UpdateVariableMappings(arg1:string,arg2:Array<application.ProtocolMappingDTO>):Promise<void>;
 
 export function UpdateVariableValue(arg1:string,arg2:any):Promise<void>;
 
-export function WriteBit(arg1:string,arg2:number,arg3:boolean):Promise<void>;
+export function WriteBit(arg1:string,arg2:string,arg3:number,arg4:boolean):Promise<void>;
 
-export function WriteWord(arg1:string,arg2:number,arg3:number):Promise<void>;
+export function WriteWord(arg1:string,arg2:string,arg3:number,arg4:number):Promise<void>;

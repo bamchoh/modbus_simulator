@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
+  GetServerInstances,
   GetMemoryAreas,
   ReadBits,
   ReadWords,
   WriteBit,
   WriteWord,
-  IsOPCUAProtocol
 } from '../../wailsjs/go/main/App';
 import { application } from '../../wailsjs/go/models';
 import { MonitoringView } from './MonitoringView';
@@ -125,8 +125,9 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
   const activeTab = activeSubTab;
   const setActiveTab = onSubTabChange;
 
-  // OPC UAプロトコルかどうか
-  const [isOPCUA, setIsOPCUA] = useState(false);
+  // サーバーインスタンス
+  const [serverInstances, setServerInstances] = useState<application.ServerInstanceDTO[]>([]);
+  const [selectedProtocol, setSelectedProtocol] = useState<string>('');
 
   const [memoryAreas, setMemoryAreas] = useState<application.MemoryAreaDTO[]>([]);
   const [selectedArea, setSelectedArea] = useState<string>('');
@@ -149,29 +150,46 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
   const [editInputFormat, setEditInputFormat] = useState<DisplayFormat>('decimal');
   const [editValue, setEditValue] = useState('');
 
-  // OPC UAプロトコルかどうかを確認
+  // サーバーインスタンスをポーリング
   useEffect(() => {
-    const checkProtocol = async () => {
+    const loadInstances = async () => {
       try {
-        const isOpcua = await IsOPCUAProtocol();
-        setIsOPCUA(isOpcua);
+        const instances = await GetServerInstances();
+        setServerInstances(instances || []);
+        if (instances?.length > 0) {
+          setSelectedProtocol(prev => {
+            if (!prev || !instances.find(i => i.protocolType === prev)) {
+              return instances[0].protocolType;
+            }
+            return prev;
+          });
+        }
       } catch (e) {
-        console.error('Failed to check protocol:', e);
+        console.error('Failed to load server instances:', e);
       }
     };
-    checkProtocol();
+    loadInstances();
+    const interval = setInterval(loadInstances, 1000);
+    return () => clearInterval(interval);
   }, []);
 
-  // メモリエリア一覧を取得
+  // OPC UAプロトコルかどうか（selectedProtocolから派生）
+  const isOPCUA = selectedProtocol === 'opcua';
+
+  // メモリエリア一覧を取得（プロトコルが変更されたら再ロード）
   useEffect(() => {
-    if (isOPCUA) return; // OPC UAの場合はスキップ
+    if (!selectedProtocol || isOPCUA) {
+      setMemoryAreas([]);
+      setSelectedArea('');
+      return;
+    }
 
     const loadAreas = async () => {
       try {
-        const areas = await GetMemoryAreas();
-        setMemoryAreas(areas);
+        const areas = await GetMemoryAreas(selectedProtocol);
+        setMemoryAreas(areas || []);
         // デフォルトで最初のワードエリアを選択
-        const defaultArea = areas.find(a => !a.isBit) || areas[0];
+        const defaultArea = areas?.find(a => !a.isBit) || areas?.[0];
         if (defaultArea) {
           setSelectedArea(defaultArea.id);
         }
@@ -180,7 +198,7 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
       }
     };
     loadAreas();
-  }, [isOPCUA]);
+  }, [selectedProtocol, isOPCUA]);
 
   const currentArea = memoryAreas.find(a => a.id === selectedArea);
   const isBitType = currentArea?.isBit ?? false;
@@ -195,20 +213,20 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
   };
 
   const loadRegisters = useCallback(async () => {
-    if (!selectedArea) return;
+    if (!selectedArea || !selectedProtocol) return;
 
     try {
       let data: (boolean | number)[];
       if (isBitType) {
-        data = await ReadBits(selectedArea, startAddress, PAGE_SIZE);
+        data = await ReadBits(selectedProtocol, selectedArea, startAddress, PAGE_SIZE);
       } else {
-        data = await ReadWords(selectedArea, startAddress, PAGE_SIZE);
+        data = await ReadWords(selectedProtocol, selectedArea, startAddress, PAGE_SIZE);
       }
       setValues(data || []);
     } catch (e) {
       console.error('Failed to load registers:', e);
     }
-  }, [selectedArea, startAddress, isBitType]);
+  }, [selectedProtocol, selectedArea, startAddress, isBitType]);
 
   useEffect(() => {
     loadRegisters();
@@ -358,20 +376,20 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
     try {
       if (isBitType) {
         const newValue = editValue === 'true' || editValue === '1' || editValue.toLowerCase() === 'on';
-        await WriteBit(selectedArea, editingAddress, newValue);
+        await WriteBit(selectedProtocol, selectedArea, editingAddress, newValue);
       } else if (bitWidth === 16) {
         const newValue = parseInputValue(editValue, editInputFormat);
         if (isNaN(newValue)) {
           console.error('Invalid number format');
           return;
         }
-        await WriteWord(selectedArea, editingAddress, newValue);
+        await WriteWord(selectedProtocol, selectedArea, editingAddress, newValue);
       } else {
         // 32bit/64bit: bigintをパースして複数ワードに分解して書き込み
         const bigValue = parseBigIntInput(editValue, editInputFormat);
         const words = splitToWords(bigValue, wordCount, endianness);
         for (let i = 0; i < words.length; i++) {
-          await WriteWord(selectedArea, editingAddress + i, words[i]);
+          await WriteWord(selectedProtocol, selectedArea, editingAddress + i, words[i]);
         }
       }
       await loadRegisters();
@@ -513,12 +531,36 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
 
       {/* モニタリングタブ */}
       {activeTab === 'monitoring' && (
-        <MonitoringView memoryAreas={memoryAreas} />
+        <MonitoringView serverInstances={serverInstances} />
       )}
 
       {/* 一覧表示タブ */}
       {activeTab === 'list' && (
       <>
+      {/* プロトコル選択（複数サーバーの場合） */}
+      {serverInstances.length > 1 && (
+        <div className="register-controls" style={{ marginBottom: '0' }}>
+          <div className="form-group">
+            <label>プロトコル</label>
+            <select
+              value={selectedProtocol}
+              onChange={e => {
+                setSelectedProtocol(e.target.value);
+                setMemoryAreas([]);
+                setSelectedArea('');
+                setValues([]);
+              }}
+            >
+              {serverInstances.map(inst => (
+                <option key={inst.protocolType} value={inst.protocolType}>
+                  {inst.displayName} ({inst.variant})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       <div className="register-controls">
         <div className="form-group">
           <label>メモリエリア</label>

@@ -968,6 +968,118 @@ button:disabled {
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
 }
 
+/* Server Panel - Multi-server list */
+.server-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #0f3460;
+}
+
+.server-panel-header h2 {
+  margin-bottom: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.server-instance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.server-instance-empty {
+  padding: 2rem;
+  text-align: center;
+  color: #9ca3af;
+  background: #0f3460;
+  border-radius: 4px;
+}
+
+.server-instance-row {
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.server-instance-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #0f3460;
+}
+
+.server-instance-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.server-instance-name {
+  font-weight: 600;
+  color: #eaeaea;
+}
+
+.server-instance-variant {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  background: #1a1a2e;
+  padding: 0.125rem 0.5rem;
+  border-radius: 3px;
+}
+
+.server-instance-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.server-status-badge {
+  padding: 0.125rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.server-status-badge.running {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid #10b981;
+}
+
+.server-status-badge.stopped {
+  background: rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
+  border: 1px solid #6b7280;
+}
+
+.server-status-badge.error {
+  background: rgba(220, 38, 38, 0.2);
+  color: #f87171;
+  border: 1px solid #dc2626;
+}
+
+.server-instance-config {
+  padding: 1rem;
+  background: #16213e;
+  border-top: 1px solid #0f3460;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.unit-id-section {
+  grid-column: 1 / -1;
+}
+
+.unit-id-section h4 {
+  font-size: 0.875rem;
+  color: #e94560;
+  margin-bottom: 0.25rem;
+}
+
 /* OPC UA Variable View */
 .opcua-variable-view {
   display: flex;

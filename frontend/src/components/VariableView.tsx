@@ -6,7 +6,7 @@ import {
   UpdateVariableValue,
   DeleteVariable,
   UpdateVariableMappings,
-  GetAvailableProtocols,
+  GetServerInstances,
   GetMemoryAreas,
   GetStructTypes,
   RegisterStructType,
@@ -96,8 +96,8 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   // マッピング編集
   const [mappingVariable, setMappingVariable] = useState<application.VariableDTO | null>(null);
   const [editMappings, setEditMappings] = useState<application.ProtocolMappingDTO[]>([]);
-  const [protocols, setProtocols] = useState<application.ProtocolInfoDTO[]>([]);
-  const [memoryAreas, setMemoryAreas] = useState<application.MemoryAreaDTO[]>([]);
+  const [serverInstances, setServerInstances] = useState<application.ServerInstanceDTO[]>([]);
+  const [memoryAreasByProtocol, setMemoryAreasByProtocol] = useState<Record<string, application.MemoryAreaDTO[]>>({});
 
   // 変数一覧を取得
   const loadVariables = useCallback(async () => {
@@ -136,29 +136,26 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     loadDataTypes();
     loadStructTypes();
 
-    const loadProtocols = async () => {
+    const loadServerInstancesAndAreas = async () => {
       try {
-        const protos = await GetAvailableProtocols();
-        if (protos) {
-          setProtocols(protos);
+        const instances = await GetServerInstances();
+        setServerInstances(instances || []);
+        const areasMap: Record<string, application.MemoryAreaDTO[]> = {};
+        for (const inst of (instances || [])) {
+          if (inst.protocolType === 'opcua') continue;
+          try {
+            const areas = await GetMemoryAreas(inst.protocolType);
+            areasMap[inst.protocolType] = areas || [];
+          } catch {
+            areasMap[inst.protocolType] = [];
+          }
         }
+        setMemoryAreasByProtocol(areasMap);
       } catch (e) {
-        console.error('Failed to load protocols:', e);
+        console.error('Failed to load server instances:', e);
       }
     };
-    loadProtocols();
-
-    const loadAreas = async () => {
-      try {
-        const areas = await GetMemoryAreas();
-        if (areas) {
-          setMemoryAreas(areas);
-        }
-      } catch (e) {
-        console.error('Failed to load memory areas:', e);
-      }
-    };
-    loadAreas();
+    loadServerInstancesAndAreas();
   }, []);
 
   // 変数一覧の初回読み込み
@@ -460,8 +457,8 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     return map[areaId] ?? areaId;
   };
 
-  const isOneOriginArea = (areaId: string): boolean =>
-    memoryAreas.find(a => a.id === areaId)?.oneOrigin ?? false;
+  const isOneOriginArea = (protocolType: string, areaId: string): boolean =>
+    (memoryAreasByProtocol[protocolType] || []).find(a => a.id === areaId)?.oneOrigin ?? false;
 
   // 指定したマッピングが他の変数のマッピングと重複しているか確認し、変数名一覧を返す
   const findMappingConflicts = (mapping: application.ProtocolMappingDTO): string[] => {
@@ -515,7 +512,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   const formatMappings = (mappings: application.ProtocolMappingDTO[] | undefined): string => {
     if (!mappings || mappings.length === 0) return '-';
     return mappings.map(m => {
-      const addr = isOneOriginArea(m.memoryArea) ? m.address + 1 : m.address;
+      const addr = isOneOriginArea(m.protocolType, m.memoryArea) ? m.address + 1 : m.address;
       return `${m.protocolType}:${areaShortName(m.memoryArea)}:${addr}`;
     }).join(', ');
   };
@@ -524,7 +521,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   const formatMappingsWithOffset = (mappings: application.ProtocolMappingDTO[] | undefined, offset: number): string => {
     if (!mappings || mappings.length === 0) return '-';
     return mappings.map(m => {
-      const addr = isOneOriginArea(m.memoryArea) ? m.address + offset + 1 : m.address + offset;
+      const addr = isOneOriginArea(m.protocolType, m.memoryArea) ? m.address + offset + 1 : m.address + offset;
       return `${areaShortName(m.memoryArea)}:${addr}`;
     }).join(', ');
   };
@@ -954,9 +951,12 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
   // マッピングを追加
   const handleAddMapping = () => {
+    const firstInst = serverInstances.find(i => i.protocolType !== 'opcua');
+    const firstProtocol = firstInst?.protocolType || '';
+    const firstArea = (memoryAreasByProtocol[firstProtocol] || [])[0]?.id || '';
     setEditMappings([...editMappings, {
-      protocolType: protocols.length > 0 ? protocols[0].type : '',
-      memoryArea: memoryAreas.length > 0 ? memoryAreas[0].id : '',
+      protocolType: firstProtocol,
+      memoryArea: firstArea,
       address: 0,
       endianness: 'big',
     } as application.ProtocolMappingDTO]);
@@ -1311,13 +1311,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       value={m.protocolType}
                       onChange={(e) => {
                         const updated = [...editMappings];
-                        updated[index] = { ...updated[index], protocolType: e.target.value };
+                        const newProtocol = e.target.value;
+                        const firstArea = (memoryAreasByProtocol[newProtocol] || [])[0]?.id || '';
+                        updated[index] = { ...updated[index], protocolType: newProtocol, memoryArea: firstArea };
                         setEditMappings(updated);
                       }}
                       style={{ flex: 1 }}
                     >
-                      {protocols.map((p) => (
-                        <option key={p.type} value={p.type}>{p.displayName}</option>
+                      {serverInstances.filter(i => i.protocolType !== 'opcua').map((inst) => (
+                        <option key={inst.protocolType} value={inst.protocolType}>{inst.displayName}</option>
                       ))}
                     </select>
 
@@ -1330,22 +1332,22 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       }}
                       style={{ flex: 1 }}
                     >
-                      {memoryAreas.map((a) => (
+                      {(memoryAreasByProtocol[m.protocolType] || []).map((a) => (
                         <option key={a.id} value={a.id}>{a.displayName}</option>
                       ))}
                     </select>
 
                     <input
                       type="number"
-                      value={isOneOriginArea(m.memoryArea) ? m.address + 1 : m.address}
+                      value={isOneOriginArea(m.protocolType, m.memoryArea) ? m.address + 1 : m.address}
                       onChange={(e) => {
-                        const oneOrigin = isOneOriginArea(m.memoryArea);
+                        const oneOrigin = isOneOriginArea(m.protocolType, m.memoryArea);
                         const v = parseInt(e.target.value) || (oneOrigin ? 1 : 0);
                         const updated = [...editMappings];
                         updated[index] = { ...updated[index], address: oneOrigin ? Math.max(0, v - 1) : v };
                         setEditMappings(updated);
                       }}
-                      min={isOneOriginArea(m.memoryArea) ? 1 : 0}
+                      min={isOneOriginArea(m.protocolType, m.memoryArea) ? 1 : 0}
                       style={{ flex: 1 }}
                     />
 

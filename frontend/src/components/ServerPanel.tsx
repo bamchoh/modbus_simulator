@@ -1,199 +1,85 @@
 import { useState, useEffect } from 'react';
 import {
-  GetServerStatus,
+  GetServerInstances,
+  AddServer,
+  RemoveServer,
   StartServer,
   StopServer,
   ExportProject,
   ImportProject,
   GetSerialPorts,
   GetAvailableProtocols,
-  GetActiveProtocol,
-  GetActiveVariant,
-  SetProtocol,
   GetProtocolSchema,
-  GetCurrentConfig,
-  UpdateConfig,
+  GetServerConfig,
+  UpdateServerConfig,
   GetUnitIDSettings,
   SetUnitIDEnabled,
-  GetMonitoringItems,
-  ClearMonitoringItems
 } from '../../wailsjs/go/main/App';
 import { application } from '../../wailsjs/go/models';
 
-export function ServerPanel() {
-  const [status, setStatus] = useState('Stopped');
-  const [error, setError] = useState<string | null>(null);
-  const [isDirty, setIsDirty] = useState(false);
+// ServerInstanceRow はコンポーネント外で定義（再レンダリング時の状態リセットを防ぐため）
+interface ServerInstanceRowProps {
+  instance: application.ServerInstanceDTO;
+  onStart: (protocolType: string) => void;
+  onStop: (protocolType: string) => void;
+  onRemove: (protocolType: string) => void;
+  serialPorts: string[];
+  onRefreshPorts: () => void;
+}
 
-  // プロトコル関連
-  const [protocols, setProtocols] = useState<application.ProtocolInfoDTO[]>([]);
-  const [activeProtocol, setActiveProtocol] = useState<string>('modbus');
-  const [activeVariant, setActiveVariant] = useState<string>('tcp');
+function ServerInstanceRow({
+  instance,
+  onStart,
+  onStop,
+  onRemove,
+  serialPorts,
+  onRefreshPorts,
+}: ServerInstanceRowProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [schema, setSchema] = useState<application.ProtocolSchemaDTO | null>(null);
-  const [config, setConfig] = useState<application.ProtocolConfigDTO | null>(null);
-
-  // UnitID設定
+  const [config, setConfig] = useState<application.ServerConfigDTO | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [rowError, setRowError] = useState<string | null>(null);
   const [unitIDSettings, setUnitIDSettings] = useState<application.UnitIDSettingsDTO | null>(null);
   const [disabledUnitIds, setDisabledUnitIds] = useState<Set<number>>(new Set());
 
-  // シリアルポート
-  const [serialPorts, setSerialPorts] = useState<string[]>([]);
+  const isRunning = instance.status === 'Running';
 
-  // プロトコル変更確認ダイアログ
-  const [isProtocolChangeDialogOpen, setIsProtocolChangeDialogOpen] = useState(false);
-  const [pendingProtocolChange, setPendingProtocolChange] = useState<string | null>(null);
-  const [monitoringItemCount, setMonitoringItemCount] = useState(0);
-
-  useEffect(() => {
-    loadInitialData();
-    const interval = setInterval(() => {
-      GetServerStatus().then(setStatus).catch(() => {});
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadInitialData = async () => {
+  const loadSettings = async () => {
     try {
-      const [protos, active, variant] = await Promise.all([
-        GetAvailableProtocols(),
-        GetActiveProtocol(),
-        GetActiveVariant()
+      const [s, cfg, unitSettings] = await Promise.all([
+        GetProtocolSchema(instance.protocolType),
+        GetServerConfig(instance.protocolType),
+        GetUnitIDSettings(instance.protocolType),
       ]);
-      setProtocols(protos);
-      setActiveProtocol(active);
-      setActiveVariant(variant);
-
-      await Promise.all([
-        loadSchema(active),
-        loadConfig(),
-        loadUnitIDSettings(),
-        loadSerialPorts()
-      ]);
-
-      const s = await GetServerStatus();
-      setStatus(s);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const loadSchema = async (protocolType: string) => {
-    try {
-      const s = await GetProtocolSchema(protocolType);
       setSchema(s);
-    } catch (e) {
-      console.error('Failed to load schema:', e);
-    }
-  };
-
-  const loadConfig = async () => {
-    try {
-      const cfg = await GetCurrentConfig();
       setConfig(cfg);
-      setActiveVariant(cfg?.variant || 'tcp');
+      if (unitSettings) {
+        setUnitIDSettings(unitSettings);
+        setDisabledUnitIds(new Set(unitSettings.disabledIds || []));
+      }
       setIsDirty(false);
     } catch (e) {
-      console.error('Failed to load config:', e);
+      setRowError(String(e));
     }
   };
 
-  const loadUnitIDSettings = async () => {
-    try {
-      const settings = await GetUnitIDSettings();
-      setUnitIDSettings(settings);
-      if (settings) {
-        setDisabledUnitIds(new Set(settings.disabledIds || []));
-      }
-    } catch (e) {
-      console.error('Failed to load unit ID settings:', e);
+  const handleToggleExpand = () => {
+    if (!isExpanded) {
+      loadSettings();
     }
+    setIsExpanded(!isExpanded);
   };
 
-  const loadSerialPorts = async () => {
-    try {
-      const ports = await GetSerialPorts();
-      setSerialPorts(ports);
-    } catch (e) {
-      console.error('Failed to load serial ports:', e);
-    }
-  };
+  // 現在のバリアントのフィールドを取得
+  const currentVariantId = config?.variant || instance.variant;
+  const currentVariant = schema?.variants.find(v => v.id === currentVariantId);
+  const fields = currentVariant?.fields || [];
 
-  const handleProtocolChange = async (protocolType: string) => {
-    // 現在のプロトコルと同じなら何もしない
-    if (protocolType === activeProtocol) return;
-
-    try {
-      setError(null);
-      // モニタリング項目の数を確認
-      const items = await GetMonitoringItems();
-      const count = items?.length || 0;
-
-      if (count > 0) {
-        // モニタリング項目がある場合は確認ダイアログを表示
-        setMonitoringItemCount(count);
-        setPendingProtocolChange(protocolType);
-        setIsProtocolChangeDialogOpen(true);
-      } else {
-        // モニタリング項目がない場合はそのまま変更
-        await executeProtocolChange(protocolType);
-      }
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const executeProtocolChange = async (protocolType: string) => {
-    try {
-      setError(null);
-      const proto = protocols.find(p => p.type === protocolType);
-      const defaultVariant = proto?.variants[0]?.id || 'tcp';
-      await SetProtocol(protocolType, defaultVariant);
-      setActiveProtocol(protocolType);
-      setActiveVariant(defaultVariant);
-      await Promise.all([
-        loadSchema(protocolType),
-        loadConfig(),
-        loadUnitIDSettings()
-      ]);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const handleProtocolChangeConfirm = async () => {
-    if (pendingProtocolChange) {
-      // モニタリング項目をクリア
-      await ClearMonitoringItems();
-      // プロトコルを変更
-      await executeProtocolChange(pendingProtocolChange);
-    }
-    setIsProtocolChangeDialogOpen(false);
-    setPendingProtocolChange(null);
-  };
-
-  const handleProtocolChangeCancel = () => {
-    setIsProtocolChangeDialogOpen(false);
-    setPendingProtocolChange(null);
-  };
-
-  // ESCキーでプロトコル変更確認ダイアログを閉じる
-  useEffect(() => {
-    if (!isProtocolChangeDialogOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleProtocolChangeCancel();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isProtocolChangeDialogOpen]);
-
-  const handleVariantChange = async (variantId: string) => {
-    try {
-      setError(null);
-      await SetProtocol(activeProtocol, variantId);
-      setActiveVariant(variantId);
-      await loadConfig();
-    } catch (e) {
-      setError(String(e));
+  const handleVariantChange = (variantId: string) => {
+    if (config) {
+      setConfig({ ...config, variant: variantId });
+      setIsDirty(true);
     }
   };
 
@@ -203,8 +89,8 @@ export function ServerPanel() {
         ...config,
         settings: {
           ...config.settings,
-          [fieldName]: value
-        }
+          [fieldName]: value,
+        },
       });
       setIsDirty(true);
     }
@@ -213,18 +99,18 @@ export function ServerPanel() {
   const handleSaveConfig = async () => {
     if (config) {
       try {
-        setError(null);
-        await UpdateConfig(config);
-        await loadConfig();
+        setRowError(null);
+        await UpdateServerConfig(config);
+        await loadSettings();
       } catch (e) {
-        setError(String(e));
+        setRowError(String(e));
       }
     }
   };
 
   const handleUnitIdToggle = async (unitId: number, enabled: boolean) => {
     try {
-      await SetUnitIDEnabled(unitId, enabled);
+      await SetUnitIDEnabled(instance.protocolType, unitId, enabled);
       const newDisabled = new Set(disabledUnitIds);
       if (enabled) {
         newDisabled.delete(unitId);
@@ -233,171 +119,115 @@ export function ServerPanel() {
       }
       setDisabledUnitIds(newDisabled);
     } catch (e) {
-      setError(String(e));
+      setRowError(String(e));
     }
   };
 
-  const handleStart = async () => {
-    try {
-      setError(null);
-      await StartServer();
-      const s = await GetServerStatus();
-      setStatus(s);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const handleStop = async () => {
-    try {
-      setError(null);
-      await StopServer();
-      const s = await GetServerStatus();
-      setStatus(s);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const handleExport = async () => {
-    try {
-      setError(null);
-      await ExportProject();
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const handleImport = async () => {
-    try {
-      setError(null);
-      await ImportProject();
-      await loadInitialData();
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const isRunning = status === 'Running';
-
-  // 現在のバリアントのフィールドを取得
-  const currentVariant = schema?.variants.find(v => v.id === activeVariant);
-  const fields = currentVariant?.fields || [];
-
-  // UnitID範囲を生成
   const unitIdRange = unitIDSettings
-    ? Array.from({ length: unitIDSettings.max - unitIDSettings.min + 1 }, (_, i) => unitIDSettings.min + i)
+    ? Array.from(
+        { length: unitIDSettings.max - unitIDSettings.min + 1 },
+        (_, i) => unitIDSettings.min + i
+      )
     : [];
 
+  const statusClass =
+    instance.status === 'Running'
+      ? 'running'
+      : instance.status === 'Error'
+      ? 'error'
+      : 'stopped';
+
   return (
-    <div className="panel">
-      <h2>サーバー設定</h2>
-
-      <div className="status-bar">
-        <span className={`status-indicator ${isRunning ? 'running' : 'stopped'}`}>
-          {status}
-        </span>
-        <button onClick={isRunning ? handleStop : handleStart} className={isRunning ? 'btn-danger' : 'btn-primary'}>
-          {isRunning ? '停止' : '開始'}
-        </button>
-        <div className="spacer" />
-        <button onClick={handleExport} className="btn-secondary">
-          エクスポート
-        </button>
-        <button onClick={handleImport} className="btn-secondary">
-          インポート
-        </button>
-      </div>
-
-      {error && <div className="error-message">{error}</div>}
-
-      <div className="config-section">
-        <div className="form-group">
-          <label>プロトコル</label>
-          <select
-            value={activeProtocol}
-            onChange={(e) => handleProtocolChange(e.target.value)}
+    <div className="server-instance-row">
+      <div className="server-instance-header">
+        <div className="server-instance-info">
+          <span className="server-instance-name">{instance.displayName}</span>
+          <span className="server-instance-variant">{instance.variant}</span>
+          <span className={`server-status-badge ${statusClass}`}>{instance.status}</span>
+        </div>
+        <div className="server-instance-actions">
+          <button
+            onClick={() =>
+              isRunning ? onStop(instance.protocolType) : onStart(instance.protocolType)
+            }
+            className={isRunning ? 'btn-danger' : 'btn-primary'}
+          >
+            {isRunning ? '停止' : '開始'}
+          </button>
+          <button onClick={handleToggleExpand} className="btn-secondary">
+            {isExpanded ? '設定 ▲' : '設定 ▼'}
+          </button>
+          <button
+            onClick={() => onRemove(instance.protocolType)}
+            className="btn-danger"
             disabled={isRunning}
           >
-            {protocols.map(p => (
-              <option key={p.type} value={p.type}>{p.displayName}</option>
-            ))}
-          </select>
+            削除
+          </button>
         </div>
-
-        {schema && schema.variants.length > 1 && (
-          <div className="form-group">
-            <label>サーバータイプ</label>
-            <select
-              value={activeVariant}
-              onChange={(e) => handleVariantChange(e.target.value)}
-              disabled={isRunning}
-            >
-              {schema.variants.map(v => (
-                <option key={v.id} value={v.id}>{v.displayName}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* 動的フィールドレンダリング */}
-        {fields.map(field => (
-          <DynamicField
-            key={field.name}
-            field={field}
-            value={config?.settings?.[field.name]}
-            onChange={(value) => handleSettingChange(field.name, value)}
-            disabled={isRunning}
-            serialPorts={serialPorts}
-            onRefreshPorts={loadSerialPorts}
-          />
-        ))}
-
-        <button onClick={handleSaveConfig} disabled={isRunning} className={isDirty ? 'btn-primary' : 'btn-secondary'}>
-          {isDirty ? '設定を保存 *' : '設定を保存'}
-        </button>
       </div>
 
-      {/* UnitID設定（プロトコルがサポートする場合のみ） */}
-      {schema?.capabilities.supportsUnitId && unitIDSettings && (
-        <div className="config-section">
-          <h3>UnitID 応答設定</h3>
-          <p className="help-text">オフにしたUnitIDには応答しません（デフォルト: 全て応答）</p>
-          <div className="unit-id-grid">
-            {unitIdRange.map(unitId => (
-              <label key={unitId} className="unit-id-toggle">
-                <input
-                  type="checkbox"
-                  checked={!disabledUnitIds.has(unitId)}
-                  onChange={(e) => handleUnitIdToggle(unitId, e.target.checked)}
-                />
-                <span className="unit-id-label">{unitId}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
+      {isExpanded && (
+        <div className="server-instance-config">
+          {rowError && <div className="error-message">{rowError}</div>}
 
-      {/* プロトコル変更確認ダイアログ */}
-      {isProtocolChangeDialogOpen && (
-        <div className="dialog-overlay">
-          <div className="dialog">
-            <h3>プロトコル変更の確認</h3>
-            <div className="dialog-content">
-              <p className="warning-text">
-                プロトコルを変更すると、登録されているモニタリング項目（{monitoringItemCount}件）がすべて削除されます。
+          {schema && schema.variants.length > 1 && config && (
+            <div className="form-group">
+              <label>サーバータイプ</label>
+              <select
+                value={config.variant}
+                onChange={e => handleVariantChange(e.target.value)}
+                disabled={isRunning}
+              >
+                {schema.variants.map(v => (
+                  <option key={v.id} value={v.id}>
+                    {v.displayName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {fields.map(field => (
+            <DynamicField
+              key={field.name}
+              field={field}
+              value={config?.settings?.[field.name]}
+              onChange={value => handleSettingChange(field.name, value)}
+              disabled={isRunning}
+              serialPorts={serialPorts}
+              onRefreshPorts={onRefreshPorts}
+            />
+          ))}
+
+          <button
+            onClick={handleSaveConfig}
+            disabled={isRunning}
+            className={isDirty ? 'btn-primary' : 'btn-secondary'}
+          >
+            {isDirty ? '設定を保存 *' : '設定を保存'}
+          </button>
+
+          {schema?.capabilities.supportsUnitId && unitIDSettings && (
+            <div className="unit-id-section">
+              <h4>UnitID 応答設定</h4>
+              <p className="help-text">
+                オフにしたUnitIDには応答しません（デフォルト: 全て応答）
               </p>
-              <p>続行しますか？</p>
+              <div className="unit-id-grid">
+                {unitIdRange.map(unitId => (
+                  <label key={unitId} className="unit-id-toggle">
+                    <input
+                      type="checkbox"
+                      checked={!disabledUnitIds.has(unitId)}
+                      onChange={e => handleUnitIdToggle(unitId, e.target.checked)}
+                    />
+                    <span className="unit-id-label">{unitId}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-            <div className="dialog-buttons">
-              <button onClick={handleProtocolChangeCancel} className="btn-secondary">
-                キャンセル
-              </button>
-              <button onClick={handleProtocolChangeConfirm} className="btn-danger">
-                変更する
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>
@@ -414,8 +244,14 @@ interface DynamicFieldProps {
   onRefreshPorts: () => void;
 }
 
-function DynamicField({ field, value, onChange, disabled, serialPorts, onRefreshPorts }: DynamicFieldProps) {
-  // デフォルト値を使用
+function DynamicField({
+  field,
+  value,
+  onChange,
+  disabled,
+  serialPorts,
+  onRefreshPorts,
+}: DynamicFieldProps) {
   const displayValue = value ?? field.default;
 
   switch (field.type) {
@@ -426,7 +262,7 @@ function DynamicField({ field, value, onChange, disabled, serialPorts, onRefresh
           <input
             type="text"
             value={displayValue || ''}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={e => onChange(e.target.value)}
             disabled={disabled}
           />
         </div>
@@ -441,7 +277,7 @@ function DynamicField({ field, value, onChange, disabled, serialPorts, onRefresh
             min={field.min ?? undefined}
             max={field.max ?? undefined}
             value={displayValue ?? 0}
-            onChange={(e) => onChange(parseInt(e.target.value))}
+            onChange={e => onChange(parseInt(e.target.value))}
             disabled={disabled}
           />
         </div>
@@ -453,8 +289,7 @@ function DynamicField({ field, value, onChange, disabled, serialPorts, onRefresh
           <label>{field.label}</label>
           <select
             value={String(displayValue ?? '')}
-            onChange={(e) => {
-              // 数値の場合は数値に変換
+            onChange={e => {
               const val = e.target.value;
               const numVal = parseInt(val);
               onChange(isNaN(numVal) ? val : numVal);
@@ -462,7 +297,9 @@ function DynamicField({ field, value, onChange, disabled, serialPorts, onRefresh
             disabled={disabled}
           >
             {field.options?.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
           </select>
         </div>
@@ -475,7 +312,7 @@ function DynamicField({ field, value, onChange, disabled, serialPorts, onRefresh
           <div style={{ display: 'flex', gap: '8px' }}>
             <select
               value={displayValue || ''}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={e => onChange(e.target.value)}
               disabled={disabled}
               style={{ flex: 1 }}
             >
@@ -483,7 +320,9 @@ function DynamicField({ field, value, onChange, disabled, serialPorts, onRefresh
                 <option value="">ポートが見つかりません</option>
               )}
               {serialPorts.map(port => (
-                <option key={port} value={port}>{port}</option>
+                <option key={port} value={port}>
+                  {port}
+                </option>
               ))}
               {displayValue && !serialPorts.includes(displayValue) && (
                 <option value={displayValue}>{displayValue} (未検出)</option>
@@ -509,10 +348,253 @@ function DynamicField({ field, value, onChange, disabled, serialPorts, onRefresh
           <input
             type="text"
             value={displayValue || ''}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={e => onChange(e.target.value)}
             disabled={disabled}
           />
         </div>
       );
   }
+}
+
+export function ServerPanel() {
+  const [serverInstances, setServerInstances] = useState<application.ServerInstanceDTO[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [serialPorts, setSerialPorts] = useState<string[]>([]);
+  const [protocols, setProtocols] = useState<application.ProtocolInfoDTO[]>([]);
+
+  // サーバー追加ダイアログ
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [selectedProtocol, setSelectedProtocol] = useState<string>('');
+  const [selectedVariant, setSelectedVariant] = useState<string>('');
+  const [addSchema, setAddSchema] = useState<application.ProtocolSchemaDTO | null>(null);
+
+  useEffect(() => {
+    loadInitialData();
+    const interval = setInterval(() => {
+      GetServerInstances()
+        .then(instances => setServerInstances(instances || []))
+        .catch(() => {});
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadInitialData = async () => {
+    try {
+      const [instances, protos, ports] = await Promise.all([
+        GetServerInstances(),
+        GetAvailableProtocols(),
+        GetSerialPorts(),
+      ]);
+      setServerInstances(instances || []);
+      setProtocols(protos || []);
+      setSerialPorts(ports || []);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleStart = async (protocolType: string) => {
+    try {
+      setError(null);
+      await StartServer(protocolType);
+      const instances = await GetServerInstances();
+      setServerInstances(instances || []);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleStop = async (protocolType: string) => {
+    try {
+      setError(null);
+      await StopServer(protocolType);
+      const instances = await GetServerInstances();
+      setServerInstances(instances || []);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleRemove = async (protocolType: string) => {
+    try {
+      setError(null);
+      await RemoveServer(protocolType);
+      const instances = await GetServerInstances();
+      setServerInstances(instances || []);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      setError(null);
+      await ExportProject();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      setError(null);
+      await ImportProject();
+      await loadInitialData();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleRefreshPorts = async () => {
+    try {
+      const ports = await GetSerialPorts();
+      setSerialPorts(ports || []);
+    } catch (e) {
+      console.error('Failed to load serial ports:', e);
+    }
+  };
+
+  // 追加済みでないプロトコルのみ候補に
+  const addedProtocolTypes = new Set(serverInstances.map(i => i.protocolType));
+  const availableProtocols = protocols.filter(p => !addedProtocolTypes.has(p.type));
+
+  const handleOpenAddDialog = async () => {
+    if (availableProtocols.length === 0) return;
+    const firstProto = availableProtocols[0];
+    try {
+      const schema = await GetProtocolSchema(firstProto.type);
+      setAddSchema(schema);
+      setSelectedProtocol(firstProto.type);
+      setSelectedVariant(schema?.variants[0]?.id || '');
+    } catch (e) {
+      setError(String(e));
+      return;
+    }
+    setIsAddDialogOpen(true);
+  };
+
+  const handleAddProtocolChange = async (protocolType: string) => {
+    try {
+      const schema = await GetProtocolSchema(protocolType);
+      setAddSchema(schema);
+      setSelectedProtocol(protocolType);
+      setSelectedVariant(schema?.variants[0]?.id || '');
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleAddServer = async () => {
+    try {
+      setError(null);
+      await AddServer(selectedProtocol, selectedVariant);
+      const instances = await GetServerInstances();
+      setServerInstances(instances || []);
+      setIsAddDialogOpen(false);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  // ESCキーで追加ダイアログを閉じる
+  useEffect(() => {
+    if (!isAddDialogOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsAddDialogOpen(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isAddDialogOpen]);
+
+  return (
+    <div className="panel">
+      <div className="server-panel-header">
+        <h2>サーバー</h2>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            onClick={handleOpenAddDialog}
+            disabled={availableProtocols.length === 0}
+            className="btn-primary"
+          >
+            + サーバーを追加
+          </button>
+          <button onClick={handleExport} className="btn-secondary">
+            エクスポート
+          </button>
+          <button onClick={handleImport} className="btn-secondary">
+            インポート
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="error-message">{error}</div>}
+
+      <div className="server-instance-list">
+        {serverInstances.length === 0 ? (
+          <div className="server-instance-empty">
+            サーバーが登録されていません。「+ サーバーを追加」ボタンでサーバーを追加してください。
+          </div>
+        ) : (
+          serverInstances.map(instance => (
+            <ServerInstanceRow
+              key={instance.protocolType}
+              instance={instance}
+              onStart={handleStart}
+              onStop={handleStop}
+              onRemove={handleRemove}
+              serialPorts={serialPorts}
+              onRefreshPorts={handleRefreshPorts}
+            />
+          ))
+        )}
+      </div>
+
+      {/* サーバー追加ダイアログ */}
+      {isAddDialogOpen && (
+        <div className="dialog-overlay">
+          <div className="dialog">
+            <h3>サーバーを追加</h3>
+            <div className="dialog-content">
+              <div className="form-group">
+                <label>プロトコル</label>
+                <select
+                  value={selectedProtocol}
+                  onChange={e => handleAddProtocolChange(e.target.value)}
+                >
+                  {availableProtocols.map(p => (
+                    <option key={p.type} value={p.type}>
+                      {p.displayName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {addSchema && addSchema.variants.length > 1 && (
+                <div className="form-group">
+                  <label>バリアント</label>
+                  <select
+                    value={selectedVariant}
+                    onChange={e => setSelectedVariant(e.target.value)}
+                  >
+                    {addSchema.variants.map(v => (
+                      <option key={v.id} value={v.id}>
+                        {v.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="dialog-buttons">
+              <button onClick={() => setIsAddDialogOpen(false)} className="btn-secondary">
+                キャンセル
+              </button>
+              <button onClick={handleAddServer} className="btn-primary">
+                追加
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
