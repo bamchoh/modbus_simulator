@@ -498,6 +498,22 @@ button:disabled {
   line-height: 1.4;
 }
 
+.mapping-conflict-warning {
+  color: #f59e0b;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 3px solid #f59e0b;
+  border-radius: 2px;
+}
+
+.mapping-conflict-icon {
+  color: #f59e0b;
+  margin-right: 0.3em;
+  cursor: help;
+}
+
 .register-navigation {
   display: flex;
   align-items: center;

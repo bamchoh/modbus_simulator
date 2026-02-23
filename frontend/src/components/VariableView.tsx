@@ -463,6 +463,54 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   const isOneOriginArea = (areaId: string): boolean =>
     memoryAreas.find(a => a.id === areaId)?.oneOrigin ?? false;
 
+  // 指定したマッピングが他の変数のマッピングと重複しているか確認し、変数名一覧を返す
+  const findMappingConflicts = (mapping: application.ProtocolMappingDTO): string[] => {
+    if (!mappingVariable) return [];
+    const currStart = mapping.address;
+    const currEnd = currStart + getWordCount(mappingVariable.dataType);
+    const conflicts: string[] = [];
+
+    for (const v of variables) {
+      if (v.id === mappingVariable.id || !v.mappings) continue;
+      const otherWordCount = getWordCount(v.dataType);
+      for (const vm of v.mappings) {
+        if (vm.protocolType !== mapping.protocolType || vm.memoryArea !== mapping.memoryArea) continue;
+        const otherStart = vm.address;
+        const otherEnd = otherStart + otherWordCount;
+        // アドレス範囲の重複チェック
+        if (currStart < otherEnd && currEnd > otherStart) {
+          conflicts.push(v.name);
+          break;
+        }
+      }
+    }
+    return conflicts;
+  };
+
+  // 変数のマッピングが他の変数と重複しているか確認し、変数名一覧を返す（テーブル表示用）
+  const getVariableMappingConflicts = (v: application.VariableDTO): string[] => {
+    if (!v.mappings || v.mappings.length === 0) return [];
+    const currWordCount = getWordCount(v.dataType);
+    const conflictNames = new Set<string>();
+
+    for (const m of v.mappings) {
+      const currStart = m.address;
+      const currEnd = currStart + currWordCount;
+      for (const other of variables) {
+        if (other.id === v.id || !other.mappings) continue;
+        const otherWordCount = getWordCount(other.dataType);
+        for (const vm of other.mappings) {
+          if (vm.protocolType !== m.protocolType || vm.memoryArea !== m.memoryArea) continue;
+          if (currStart < vm.address + otherWordCount && currEnd > vm.address) {
+            conflictNames.add(other.name);
+            break;
+          }
+        }
+      }
+    }
+    return [...conflictNames];
+  };
+
   // マッピングのフォーマット
   const formatMappings = (mappings: application.ProtocolMappingDTO[] | undefined): string => {
     if (!mappings || mappings.length === 0) return '-';
@@ -1006,7 +1054,18 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                 style={{ cursor: row.depth === 0 ? 'pointer' : undefined }}
               >
                 {row.depth === 0 ? (
-                  <span>{formatMappings(row.variable.mappings)}</span>
+                  <span>
+                    {(() => {
+                      const conflicts = getVariableMappingConflicts(row.variable);
+                      return conflicts.length > 0 ? (
+                        <span
+                          className="mapping-conflict-icon"
+                          title={`以下の変数と重複: ${conflicts.join(', ')}`}
+                        >⚠</span>
+                      ) : null;
+                    })()}
+                    {formatMappings(row.variable.mappings)}
+                  </span>
                 ) : (
                   <span style={{ fontSize: '0.85em', color: '#aaa' }}>
                     {formatMappingsWithOffset(row.variable.mappings, row.wordOffset)}
@@ -1310,6 +1369,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       X
                     </button>
                   </div>
+                  {(() => {
+                    const conflicts = findMappingConflicts(m);
+                    if (conflicts.length === 0) return null;
+                    return (
+                      <div className="mapping-conflict-warning">
+                        ⚠ 以下の変数と重複しています: {conflicts.join(', ')}
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
 
