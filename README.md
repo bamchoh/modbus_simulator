@@ -160,6 +160,54 @@ plc.setHoldingRegister(0, value + 1);
 
 メモリエリアはプロトコルにより異なります（例: Modbus の "coil", "holding_register"、FINS の "DM", "CIO" など）。
 
+**変数アクセス API**:
+
+| メソッド                                         | 説明                                   |
+| ------------------------------------------------ | -------------------------------------- |
+| `plc.readVariable(name)`                         | 変数名で値を読み取り（文字列/数値）    |
+| `plc.writeVariable(name, value)`                 | 変数名で値を書き込み                   |
+| `plc.readArrayElement(name, index)`              | 配列変数の要素を読み取り               |
+| `plc.writeArrayElement(name, index, value)`      | 配列変数の要素を書き込み               |
+| `plc.readStructField(name, fieldName)`           | 構造体変数のフィールドを読み取り       |
+| `plc.writeStructField(name, fieldName, value)`   | 構造体変数のフィールドを書き込み       |
+| `plc.getVariables()`                             | 全変数名の一覧を取得                   |
+
+**TIME/DATE シンタックスシュガー**:
+
+読み取り〜数値変換〜書き込みをワンステップで実行します。
+
+| メソッド                             | 型         | 内部値 | 説明                                            |
+| ------------------------------------ | ---------- | ------ | ----------------------------------------------- |
+| `plc.readTimeMs(name)`               | TIME       | ms     | TIME 変数をミリ秒（数値）で読み取り             |
+| `plc.writeTimeMs(name, ms)`          | TIME       | ms     | ミリ秒（数値）を TIME 変数に書き込み            |
+| `plc.readDateSec(name)`              | DATE       | 秒     | DATE 変数を Unix 秒（数値）で読み取り           |
+| `plc.writeDateSec(name, sec)`        | DATE       | 秒     | Unix 秒（数値）を DATE 変数に書き込み           |
+| `plc.readTimeOfDayMs(name)`          | TIME_OF_DAY | ms    | TOD 変数をミリ秒（数値）で読み取り              |
+| `plc.writeTimeOfDayMs(name, ms)`     | TIME_OF_DAY | ms    | ミリ秒（数値）を TOD 変数に書き込み             |
+| `plc.readDateAndTimeSec(name)`       | DATE_AND_TIME | 秒  | DT 変数を Unix 秒（数値）で読み取り             |
+| `plc.writeDateAndTimeSec(name, sec)` | DATE_AND_TIME | 秒  | Unix 秒（数値）を DT 変数に書き込み             |
+
+```javascript
+// TIME_OF_DAY 変数に 1 秒加算する例
+plc.writeTimeOfDayMs("TOD1", plc.readTimeOfDayMs("TOD1") + 1000);
+
+// DATE 変数を 1 日進める例
+plc.writeDateSec("date1", plc.readDateSec("date1") + 86400);
+```
+
+**TIME/DATE 文字列変換 API**:
+
+| メソッド                          | 説明                                          |
+| --------------------------------- | --------------------------------------------- |
+| `plc.parseTime(str)`              | `"T#1h30m"` → ミリ秒（number）               |
+| `plc.formatTime(ms)`              | ミリ秒（number） → `"T#1h30m"`               |
+| `plc.parseDate(str)`              | `"D#2024-01-01"` → Unix 秒（number）         |
+| `plc.formatDate(sec)`             | Unix 秒（number） → `"D#2024-01-01"`         |
+| `plc.parseTimeOfDay(str)`         | `"TOD#12:30:15"` → ミリ秒（number）          |
+| `plc.formatTimeOfDay(ms)`         | ミリ秒（number） → `"TOD#12:30:15"`          |
+| `plc.parseDateAndTime(str)`       | `"DT#2024-01-01-12:30:15"` → Unix 秒（number） |
+| `plc.formatDateAndTime(sec)`      | Unix 秒（number） → `"DT#2024-01-01-12:30:15"` |
+
 **Modbus 互換 API**:
 
 | メソッド                                 | 説明                         |

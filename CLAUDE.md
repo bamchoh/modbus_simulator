@@ -77,10 +77,11 @@ internal/
   - `ReadBits()`, `WriteBit()`, `ReadWords()`, `WriteWord()`: 汎用メモリ操作
   - `Snapshot()`, `Restore()`: Export/Import用
 - **ScriptEngine** (`internal/infrastructure/scripting/engine.go`): gojaベースのJavaScript実行エンジン
-  - `plc`オブジェクトでDataStoreにアクセス可能
+  - `plc`オブジェクトでDataStoreおよびVariableStoreにアクセス可能
   - スクリプトコードをIIFE `(function(){...})();` でラップして、const/let再宣言エラーを回避
   - 実行時エラーを保存して`GetLastError()`で取得可能
   - 周期実行中のpanicをキャッチしてエラーとして記録
+  - TIME/DATE型シンタックスシュガー: `plc.readTimeMs(name)`, `plc.writeTimeMs(name, ms)` など、変数の読み取り〜数値変換〜書き込みをワンステップで実行（内部でparse/formatを自動適用）
 
 ### フロントエンド構成（スキーマ駆動UI）
 
@@ -129,7 +130,11 @@ IEC 61131-3準拠の変数管理機能。
 JavaScript（goja）でPLC動作を記述。
 - **エラー表示**: 実行時エラーをGUIに表示（タイムスタンプ付き、クリアボタン）
 - **const/let対応**: スクリプトコードをIIFEでラップして再宣言エラーを回避
-- **plcオブジェクト**: `plc.readBit()`, `plc.writeBit()`, `plc.readWord()`, `plc.writeWord()`でメモリアクセス
+- **plcオブジェクト**:
+  - メモリアクセス: `plc.readBit()`, `plc.writeBit()`, `plc.readWord()`, `plc.writeWord()`
+  - 変数アクセス: `plc.readVariable()`, `plc.writeVariable()`, `plc.readArrayElement()`, `plc.writeArrayElement()`, `plc.readStructField()`, `plc.writeStructField()`
+  - TIME/DATE シンタックスシュガー: `plc.readTimeMs()`, `plc.writeTimeMs()`, `plc.readDateSec()`, `plc.writeDateSec()`, `plc.readTimeOfDayMs()`, `plc.writeTimeOfDayMs()`, `plc.readDateAndTimeSec()`, `plc.writeDateAndTimeSec()`（変数の読み取り・パース・フォーマット・書き込みをワンステップで実行）
+  - TIME/DATE 文字列変換: `plc.parseTime()`, `plc.formatTime()`, `plc.parseDate()`, `plc.formatDate()`, `plc.parseTimeOfDay()`, `plc.formatTimeOfDay()`, `plc.parseDateAndTime()`, `plc.formatDateAndTime()`
 
 ### Wailsバインディング
 

@@ -42,7 +42,7 @@ func (e *ScriptEngine) createVM() *goja.Runtime {
 	// コンソールオブジェクト
 	console := vm.NewObject()
 	console.Set("log", func(call goja.FunctionCall) goja.Value {
-		args := make([]interface{}, len(call.Arguments))
+		args := make([]any, len(call.Arguments))
 		for i, arg := range call.Arguments {
 			args[i] = arg.Export()
 		}
@@ -56,7 +56,7 @@ func (e *ScriptEngine) createVM() *goja.Runtime {
 
 	if e.variableStore != nil {
 		// readVariable(name) - 変数名で値を読む
-		plc.Set("readVariable", func(name string) interface{} {
+		plc.Set("readVariable", func(name string) any {
 			v, err := e.variableStore.GetVariableByName(name)
 			if err != nil {
 				return nil
@@ -66,17 +66,17 @@ func (e *ScriptEngine) createVM() *goja.Runtime {
 		})
 
 		// writeVariable(name, value) - 変数名で値を書く
-		plc.Set("writeVariable", func(name string, value interface{}) {
+		plc.Set("writeVariable", func(name string, value any) {
 			e.variableStore.UpdateValueByName(name, value)
 		})
 
 		// readArrayElement(name, index) - 配列要素読み込み
-		plc.Set("readArrayElement", func(name string, index int) interface{} {
+		plc.Set("readArrayElement", func(name string, index int) any {
 			v, err := e.variableStore.GetVariableByName(name)
 			if err != nil {
 				return nil
 			}
-			arr, ok := v.Value.([]interface{})
+			arr, ok := v.Value.([]any)
 			if !ok || index < 0 || index >= len(arr) {
 				return nil
 			}
@@ -84,28 +84,28 @@ func (e *ScriptEngine) createVM() *goja.Runtime {
 		})
 
 		// writeArrayElement(name, index, value) - 配列要素書き込み
-		plc.Set("writeArrayElement", func(name string, index int, value interface{}) {
+		plc.Set("writeArrayElement", func(name string, index int, value any) {
 			v, err := e.variableStore.GetVariableByName(name)
 			if err != nil {
 				return
 			}
-			arr, ok := v.Value.([]interface{})
+			arr, ok := v.Value.([]any)
 			if !ok || index < 0 || index >= len(arr) {
 				return
 			}
-			newArr := make([]interface{}, len(arr))
+			newArr := make([]any, len(arr))
 			copy(newArr, arr)
 			newArr[index] = value
 			e.variableStore.UpdateValueByName(name, newArr)
 		})
 
 		// readStructField(name, fieldName) - 構造体フィールド読み込み
-		plc.Set("readStructField", func(name string, fieldName string) interface{} {
+		plc.Set("readStructField", func(name string, fieldName string) any {
 			v, err := e.variableStore.GetVariableByName(name)
 			if err != nil {
 				return nil
 			}
-			m, ok := v.Value.(map[string]interface{})
+			m, ok := v.Value.(map[string]any)
 			if !ok {
 				return nil
 			}
@@ -117,16 +117,16 @@ func (e *ScriptEngine) createVM() *goja.Runtime {
 		})
 
 		// writeStructField(name, fieldName, value) - 構造体フィールド書き込み
-		plc.Set("writeStructField", func(name string, fieldName string, value interface{}) {
+		plc.Set("writeStructField", func(name string, fieldName string, value any) {
 			v, err := e.variableStore.GetVariableByName(name)
 			if err != nil {
 				return
 			}
-			m, ok := v.Value.(map[string]interface{})
+			m, ok := v.Value.(map[string]any)
 			if !ok {
 				return
 			}
-			newMap := make(map[string]interface{})
+			newMap := make(map[string]any)
 			for k, val := range m {
 				newMap[k] = val
 			}
@@ -145,6 +145,148 @@ func (e *ScriptEngine) createVM() *goja.Runtime {
 		})
 	}
 
+	// TIME/DATE型シンタックスシュガー（変数の読み書きをワンステップで）
+
+	if e.variableStore != nil {
+		// readTimeMs(name) -> ミリ秒(number)
+		plc.Set("readTimeMs", func(name string) any {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return nil
+			}
+			s, ok := v.Value.(string)
+			if !ok {
+				return nil
+			}
+			ms, err := variable.ParseTIME(s)
+			if err != nil {
+				return nil
+			}
+			return int64(ms)
+		})
+		// writeTimeMs(name, ms)
+		plc.Set("writeTimeMs", func(name string, ms int64) {
+			e.variableStore.UpdateValueByName(name, variable.FormatTIME(int32(ms)))
+		})
+
+		// readDateSec(name) -> Unix秒(number)
+		plc.Set("readDateSec", func(name string) any {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return nil
+			}
+			s, ok := v.Value.(string)
+			if !ok {
+				return nil
+			}
+			sec, err := variable.ParseDATE(s)
+			if err != nil {
+				return nil
+			}
+			return int64(sec)
+		})
+		// writeDateSec(name, sec)
+		plc.Set("writeDateSec", func(name string, sec int64) {
+			e.variableStore.UpdateValueByName(name, variable.FormatDATE(uint64(sec)))
+		})
+
+		// readTimeOfDayMs(name) -> ミリ秒(number)
+		plc.Set("readTimeOfDayMs", func(name string) any {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return nil
+			}
+			s, ok := v.Value.(string)
+			if !ok {
+				return nil
+			}
+			ms, err := variable.ParseTIME_OF_DAY(s)
+			if err != nil {
+				return nil
+			}
+			return int64(ms)
+		})
+		// writeTimeOfDayMs(name, ms)
+		plc.Set("writeTimeOfDayMs", func(name string, ms int64) {
+			e.variableStore.UpdateValueByName(name, variable.FormatTIME_OF_DAY(uint32(ms)))
+		})
+
+		// readDateAndTimeSec(name) -> Unix秒(number)
+		plc.Set("readDateAndTimeSec", func(name string) any {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return nil
+			}
+			s, ok := v.Value.(string)
+			if !ok {
+				return nil
+			}
+			sec, err := variable.ParseDATE_AND_TIME(s)
+			if err != nil {
+				return nil
+			}
+			return int64(sec)
+		})
+		// writeDateAndTimeSec(name, sec)
+		plc.Set("writeDateAndTimeSec", func(name string, sec int64) {
+			e.variableStore.UpdateValueByName(name, variable.FormatDATE_AND_TIME(uint64(sec)))
+		})
+	}
+
+	// TIME/DATE型ユーティリティ（文字列⇔数値変換のみ）
+
+	// parseTime("T#1h30m45s") -> ミリ秒(number)
+	plc.Set("parseTime", func(s string) any {
+		ms, err := variable.ParseTIME(s)
+		if err != nil {
+			return nil
+		}
+		return int64(ms)
+	})
+	// formatTime(ms) -> "T#1h30m45s"
+	plc.Set("formatTime", func(ms int64) string {
+		return variable.FormatTIME(int32(ms))
+	})
+
+	// parseDate("D#2024-01-01") -> Unix秒(number)
+	plc.Set("parseDate", func(s string) any {
+		sec, err := variable.ParseDATE(s)
+		if err != nil {
+			return nil
+		}
+		return int64(sec)
+	})
+	// formatDate(sec) -> "D#2024-01-01"
+	plc.Set("formatDate", func(sec int64) string {
+		return variable.FormatDATE(uint64(sec))
+	})
+
+	// parseTimeOfDay("TOD#12:30:15") -> ミリ秒(number)
+	plc.Set("parseTimeOfDay", func(s string) any {
+		ms, err := variable.ParseTIME_OF_DAY(s)
+		if err != nil {
+			return nil
+		}
+		return int64(ms)
+	})
+	// formatTimeOfDay(ms) -> "TOD#12:30:15"
+	plc.Set("formatTimeOfDay", func(ms int64) string {
+		return variable.FormatTIME_OF_DAY(uint32(ms))
+	})
+
+	// parseDateAndTime("DT#2024-01-01-12:30:15") -> Unix秒(number)
+	plc.Set("parseDateAndTime", func(s string) any {
+		sec, err := variable.ParseDATE_AND_TIME(s)
+		if err != nil {
+			return nil
+		}
+		return int64(sec)
+	})
+	// formatDateAndTime(sec) -> "DT#2024-01-01-12:30:15"
+	plc.Set("formatDateAndTime", func(sec int64) string {
+		return variable.FormatDATE_AND_TIME(uint64(sec))
+	})
+
 	vm.Set("plc", plc)
 
 	return vm
@@ -152,7 +294,7 @@ func (e *ScriptEngine) createVM() *goja.Runtime {
 
 // toJSCompatibleValue はGoの型をgojaが扱えるJavaScript互換の型に変換する
 // int8/int16/int32 → int64, uint8/uint16/uint32 → int64, float32 → float64
-func toJSCompatibleValue(value interface{}) interface{} {
+func toJSCompatibleValue(value any) any {
 	switch v := value.(type) {
 	case int8:
 		return int64(v)
@@ -313,7 +455,7 @@ func (e *ScriptEngine) ClearError(scriptID string) {
 }
 
 // RunOnce はスクリプトを1回だけ実行する（テスト用）
-func (e *ScriptEngine) RunOnce(code string) (interface{}, error) {
+func (e *ScriptEngine) RunOnce(code string) (any, error) {
 	vm := e.createVM()
 	result, err := vm.RunString(code)
 	if err != nil {
