@@ -21,9 +21,9 @@ const (
 	TypeLREAL         DataType = "LREAL"         // 64ビット浮動小数点
 	TypeSTRING        DataType = "STRING"        // 文字列
 	TypeTIME          DataType = "TIME"          // 時間間隔（ミリ秒）
-	TypeDATE          DataType = "DATE"          // 日付（1970-01-01からの日数）
+	TypeDATE          DataType = "DATE"          // 日付（1970-01-01からの日数、uint32で2ワード保存）
 	TypeTIME_OF_DAY   DataType = "TIME_OF_DAY"   // 1日の中の時刻（ミリ秒）
-	TypeDATE_AND_TIME DataType = "DATE_AND_TIME" // 日付と時刻
+	TypeDATE_AND_TIME DataType = "DATE_AND_TIME" // 日付と時刻（1970-01-01 00:00:00からの秒数、uint32で2ワード保存）
 )
 
 // AllDataTypes はすべてのデータ型を返す
@@ -41,11 +41,9 @@ func (dt DataType) WordCount() int {
 	switch dt {
 	case TypeBOOL, TypeSINT, TypeUSINT, TypeINT, TypeUINT:
 		return 1
-	case TypeDATE:
-		return 1
 	case TypeDINT, TypeUDINT, TypeREAL, TypeTIME, TypeTIME_OF_DAY:
 		return 2
-	case TypeLREAL, TypeDATE_AND_TIME:
+	case TypeLREAL, TypeDATE, TypeDATE_AND_TIME:
 		return 4
 	case TypeSTRING:
 		return 1 // 後方互換: 長さ未指定のSTRING

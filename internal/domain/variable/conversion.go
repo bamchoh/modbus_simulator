@@ -298,14 +298,14 @@ func ValueToWords(value interface{}, dataType DataType, endianness string) []uin
 		}
 		return []uint16{0, 0}
 	case TypeDATE:
-		// DATE型: 文字列を日数(uint16)に変換して1ワードで保存
+		// DATE型: 文字列をUnix秒(uint64)に変換して4ワードで保存
 		if val, ok := value.(string); ok {
 			days, err := ParseDATE(val)
 			if err == nil {
-				return []uint16{days}
+				return uint64ToWords(days, endianness)
 			}
 		}
-		return []uint16{0}
+		return []uint16{0, 0, 0, 0}
 	case TypeTIME_OF_DAY:
 		// TIME_OF_DAY型: 文字列をミリ秒(uint32)に変換して2ワードで保存
 		if val, ok := value.(string); ok {
@@ -316,7 +316,7 @@ func ValueToWords(value interface{}, dataType DataType, endianness string) []uin
 		}
 		return []uint16{0, 0}
 	case TypeDATE_AND_TIME:
-		// DATE_AND_TIME型: 文字列をタイムスタンプ(uint64)に変換して4ワードで保存
+		// DATE_AND_TIME型: 文字列をUnix秒(uint64)に変換して4ワードで保存
 		if val, ok := value.(string); ok {
 			timestamp, err := ParseDATE_AND_TIME(val)
 			if err == nil {
@@ -388,11 +388,11 @@ func WordsToValue(words []uint16, dataType DataType, endianness string) (interfa
 		ms := int32(wordsToUint32(words[:2], endianness))
 		return FormatTIME(ms), nil
 	case TypeDATE:
-		// DATE型: 1ワードから日数(uint16)に変換して文字列形式で返す
-		if len(words) < 1 {
+		// DATE型: 4ワードからUnix秒(uint64)に変換して文字列形式で返す
+		if len(words) < 4 {
 			return "D#1970-01-01", nil
 		}
-		days := words[0]
+		days := wordsToUint64(words[:4], endianness)
 		return FormatDATE(days), nil
 	case TypeTIME_OF_DAY:
 		// TIME_OF_DAY型: 2ワードからミリ秒(uint32)に変換して文字列形式で返す
@@ -402,7 +402,7 @@ func WordsToValue(words []uint16, dataType DataType, endianness string) (interfa
 		ms := wordsToUint32(words[:2], endianness)
 		return FormatTIME_OF_DAY(ms), nil
 	case TypeDATE_AND_TIME:
-		// DATE_AND_TIME型: 4ワードからタイムスタンプ(uint64)に変換して文字列形式で返す
+		// DATE_AND_TIME型: 4ワードからUnix秒(uint64)に変換して文字列形式で返す
 		if len(words) < 4 {
 			return "DT#1970-01-01-00:00:00", nil
 		}
@@ -788,8 +788,8 @@ func FormatTIME(ms int32) string {
 	return "T#" + strings.Join(parts, "")
 }
 
-// ParseDATE は "D#2024-01-01" を1970-01-01からの日数(uint16)に変換
-func ParseDATE(s string) (uint16, error) {
+// ParseDATE は "D#2024-01-01" をその日の0時0分0秒のUnix秒(uint64)に変換
+func ParseDATE(s string) (uint64, error) {
 	s = strings.TrimSpace(s)
 	if !strings.HasPrefix(strings.ToUpper(s), "D#") {
 		return 0, fmt.Errorf("invalid DATE format: %s", s)
@@ -801,18 +801,12 @@ func ParseDATE(s string) (uint16, error) {
 		return 0, fmt.Errorf("invalid DATE format: %s", s)
 	}
 
-	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
-	days := int(t.Sub(epoch).Hours() / 24)
-	if days < 0 || days > 65535 {
-		return 0, fmt.Errorf("DATE out of range: %s", s)
-	}
-	return uint16(days), nil
+	return uint64(t.Unix()), nil
 }
 
-// FormatDATE は日数(uint16)を "D#2024-01-01" 形式に変換
-func FormatDATE(days uint16) string {
-	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
-	t := epoch.Add(time.Duration(days) * 24 * time.Hour)
+// FormatDATE はUnix秒(uint64)を "D#2024-01-01" 形式に変換
+func FormatDATE(timestamp uint64) string {
+	t := time.Unix(int64(timestamp), 0).UTC()
 	return "D#" + t.Format("2006-01-02")
 }
 
@@ -867,7 +861,7 @@ func FormatTIME_OF_DAY(ms uint32) string {
 	return fmt.Sprintf("TOD#%02d:%02d:%02d", hours, minutes, seconds)
 }
 
-// ParseDATE_AND_TIME は "DT#2024-01-01-12:30:15" をタイムスタンプ(uint64)に変換
+// ParseDATE_AND_TIME は "DT#2024-01-01-12:30:15" を1970-01-01 00:00:00からの秒数(uint64)に変換
 func ParseDATE_AND_TIME(s string) (uint64, error) {
 	s = strings.TrimSpace(s)
 	if !strings.HasPrefix(strings.ToUpper(s), "DT#") {
@@ -893,13 +887,13 @@ func ParseDATE_AND_TIME(s string) (uint64, error) {
 		}
 	}
 
-	// ミリ秒単位のUnixタイムスタンプ
-	timestamp := uint64(t.UnixMilli())
+	// 秒単位のUnixタイムスタンプ
+	timestamp := uint64(t.Unix())
 	return timestamp, nil
 }
 
-// FormatDATE_AND_TIME はタイムスタンプ(uint64)を "DT#2024-01-01-12:30:15" 形式に変換
+// FormatDATE_AND_TIME はUnix秒(uint64)を "DT#2024-01-01-12:30:15" 形式に変換
 func FormatDATE_AND_TIME(timestamp uint64) string {
-	t := time.UnixMilli(int64(timestamp))
+	t := time.Unix(int64(timestamp), 0).UTC()
 	return "DT#" + t.Format("2006-01-02-15:04:05")
 }

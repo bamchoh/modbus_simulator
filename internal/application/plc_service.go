@@ -1488,6 +1488,14 @@ func dataTypeDescription(dt variable.DataType) string {
 		return "64ビット浮動小数点"
 	case variable.TypeSTRING:
 		return "文字列"
+	case variable.TypeTIME:
+		return "経過時間"
+	case variable.TypeDATE:
+		return "日付"
+	case variable.TypeTIME_OF_DAY:
+		return "時刻"
+	case variable.TypeDATE_AND_TIME:
+		return "日時"
 	default:
 		return ""
 	}
