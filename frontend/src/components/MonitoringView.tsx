@@ -199,7 +199,7 @@ function SortableRow({ itemWithValue, memoryAreas, onSettingChange, onValueClick
         <span className="drag-handle">⠿</span>
       </td>
       <td>{area?.displayName || item.memoryArea}</td>
-      <td>{item.address}</td>
+      <td>{area?.oneOrigin ? item.address + 1 : item.address}</td>
       <td>
         {!itemWithValue.isBit ? (
           <select
@@ -549,6 +549,16 @@ export function MonitoringView({ memoryAreas }: Props) {
     }
   };
 
+  // ESCキーで追加ダイアログを閉じる
+  useEffect(() => {
+    if (!isAddDialogOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsAddDialogOpen(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isAddDialogOpen]);
+
   // 書き込みダイアログ内のキーハンドラ
   const handleWriteDialogKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -560,6 +570,7 @@ export function MonitoringView({ memoryAreas }: Props) {
 
   // 選択されたエリアがビットタイプかどうか
   const selectedAreaIsBit = memoryAreas.find(a => a.id === formArea)?.isBit ?? false;
+  const isModbusFormArea = memoryAreas.find(a => a.id === formArea)?.oneOrigin ?? false;
 
   return (
     <div className="monitoring-view">
@@ -644,10 +655,13 @@ export function MonitoringView({ memoryAreas }: Props) {
                 <label>開始アドレス:</label>
                 <input
                   type="number"
-                  min="0"
+                  min={isModbusFormArea ? "1" : "0"}
                   max="65535"
-                  value={formAddress}
-                  onChange={(e) => setFormAddress(parseInt(e.target.value) || 0)}
+                  value={isModbusFormArea ? formAddress + 1 : formAddress}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value) || (isModbusFormArea ? 1 : 0);
+                    setFormAddress(isModbusFormArea ? Math.max(0, v - 1) : v);
+                  }}
                 />
               </div>
 
@@ -724,7 +738,9 @@ export function MonitoringView({ memoryAreas }: Props) {
             <div className="dialog-content">
               <div className="dialog-row">
                 <label>アドレス:</label>
-                <span className="dialog-value">{writingItem.item.address}</span>
+                <span className="dialog-value">
+                  {memoryAreas.find(a => a.id === writingItem.item.memoryArea)?.oneOrigin ? writingItem.item.address + 1 : writingItem.item.address}
+                </span>
               </div>
 
               <div className="dialog-row">

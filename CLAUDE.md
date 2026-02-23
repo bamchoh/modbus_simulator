@@ -76,6 +76,7 @@ internal/
 - **DataStore** (`internal/domain/protocol/server.go`): プロトコル共通のメモリ操作インターフェース
   - `ReadBits()`, `WriteBit()`, `ReadWords()`, `WriteWord()`: 汎用メモリ操作
   - `Snapshot()`, `Restore()`: Export/Import用
+  - `GetAreas()`: `MemoryArea` スライスを返す。`MemoryArea.OneOrigin` が true のエリアはUIで1オリジンアドレスを表示する（内部は常に0ベース）。Modbusの全4エリアは `OneOrigin: true`
 - **ScriptEngine** (`internal/infrastructure/scripting/engine.go`): gojaベースのJavaScript実行エンジン
   - `plc`オブジェクトでDataStoreおよびVariableStoreにアクセス可能
   - スクリプトコードをIIFE `(function(){...})();` でラップして、const/let再宣言エラーを回避
@@ -105,6 +106,7 @@ frontend/src/
 - **モニタリング**: 任意のレジスタを登録してリアルタイム監視・書き込み可能
   - ドラッグ＆ドロップで並び替え可能（@dnd-kit使用）
   - プロトコル変更時は確認ダイアログ後にリストクリア
+- **1オリジンアドレス表示**: `area.oneOrigin` が true のエリアはアドレス表示を+1（内部値は0ベースを維持）
 
 #### VariableView.tsx
 IEC 61131-3準拠の変数管理機能。
@@ -216,6 +218,13 @@ JavaScript（goja）でPLC動作を記述。
 4. **フロントエンド変更不要** - スキーマから自動生成
 
 ## 重要な実装ポイント
+
+### 1オリジンアドレス表示
+
+- **設計方針**: プロトコル固有の知識（どのエリアが1オリジンか）はバックエンドが保持し、フロントエンドはビュー層に持たせない
+- **`MemoryArea.OneOrigin`**: `GetAreas()` が返す `MemoryArea` 構造体のフィールド。true の場合、UIでのアドレス表示を1オリジンにする
+- **内部値は常に0ベース**: API (ReadWords/WriteWord等) には0ベースのアドレスを渡す。表示・入力変換のみUIで行う
+- **フロントエンドの変換**: `area.oneOrigin` を参照して表示時に+1、入力時に-1。ハードコードの判定リストは持たない
 
 ### Reactコンポーネントの状態管理
 

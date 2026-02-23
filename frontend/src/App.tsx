@@ -2,7 +2,7 @@ import { useState } from "react";
 import "./App.css";
 import { ServerPanel } from "./components/ServerPanel";
 import { VariableView } from "./components/VariableView";
-import { RegisterPanel } from "./components/RegisterPanel";
+import { RegisterPanel, RegisterTab } from "./components/RegisterPanel";
 import { ScriptPanel } from "./components/ScriptPanel";
 import { CommunicationIndicator } from "./components/CommunicationIndicator";
 
@@ -12,6 +12,7 @@ type Tab = "server" | "variables" | "registers" | "scripts";
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>("server");
+  const [registerSubTab, setRegisterSubTab] = useState<RegisterTab>("list");
 
   return (
     <div id="App">
@@ -49,7 +50,7 @@ function App() {
       <main className="app-main">
         {activeTab === "server" && <ServerPanel />}
         {activeTab === "variables" && <VariableView />}
-        {activeTab === "registers" && <RegisterPanel />}
+        {activeTab === "registers" && <RegisterPanel activeSubTab={registerSubTab} onSubTabChange={setRegisterSubTab} />}
         {activeTab === "scripts" && <ScriptPanel />}
       </main>
     </div>

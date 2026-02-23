@@ -956,6 +956,9 @@ button:disabled {
 .opcua-variable-table .var-type {
   font-size: 0.75rem;
   color: #9ca3af;
+}
+
+.opcua-variable-table .var-type span {
   background: #1a1a2e;
   padding: 0.125rem 0.5rem;
   border-radius: 3px;
@@ -980,7 +983,7 @@ button:disabled {
   color: #9ca3af;
 }
 
-.opcua-variable-table .var-actions {
+.opcua-variable-table .var-actions > div {
   display: flex;
   gap: 0.5rem;
 }

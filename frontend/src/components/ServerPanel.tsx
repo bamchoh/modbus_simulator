@@ -176,6 +176,16 @@ export function ServerPanel() {
     setPendingProtocolChange(null);
   };
 
+  // ESCキーでプロトコル変更確認ダイアログを閉じる
+  useEffect(() => {
+    if (!isProtocolChangeDialogOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleProtocolChangeCancel();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isProtocolChangeDialogOpen]);
+
   const handleVariantChange = async (variantId: string) => {
     try {
       setError(null);

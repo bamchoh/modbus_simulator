@@ -174,6 +174,29 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     }
   }, [autoRefresh, loadVariables]);
 
+  // ESCキーでダイアログを閉じる
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (isStructTypeDialogOpen) {
+        setIsStructTypeDialogOpen(false);
+        setEditingStructTypeName(null);
+        setStructTypeName('');
+        setStructTypeFields([{ name: '', category: 'scalar', dataType: 'INT', stringLength: 20, arrayElemType: 'INT', arrayElemCategory: 'scalar', arraySize: 10 }]);
+      } else if (isMappingDialogOpen) {
+        setIsMappingDialogOpen(false);
+      } else if (isEditDialogOpen) {
+        setIsEditDialogOpen(false);
+        setEditData(null);
+        setEditingRow(null);
+      } else if (isAddDialogOpen) {
+        setIsAddDialogOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isAddDialogOpen, isEditDialogOpen, isMappingDialogOpen, isStructTypeDialogOpen]);
+
   // スカラー値のフォーマット
   const formatScalarValue = (value: any, dataType: string): string => {
     if (value === null || value === undefined) return '-';
@@ -426,16 +449,36 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     }
   };
 
+  // メモリエリアIDを短い表示名に変換（Modbusは番号、その他はそのまま）
+  const areaShortName = (areaId: string): string => {
+    const map: Record<string, string> = {
+      'coils': '0',
+      'discreteInputs': '1',
+      'inputRegisters': '3',
+      'holdingRegisters': '4',
+    };
+    return map[areaId] ?? areaId;
+  };
+
+  const isOneOriginArea = (areaId: string): boolean =>
+    memoryAreas.find(a => a.id === areaId)?.oneOrigin ?? false;
+
   // マッピングのフォーマット
   const formatMappings = (mappings: application.ProtocolMappingDTO[] | undefined): string => {
     if (!mappings || mappings.length === 0) return '-';
-    return mappings.map(m => `${m.protocolType}:${m.memoryArea}:${m.address}`).join(', ');
+    return mappings.map(m => {
+      const addr = isOneOriginArea(m.memoryArea) ? m.address + 1 : m.address;
+      return `${m.protocolType}:${areaShortName(m.memoryArea)}:${addr}`;
+    }).join(', ');
   };
 
   // オフセット付きマッピングのフォーマット（フィールド/要素用）
   const formatMappingsWithOffset = (mappings: application.ProtocolMappingDTO[] | undefined, offset: number): string => {
     if (!mappings || mappings.length === 0) return '-';
-    return mappings.map(m => `${m.memoryArea}:${m.address + offset}`).join(', ');
+    return mappings.map(m => {
+      const addr = isOneOriginArea(m.memoryArea) ? m.address + offset + 1 : m.address + offset;
+      return `${areaShortName(m.memoryArea)}:${addr}`;
+    }).join(', ');
   };
 
   // 構造体のデフォルト値を再帰的に生成
@@ -923,12 +966,13 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                 fontWeight: row.depth === 0 && row.isHeader ? 'bold' : undefined,
               }}
             >
-              <td className="var-name" style={{ paddingLeft: `${8 + row.depth * 16}px` }}>
+              <td
+                className="var-name"
+                style={{ paddingLeft: `${8 + row.depth * 16}px`, cursor: row.isHeader ? 'pointer' : undefined }}
+                onClick={row.isHeader ? () => toggleExpand(row.key) : undefined}
+              >
                 {row.isHeader ? (
-                  <span
-                    onClick={(e) => { e.stopPropagation(); toggleExpand(row.key); }}
-                    style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                  >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     <span style={{ fontSize: '0.7em', width: '12px', display: 'inline-block' }}>
                       {expandedRows.has(row.key) ? '\u25BC' : '\u25B6'}
                     </span>
@@ -939,7 +983,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                 )}
               </td>
               <td className="var-type" style={{ fontSize: row.isHeader ? undefined : '0.85em' }}>
-                {row.dataType}
+                <span>{row.dataType}</span>
               </td>
               <td
                 className="var-value"
@@ -956,11 +1000,13 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                   <span>{formatScalarValue(row.value, row.dataType)}</span>
                 )}
               </td>
-              <td className="var-mapping">
+              <td
+                className="var-mapping"
+                onClick={row.depth === 0 ? () => handleMappingClick(row.variable) : undefined}
+                style={{ cursor: row.depth === 0 ? 'pointer' : undefined }}
+              >
                 {row.depth === 0 ? (
-                  <span onClick={() => handleMappingClick(row.variable)} style={{ cursor: 'pointer' }}>
-                    {formatMappings(row.variable.mappings)}
-                  </span>
+                  <span>{formatMappings(row.variable.mappings)}</span>
                 ) : (
                   <span style={{ fontSize: '0.85em', color: '#aaa' }}>
                     {formatMappingsWithOffset(row.variable.mappings, row.wordOffset)}
@@ -969,19 +1015,14 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               </td>
               <td className="var-actions">
                 {row.depth === 0 && (
-                  <>
-                    {row.isHeader && (
-                      <button onClick={() => handleEditClick(row.variable)} className="btn-small btn-secondary">
-                        一括編集
-                      </button>
-                    )}
+                  <div>
                     <button onClick={() => handleMappingClick(row.variable)} className="btn-small btn-secondary">
                       マッピング
                     </button>
                     <button onClick={() => handleDeleteVariable(row.variable.id, row.variable.name)} className="btn-small btn-danger">
                       削除
                     </button>
-                  </>
+                  </div>
                 )}
               </td>
             </tr>
@@ -1237,13 +1278,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
                     <input
                       type="number"
-                      value={m.address}
+                      value={isOneOriginArea(m.memoryArea) ? m.address + 1 : m.address}
                       onChange={(e) => {
+                        const oneOrigin = isOneOriginArea(m.memoryArea);
+                        const v = parseInt(e.target.value) || (oneOrigin ? 1 : 0);
                         const updated = [...editMappings];
-                        updated[index] = { ...updated[index], address: parseInt(e.target.value) || 0 };
+                        updated[index] = { ...updated[index], address: oneOrigin ? Math.max(0, v - 1) : v };
                         setEditMappings(updated);
                       }}
-                      min={0}
+                      min={isOneOriginArea(m.memoryArea) ? 1 : 0}
                       style={{ flex: 1 }}
                     />
 

@@ -121,6 +121,7 @@ type MemoryArea struct {
 	Size           uint32 `json:"size"`
 	ReadOnly       bool   `json:"readOnly"`
 	ByteAddressing bool   `json:"byteAddressing"` // trueの場合、アドレスをバイトベースで表示
+	OneOrigin      bool   `json:"oneOrigin"`      // trueの場合、UIでのアドレス表示を1オリジンにする
 }
 
 // ConfigField は設定フィールドの定義

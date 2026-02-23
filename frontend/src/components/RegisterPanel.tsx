@@ -11,7 +11,7 @@ import { application } from '../../wailsjs/go/models';
 import { MonitoringView } from './MonitoringView';
 import { OPCUAVariableView } from './OPCUAVariableView';
 
-type RegisterTab = 'list' | 'monitoring';
+export type RegisterTab = 'list' | 'monitoring';
 
 type DisplayFormat = 'decimal' | 'hex' | 'octal' | 'binary';
 type BitWidth = 16 | 32 | 64;
@@ -115,9 +115,15 @@ const parseBigIntInput = (input: string, format: DisplayFormat): bigint => {
 const COLUMNS = 10;
 const PAGE_SIZE = 100;
 
-export function RegisterPanel() {
+interface RegisterPanelProps {
+  activeSubTab: RegisterTab;
+  onSubTabChange: (tab: RegisterTab) => void;
+}
+
+export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelProps) {
   // サブタブ
-  const [activeTab, setActiveTab] = useState<RegisterTab>('list');
+  const activeTab = activeSubTab;
+  const setActiveTab = onSubTabChange;
 
   // OPC UAプロトコルかどうか
   const [isOPCUA, setIsOPCUA] = useState(false);
@@ -179,9 +185,14 @@ export function RegisterPanel() {
   const currentArea = memoryAreas.find(a => a.id === selectedArea);
   const isBitType = currentArea?.isBit ?? false;
   const isByteAddr = currentArea?.byteAddressing ?? false;
+  const isModbusArea = currentArea?.oneOrigin ?? false;
 
-  // ワードアドレスを表示用アドレスに変換する（バイトアドレスの場合は*2）
-  const toDisplayAddr = (wordAddr: number) => isByteAddr ? wordAddr * 2 : wordAddr;
+  // ワードアドレスを表示用アドレスに変換する（バイトアドレスは*2、Modbusは1オリジン）
+  const toDisplayAddr = (wordAddr: number) => {
+    if (isByteAddr) return wordAddr * 2;
+    if (isModbusArea) return wordAddr + 1;
+    return wordAddr;
+  };
 
   const loadRegisters = useCallback(async () => {
     if (!selectedArea) return;
@@ -525,10 +536,13 @@ export function RegisterPanel() {
           <label>開始アドレス</label>
           <input
             type="number"
-            min="0"
+            min={isModbusArea ? "1" : "0"}
             max="65535"
-            value={startAddress}
-            onChange={(e) => setStartAddress(parseInt(e.target.value) || 0)}
+            value={isModbusArea ? startAddress + 1 : startAddress}
+            onChange={(e) => {
+              const v = parseInt(e.target.value) || (isModbusArea ? 1 : 0);
+              setStartAddress(isModbusArea ? Math.max(0, v - 1) : v);
+            }}
           />
         </div>
 

@@ -426,6 +426,7 @@ func (s *PLCService) GetMemoryAreas() []MemoryAreaDTO {
 			Size:           int(area.Size),
 			ReadOnly:       area.ReadOnly,
 			ByteAddressing: area.ByteAddressing,
+			OneOrigin:      area.OneOrigin,
 		}
 	}
 	return result
