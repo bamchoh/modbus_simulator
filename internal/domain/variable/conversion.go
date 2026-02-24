@@ -718,8 +718,8 @@ func ParseTIME(s string) (int32, error) {
 	s = s[2:] // "T#" を削除
 
 	var totalMs int32
-	// 正規表現で h, m, s, ms を抽出
-	re := regexp.MustCompile(`(\d+(?:\.\d+)?)(h|m|s|ms|d)`)
+	// 正規表現で h, m, s, ms を抽出（ms を m より前に置いて優先マッチさせる）
+	re := regexp.MustCompile(`(\d+(?:\.\d+)?)(ms|h|m|s|d)`)
 	matches := re.FindAllStringSubmatch(s, -1)
 	if len(matches) == 0 {
 		return 0, fmt.Errorf("invalid TIME format: %s", s)

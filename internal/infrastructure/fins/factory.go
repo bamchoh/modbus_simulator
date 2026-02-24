@@ -31,6 +31,14 @@ func (f *FINSServerFactory) CreateServer(config protocol.ProtocolConfig, store p
 		return nil, fmt.Errorf("invalid config type: expected FINSConfig")
 	}
 
+	// VariableBackedDataStore などのアダプターをアンラップして内側の DataStore を取得する
+	type unwrapper interface {
+		Unwrap() protocol.DataStore
+	}
+	if u, ok := store.(unwrapper); ok {
+		store = u.Unwrap()
+	}
+
 	finsStore, ok := store.(*FINSDataStore)
 	if !ok {
 		return nil, fmt.Errorf("invalid store type: expected FINSDataStore")

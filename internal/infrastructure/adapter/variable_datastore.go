@@ -34,6 +34,12 @@ func NewVariableBackedDataStore(inner protocol.DataStore, varStore *variable.Var
 	return adapter
 }
 
+// Unwrap は内側の DataStore を返す。
+// プロトコルファクトリーが具体型を必要とする場合に使用する。
+func (a *VariableBackedDataStore) Unwrap() protocol.DataStore {
+	return a.inner
+}
+
 // Detach はリスナーを解除する（プロトコル切り替え時に呼ぶ）
 func (a *VariableBackedDataStore) Detach() {
 	a.varStore.RemoveListener(a)
