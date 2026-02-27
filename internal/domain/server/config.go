@@ -16,7 +16,7 @@ func (t ServerType) String() string {
 	case ModbusRTU:
 		return "Modbus RTU"
 	case ModbusRTUASCII:
-		return "Modbus RTU ASCII"
+		return "Modbus ASCII"
 	default:
 		return "Unknown"
 	}

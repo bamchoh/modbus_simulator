@@ -10,10 +10,7 @@ import (
 	"modbus_simulator/internal/domain/protocol"
 
 	// プロトコル実装をレジストリに登録するためのブランクインポート
-	_ "modbus_simulator/internal/infrastructure/fins"
 	_ "modbus_simulator/internal/infrastructure/modbus"
-	_ "modbus_simulator/internal/infrastructure/opcua"
-	_ "modbus_simulator/internal/infrastructure/s7comm"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"go.bug.st/serial"
@@ -382,34 +379,3 @@ func (a *App) DeleteStructType(name string) error {
 	return a.plcService.DeleteStructType(name)
 }
 
-// === OPC UA変数管理 ===
-
-// GetOPCUAVariables はOPC UA変数一覧を返す
-func (a *App) GetOPCUAVariables() []*application.OPCUAVariableDTO {
-	return a.plcService.GetOPCUAVariables()
-}
-
-// GetOPCUADataTypes はOPC UAのデータ型一覧を返す
-func (a *App) GetOPCUADataTypes() *application.OPCUADataTypesDTO {
-	return a.plcService.GetOPCUADataTypes()
-}
-
-// CreateOPCUAVariable はOPC UA変数を作成する
-func (a *App) CreateOPCUAVariable(name, dataType string, value interface{}) (*application.OPCUAVariableDTO, error) {
-	return a.plcService.CreateOPCUAVariable(name, dataType, value)
-}
-
-// UpdateOPCUAVariable はOPC UA変数を更新する
-func (a *App) UpdateOPCUAVariable(name string, value interface{}) error {
-	return a.plcService.UpdateOPCUAVariable(name, value)
-}
-
-// DeleteOPCUAVariable はOPC UA変数を削除する
-func (a *App) DeleteOPCUAVariable(name string) error {
-	return a.plcService.DeleteOPCUAVariable(name)
-}
-
-// IsOPCUAProtocol はOPC UAプロトコルがアクティブかどうかを返す
-func (a *App) IsOPCUAProtocol() bool {
-	return a.plcService.IsOPCUAProtocol()
-}

@@ -142,7 +142,6 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         setServerInstances(instances || []);
         const areasMap: Record<string, application.MemoryAreaDTO[]> = {};
         for (const inst of (instances || [])) {
-          if (inst.protocolType === 'opcua') continue;
           try {
             const areas = await GetMemoryAreas(inst.protocolType);
             areasMap[inst.protocolType] = areas || [];
@@ -951,8 +950,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
   // マッピングを追加
   const handleAddMapping = () => {
-    const firstInst = serverInstances.find(i => i.protocolType !== 'opcua');
-    const firstProtocol = firstInst?.protocolType || '';
+    const firstProtocol = serverInstances[0]?.protocolType || '';
     const firstArea = (memoryAreasByProtocol[firstProtocol] || [])[0]?.id || '';
     setEditMappings([...editMappings, {
       protocolType: firstProtocol,
@@ -982,8 +980,8 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   };
 
   return (
-    <div className="opcua-variable-view">
-      <div className="opcua-toolbar">
+    <div className="variable-view">
+      <div className="variable-toolbar">
         <button onClick={() => setIsAddDialogOpen(true)} className="btn-primary">
           変数を追加
         </button>
@@ -995,7 +993,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         </button>
       </div>
 
-      <table className="opcua-variable-table">
+      <table className="variable-table">
         <thead>
           <tr>
             <th>名前</th>
@@ -1318,7 +1316,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       }}
                       style={{ flex: 1 }}
                     >
-                      {serverInstances.filter(i => i.protocolType !== 'opcua').map((inst) => (
+                      {serverInstances.map((inst) => (
                         <option key={inst.protocolType} value={inst.protocolType}>{inst.displayName}</option>
                       ))}
                     </select>
@@ -1404,7 +1402,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               {structTypes.length > 0 && (
                 <div className="dialog-section">
                   <h4 className="dialog-section-title">登録済み構造体型</h4>
-                  <table className="opcua-variable-table">
+                  <table className="variable-table">
                     <thead>
                       <tr>
                         <th>名前</th>

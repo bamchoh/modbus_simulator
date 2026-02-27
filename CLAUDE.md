@@ -8,12 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-このプロジェクトは PLC シミュレーター です。マルチプロトコル対応で、Modbus（TCP/RTU/RTU ASCII）およびOMRON FINSプロトコルをサポートしています。
+このプロジェクトは PLC シミュレーター です。Modbus（TCP/RTU/ASCII）をサポートしています。
 
 ### 主な機能
 
-- **マルチプロトコル対応**: Modbus（TCP/RTU/ASCII）、OMRON FINS/UDP
-- **複数サーバー同時実行**: 異なるプロトコル（例: Modbus TCP + FINS/UDP）を同時に起動可能。各サーバーは独立したメモリ空間を持つ
+- **マルチプロトコル対応**: Modbus TCP / Modbus RTU / Modbus ASCII を個別のサーバーとして起動可能
+- **複数サーバー同時実行**: 異なるプロトコル（例: Modbus TCP + Modbus RTU）を同時に起動可能。各サーバーは独立したメモリ空間を持つ
 - **変数管理**: IEC 61131-3準拠のデータ型（スカラー、配列、構造体、STRING[n]）をサポート
 - **スクリプト機能**: JavaScriptで周期処理を記述。const/let対応（IIFE wrapping）、実行エラーのGUI表示
 - **レジスタ操作**: GUIからメモリエリアの値を直接操作可能
@@ -57,13 +57,9 @@ internal/
 │   └── dto.go          # DTO定義（ProtocolSchemaDTO, MonitoringItemDTO等）
 └── infrastructure/   # インフラ層（プロトコル実装）
     ├── modbus/       # Modbusサーバー実装
-    │   ├── factory.go      # ModbusServerFactory
+    │   ├── factory.go      # ModbusServerFactory（TCP/RTU/ASCIIの3ファクトリー）
     │   ├── server.go       # ModbusServer
     │   └── datastore.go    # ModbusDataStore
-    ├── fins/         # FINSサーバー実装
-    │   ├── factory.go      # FINSServerFactory
-    │   ├── server.go       # FINSServer
-    │   └── datastore.go    # FINSDataStore
     └── scripting/    # JSエンジン（goja使用）
 ```
 
@@ -72,11 +68,16 @@ internal/
 - **PLCService** (`internal/application/plc_service.go`): メインサービス。プロトコル非依存で、複数のサーバーインスタンスを同時管理
   - `servers map[protocol.ProtocolType]*serverInstance` で各プロトコルのサーバーを保持
   - 各プロトコルタイプは最大1インスタンス（プロトコルタイプをサーバー識別子として利用）
+  - Modbus の各バリアントは独立した ProtocolType: `"modbus-tcp"`, `"modbus-rtu"`, `"modbus-ascii"`
   - `variableStore` と `scriptEngine` は全サーバーで共有
 - **ServerFactory** (`internal/domain/protocol/server.go`): プロトコルサーバーを作成するファクトリーインターフェース
   - `GetConfigFields()`: スキーマ駆動UIのためのフィールド定義を返す
   - `GetProtocolCapabilities()`: UnitIDサポート等の機能情報を返す
   - `ConfigToMap()` / `MapToConfig()`: 設定の変換
+- **ModbusServerFactory** (`internal/infrastructure/modbus/factory.go`): `fixedVariant` フィールドで TCP/RTU/ASCII を固定した3種のファクトリー
+  - `NewModbusTCPServerFactory()`, `NewModbusRTUServerFactory()`, `NewModbusASCIIServerFactory()` で生成
+  - それぞれ `ProtocolType()` が `"modbus-tcp"` / `"modbus-rtu"` / `"modbus-ascii"` を返す
+  - `init()` で3つ全てを `protocol.Register()` に登録
 - **DataStore** (`internal/domain/protocol/server.go`): プロトコル共通のメモリ操作インターフェース
   - `ReadBits()`, `WriteBit()`, `ReadWords()`, `WriteWord()`: 汎用メモリ操作
   - `Snapshot()`, `Restore()`: Export/Import用

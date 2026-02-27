@@ -22,10 +22,6 @@ export function ClearScriptError(arg1) {
   return window['go']['main']['App']['ClearScriptError'](arg1);
 }
 
-export function CreateOPCUAVariable(arg1, arg2, arg3) {
-  return window['go']['main']['App']['CreateOPCUAVariable'](arg1, arg2, arg3);
-}
-
 export function CreateScript(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateScript'](arg1, arg2, arg3);
 }
@@ -36,10 +32,6 @@ export function CreateVariable(arg1, arg2, arg3) {
 
 export function DeleteMonitoringItem(arg1) {
   return window['go']['main']['App']['DeleteMonitoringItem'](arg1);
-}
-
-export function DeleteOPCUAVariable(arg1) {
-  return window['go']['main']['App']['DeleteOPCUAVariable'](arg1);
 }
 
 export function DeleteScript(arg1) {
@@ -84,14 +76,6 @@ export function GetMemoryAreas(arg1) {
 
 export function GetMonitoringItems() {
   return window['go']['main']['App']['GetMonitoringItems']();
-}
-
-export function GetOPCUADataTypes() {
-  return window['go']['main']['App']['GetOPCUADataTypes']();
-}
-
-export function GetOPCUAVariables() {
-  return window['go']['main']['App']['GetOPCUAVariables']();
 }
 
 export function GetProtocolSchema(arg1) {
@@ -140,10 +124,6 @@ export function GetVariables() {
 
 export function ImportProject() {
   return window['go']['main']['App']['ImportProject']();
-}
-
-export function IsOPCUAProtocol() {
-  return window['go']['main']['App']['IsOPCUAProtocol']();
 }
 
 export function MoveMonitoringItem(arg1, arg2) {
@@ -200,10 +180,6 @@ export function StopServer(arg1) {
 
 export function UpdateMonitoringItem(arg1) {
   return window['go']['main']['App']['UpdateMonitoringItem'](arg1);
-}
-
-export function UpdateOPCUAVariable(arg1, arg2) {
-  return window['go']['main']['App']['UpdateOPCUAVariable'](arg1, arg2);
 }
 
 export function UpdateScript(arg1, arg2, arg3, arg4) {

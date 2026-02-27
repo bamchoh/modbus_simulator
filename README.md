@@ -1,20 +1,18 @@
 # PLC Simulator
 
-マルチプロトコル対応の PLC シミュレーターです。Modbus（TCP/RTU/RTU ASCII）および OMRON FINS プロトコルをサポート。GUI でレジスタの値を確認・編集でき、JavaScript でカスタムロジックを記述できます。
+Modbus（TCP/RTU/ASCII）対応の PLC シミュレーターです。GUI でレジスタの値を確認・編集でき、JavaScript でカスタムロジックを記述できます。
 
 ![Screenshot](docs/screenshot.png)
 
 ## 機能
 
 - **マルチプロトコル対応**
-  - **Modbus**: TCP / RTU / RTU ASCII
+  - **Modbus TCP / Modbus RTU / Modbus ASCII** を独立したサーバーとして個別に追加・起動可能
     - 全 UnitID (1-247) に応答（個別に無効化可能）
     - コイル、ディスクリート入力、保持レジスタ、入力レジスタ（各65536点）
-  - **OMRON FINS**: UDP
-    - DM、CIO、WR、HR、AR エリアをサポート
 
 - **複数サーバー同時実行**
-  - 異なるプロトコル（例: Modbus TCP + FINS/UDP）を同時に起動可能
+  - 例: Modbus TCP と Modbus RTU を同時に起動可能
   - 各サーバーは独立したメモリ空間を持つ
   - サーバーパネルで個別に設定・起動・停止が可能
 
@@ -169,7 +167,7 @@ plc.setHoldingRegister(0, value + 1);
 | `plc.readWord(area, address)`         | 指定メモリエリアのワード（16bit）を読み取り   |
 | `plc.writeWord(area, address, value)` | 指定メモリエリアのワード（16bit）を書き込み   |
 
-メモリエリアはプロトコルにより異なります（例: Modbus の "coil", "holding_register"、FINS の "DM", "CIO" など）。
+メモリエリアは Modbus の "coils", "discreteInputs", "holdingRegisters", "inputRegisters" です。
 
 **変数アクセス API**:
 
@@ -257,13 +255,12 @@ internal/
 │   ├── plc_service.go  # メインサービス（複数サーバー管理・モニタリング・変数管理含む）
 │   └── dto.go          # DTO 定義（ServerInstanceDTO, ServerConfigDTO 等）
 └── infrastructure/   # インフラ層（プロトコル実装）
-    ├── modbus/       # Modbus サーバー実装
-    ├── fins/         # OMRON FINS サーバー実装
+    ├── modbus/       # Modbus サーバー実装（TCP / RTU / ASCII の3ファクトリー）
     ├── adapter/      # 変数とDataStoreのアダプタ
     └── scripting/    # JavaScript エンジン（goja）
 ```
 
-PLCService は `servers map[protocol.ProtocolType]*serverInstance` で複数のサーバーインスタンスを管理します。各プロトコルタイプは最大1インスタンスを持ちます。
+PLCService は `servers map[protocol.ProtocolType]*serverInstance` で複数のサーバーインスタンスを管理します。Modbus の各バリアント（`"modbus-tcp"`, `"modbus-rtu"`, `"modbus-ascii"`）は独立したプロトコルタイプとして扱われるため、TCP と RTU を同時に起動できます。
 
 ## 設定ファイル
 

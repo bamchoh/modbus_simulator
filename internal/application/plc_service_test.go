@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	_ "modbus_simulator/internal/infrastructure/fins"
 	_ "modbus_simulator/internal/infrastructure/modbus"
 )
 
@@ -33,7 +32,7 @@ func TestPLCService_GetServerInstances_InitialState(t *testing.T) {
 	if len(instances) != 1 {
 		t.Fatalf("expected 1 server instance, got %d", len(instances))
 	}
-	if instances[0].ProtocolType != "modbus" {
+	if instances[0].ProtocolType != "modbus-tcp" {
 		t.Errorf("expected protocolType 'modbus', got '%s'", instances[0].ProtocolType)
 	}
 	if instances[0].Variant != "tcp" {
@@ -50,8 +49,8 @@ func TestPLCService_GetServerInstances_InitialState(t *testing.T) {
 func TestPLCService_AddServer_Success(t *testing.T) {
 	svc := newTestService(t)
 
-	if err := svc.AddServer("fins", "udp"); err != nil {
-		t.Fatalf("AddServer fins failed: %v", err)
+	if err := svc.AddServer("modbus-rtu", "rtu"); err != nil {
+		t.Fatalf("AddServer modbus-rtu failed: %v", err)
 	}
 
 	instances := svc.GetServerInstances()
@@ -64,7 +63,7 @@ func TestPLCService_AddServer_DuplicateError(t *testing.T) {
 	svc := newTestService(t)
 
 	// modbus はデフォルトで追加済み
-	err := svc.AddServer("modbus", "tcp")
+	err := svc.AddServer("modbus-tcp", "tcp")
 	if err == nil {
 		t.Fatal("expected error for duplicate server, got nil")
 	}
@@ -82,7 +81,7 @@ func TestPLCService_AddServer_UnknownProtocol(t *testing.T) {
 func TestPLCService_RemoveServer_Success(t *testing.T) {
 	svc := newTestService(t)
 
-	if err := svc.RemoveServer("modbus"); err != nil {
+	if err := svc.RemoveServer("modbus-tcp"); err != nil {
 		t.Fatalf("RemoveServer failed: %v", err)
 	}
 
@@ -95,7 +94,7 @@ func TestPLCService_RemoveServer_Success(t *testing.T) {
 func TestPLCService_RemoveServer_NotFound(t *testing.T) {
 	svc := newTestService(t)
 
-	err := svc.RemoveServer("fins")
+	err := svc.RemoveServer("unknown-protocol")
 	if err == nil {
 		t.Fatal("expected error for non-existent server, got nil")
 	}
@@ -104,8 +103,8 @@ func TestPLCService_RemoveServer_NotFound(t *testing.T) {
 func TestPLCService_GetServerInstances_SortedAlphabetically(t *testing.T) {
 	svc := newTestService(t)
 
-	if err := svc.AddServer("fins", "udp"); err != nil {
-		t.Fatalf("AddServer fins failed: %v", err)
+	if err := svc.AddServer("modbus-rtu", "rtu"); err != nil {
+		t.Fatalf("AddServer modbus-rtu failed: %v", err)
 	}
 
 	instances := svc.GetServerInstances()
@@ -116,16 +115,16 @@ func TestPLCService_GetServerInstances_SortedAlphabetically(t *testing.T) {
 				instances[i-1].ProtocolType, instances[i].ProtocolType)
 		}
 	}
-	// fins < modbus なので fins が先
-	if instances[0].ProtocolType != "fins" {
-		t.Errorf("expected 'fins' first, got '%s'", instances[0].ProtocolType)
+	// modbus-rtu < modbus-tcp なので modbus-rtu が先
+	if instances[0].ProtocolType != "modbus-rtu" {
+		t.Errorf("expected 'modbus-rtu' first, got '%s'", instances[0].ProtocolType)
 	}
 }
 
 func TestPLCService_GetServerStatus_Stopped(t *testing.T) {
 	svc := newTestService(t)
 
-	status := svc.GetServerStatus("modbus")
+	status := svc.GetServerStatus("modbus-tcp")
 	if status != "Stopped" {
 		t.Errorf("expected 'Stopped', got '%s'", status)
 	}
@@ -135,7 +134,7 @@ func TestPLCService_GetServerStatus_NotFound_ReturnsStopped(t *testing.T) {
 	svc := newTestService(t)
 
 	// 存在しないプロトコルはエラーにならず "Stopped" を返す
-	status := svc.GetServerStatus("fins")
+	status := svc.GetServerStatus("unknown-protocol")
 	if status != "Stopped" {
 		t.Errorf("expected 'Stopped' for non-existent server, got '%s'", status)
 	}
@@ -158,22 +157,22 @@ func TestPLCService_GetAvailableProtocols(t *testing.T) {
 			t.Errorf("protocol %s has empty DisplayName", p.Type)
 		}
 	}
-	if !typeMap["modbus"] {
-		t.Error("expected 'modbus' in available protocols")
+	if !typeMap["modbus-tcp"] {
+		t.Error("expected 'modbus-tcp' in available protocols")
 	}
-	if !typeMap["fins"] {
-		t.Error("expected 'fins' in available protocols")
+	if !typeMap["modbus-rtu"] {
+		t.Error("expected 'modbus-rtu' in available protocols")
 	}
 }
 
 func TestPLCService_GetProtocolSchema_Modbus(t *testing.T) {
 	svc := newTestService(t)
 
-	schema, err := svc.GetProtocolSchema("modbus")
+	schema, err := svc.GetProtocolSchema("modbus-tcp")
 	if err != nil {
 		t.Fatalf("GetProtocolSchema failed: %v", err)
 	}
-	if schema.ProtocolType != "modbus" {
+	if schema.ProtocolType != "modbus-tcp" {
 		t.Errorf("expected protocolType 'modbus', got '%s'", schema.ProtocolType)
 	}
 	if len(schema.Variants) == 0 {
@@ -185,21 +184,6 @@ func TestPLCService_GetProtocolSchema_Modbus(t *testing.T) {
 	}
 	if schema.Capabilities.UnitIDMin <= 0 {
 		t.Errorf("expected positive UnitIDMin, got %d", schema.Capabilities.UnitIDMin)
-	}
-}
-
-func TestPLCService_GetProtocolSchema_FINS(t *testing.T) {
-	svc := newTestService(t)
-
-	schema, err := svc.GetProtocolSchema("fins")
-	if err != nil {
-		t.Fatalf("GetProtocolSchema fins failed: %v", err)
-	}
-	if schema.ProtocolType != "fins" {
-		t.Errorf("expected protocolType 'fins', got '%s'", schema.ProtocolType)
-	}
-	if len(schema.Variants) == 0 {
-		t.Error("expected at least one variant for FINS")
 	}
 }
 
@@ -217,7 +201,7 @@ func TestPLCService_GetProtocolSchema_Unknown(t *testing.T) {
 func TestPLCService_GetMemoryAreas_Modbus(t *testing.T) {
 	svc := newTestService(t)
 
-	areas := svc.GetMemoryAreas("modbus")
+	areas := svc.GetMemoryAreas("modbus-tcp")
 	// Modbus は coils / discreteInputs / holdingRegisters / inputRegisters の4エリア
 	if len(areas) < 4 {
 		t.Errorf("expected at least 4 areas for modbus, got %d", len(areas))
@@ -234,34 +218,10 @@ func TestPLCService_GetMemoryAreas_Modbus(t *testing.T) {
 	}
 }
 
-func TestPLCService_GetMemoryAreas_FINS(t *testing.T) {
-	svc := newTestService(t)
-
-	if err := svc.AddServer("fins", "udp"); err != nil {
-		t.Fatalf("AddServer fins failed: %v", err)
-	}
-
-	areas := svc.GetMemoryAreas("fins")
-	// FINS は CIO / WR / HR / AR / DM / TIM / CNT の7エリア
-	if len(areas) < 5 {
-		t.Errorf("expected at least 5 areas for FINS, got %d", len(areas))
-	}
-
-	areaIDs := make(map[string]bool)
-	for _, a := range areas {
-		areaIDs[a.ID] = true
-	}
-	for _, expected := range []string{"DM", "CIO"} {
-		if !areaIDs[expected] {
-			t.Errorf("expected area '%s' in FINS areas", expected)
-		}
-	}
-}
-
 func TestPLCService_GetMemoryAreas_NotFound(t *testing.T) {
 	svc := newTestService(t)
 
-	areas := svc.GetMemoryAreas("fins") // fins は未追加
+	areas := svc.GetMemoryAreas("unknown-protocol") // 未追加のプロトコル
 	if areas != nil {
 		t.Errorf("expected nil for non-existent server, got %v", areas)
 	}
@@ -276,11 +236,11 @@ func TestPLCService_ReadWriteWord_Modbus(t *testing.T) {
 		value = 12345
 	)
 
-	if err := svc.WriteWord("modbus", area, addr, value); err != nil {
+	if err := svc.WriteWord("modbus-tcp", area, addr, value); err != nil {
 		t.Fatalf("WriteWord failed: %v", err)
 	}
 
-	words, err := svc.ReadWords("modbus", area, addr, 1)
+	words, err := svc.ReadWords("modbus-tcp", area, addr, 1)
 	if err != nil {
 		t.Fatalf("ReadWords failed: %v", err)
 	}
@@ -295,12 +255,12 @@ func TestPLCService_ReadWords_Multiple(t *testing.T) {
 	const area = "holdingRegisters"
 	values := []int{100, 200, 300}
 	for i, v := range values {
-		if err := svc.WriteWord("modbus", area, i, v); err != nil {
+		if err := svc.WriteWord("modbus-tcp", area, i, v); err != nil {
 			t.Fatalf("WriteWord[%d] failed: %v", i, err)
 		}
 	}
 
-	words, err := svc.ReadWords("modbus", area, 0, len(values))
+	words, err := svc.ReadWords("modbus-tcp", area, 0, len(values))
 	if err != nil {
 		t.Fatalf("ReadWords failed: %v", err)
 	}
@@ -317,12 +277,12 @@ func TestPLCService_ReadWords_Multiple(t *testing.T) {
 func TestPLCService_ReadWriteWord_NotFound(t *testing.T) {
 	svc := newTestService(t)
 
-	err := svc.WriteWord("fins", "DM", 0, 100)
+	err := svc.WriteWord("unknown-protocol", "holdingRegisters", 0, 100)
 	if err == nil {
 		t.Fatal("expected error for non-existent server (WriteWord)")
 	}
 
-	_, err = svc.ReadWords("fins", "DM", 0, 1)
+	_, err = svc.ReadWords("unknown-protocol", "holdingRegisters", 0, 1)
 	if err == nil {
 		t.Fatal("expected error for non-existent server (ReadWords)")
 	}
@@ -336,11 +296,11 @@ func TestPLCService_ReadWriteBit_Modbus(t *testing.T) {
 		addr = 5
 	)
 
-	if err := svc.WriteBit("modbus", area, addr, true); err != nil {
+	if err := svc.WriteBit("modbus-tcp", area, addr, true); err != nil {
 		t.Fatalf("WriteBit failed: %v", err)
 	}
 
-	bits, err := svc.ReadBits("modbus", area, addr, 1)
+	bits, err := svc.ReadBits("modbus-tcp", area, addr, 1)
 	if err != nil {
 		t.Fatalf("ReadBits failed: %v", err)
 	}
@@ -352,12 +312,12 @@ func TestPLCService_ReadWriteBit_Modbus(t *testing.T) {
 func TestPLCService_ReadWriteBit_NotFound(t *testing.T) {
 	svc := newTestService(t)
 
-	err := svc.WriteBit("fins", "CIO", 0, true)
+	err := svc.WriteBit("unknown-protocol", "coils", 0, true)
 	if err == nil {
 		t.Fatal("expected error for non-existent server (WriteBit)")
 	}
 
-	_, err = svc.ReadBits("fins", "CIO", 0, 1)
+	_, err = svc.ReadBits("unknown-protocol", "coils", 0, 1)
 	if err == nil {
 		t.Fatal("expected error for non-existent server (ReadBits)")
 	}
@@ -366,36 +326,36 @@ func TestPLCService_ReadWriteBit_NotFound(t *testing.T) {
 func TestPLCService_MultiServer_IndependentMemory(t *testing.T) {
 	svc := newTestService(t)
 
-	if err := svc.AddServer("fins", "udp"); err != nil {
-		t.Fatalf("AddServer fins failed: %v", err)
+	if err := svc.AddServer("modbus-rtu", "rtu"); err != nil {
+		t.Fatalf("AddServer modbus-rtu failed: %v", err)
 	}
 
-	// Modbus に書き込み
-	if err := svc.WriteWord("modbus", "holdingRegisters", 0, 1111); err != nil {
-		t.Fatalf("WriteWord modbus failed: %v", err)
+	// Modbus TCP に書き込み
+	if err := svc.WriteWord("modbus-tcp", "holdingRegisters", 0, 1111); err != nil {
+		t.Fatalf("WriteWord modbus-tcp failed: %v", err)
 	}
 
-	// FINS に書き込み
-	if err := svc.WriteWord("fins", "DM", 0, 2222); err != nil {
-		t.Fatalf("WriteWord fins failed: %v", err)
+	// Modbus RTU に書き込み
+	if err := svc.WriteWord("modbus-rtu", "holdingRegisters", 0, 2222); err != nil {
+		t.Fatalf("WriteWord modbus-rtu failed: %v", err)
 	}
 
-	// Modbus の値が FINS に影響していないことを確認
-	modbusWords, err := svc.ReadWords("modbus", "holdingRegisters", 0, 1)
+	// Modbus TCP の値が Modbus RTU に影響していないことを確認
+	modbusWords, err := svc.ReadWords("modbus-tcp", "holdingRegisters", 0, 1)
 	if err != nil {
-		t.Fatalf("ReadWords modbus failed: %v", err)
+		t.Fatalf("ReadWords modbus-tcp failed: %v", err)
 	}
 	if modbusWords[0] != 1111 {
-		t.Errorf("modbus expected 1111, got %d", modbusWords[0])
+		t.Errorf("modbus-tcp expected 1111, got %d", modbusWords[0])
 	}
 
-	// FINS の値が Modbus に影響していないことを確認
-	finsWords, err := svc.ReadWords("fins", "DM", 0, 1)
+	// Modbus RTU の値が Modbus TCP に影響していないことを確認
+	rtuWords, err := svc.ReadWords("modbus-rtu", "holdingRegisters", 0, 1)
 	if err != nil {
-		t.Fatalf("ReadWords fins failed: %v", err)
+		t.Fatalf("ReadWords modbus-rtu failed: %v", err)
 	}
-	if finsWords[0] != 2222 {
-		t.Errorf("fins expected 2222, got %d", finsWords[0])
+	if rtuWords[0] != 2222 {
+		t.Errorf("modbus-rtu expected 2222, got %d", rtuWords[0])
 	}
 }
 
@@ -404,11 +364,11 @@ func TestPLCService_MultiServer_IndependentMemory(t *testing.T) {
 func TestPLCService_GetServerConfig(t *testing.T) {
 	svc := newTestService(t)
 
-	cfg := svc.GetServerConfig("modbus")
+	cfg := svc.GetServerConfig("modbus-tcp")
 	if cfg == nil {
 		t.Fatal("expected non-nil server config")
 	}
-	if cfg.ProtocolType != "modbus" {
+	if cfg.ProtocolType != "modbus-tcp" {
 		t.Errorf("expected protocolType 'modbus', got '%s'", cfg.ProtocolType)
 	}
 	if cfg.Variant != "tcp" {
@@ -422,7 +382,7 @@ func TestPLCService_GetServerConfig(t *testing.T) {
 func TestPLCService_GetServerConfig_NotFound(t *testing.T) {
 	svc := newTestService(t)
 
-	cfg := svc.GetServerConfig("fins")
+	cfg := svc.GetServerConfig("unknown-protocol")
 	if cfg != nil {
 		t.Errorf("expected nil for non-existent server, got %+v", cfg)
 	}
@@ -434,7 +394,7 @@ func TestPLCService_AddMonitoringItem_GeneratesIDAndOrder(t *testing.T) {
 	svc := newTestService(t)
 
 	item := &MonitoringItemDTO{
-		ProtocolType:  "modbus",
+		ProtocolType:  "modbus-tcp",
 		MemoryArea:    "holdingRegisters",
 		Address:       0,
 		BitWidth:      16,
@@ -452,7 +412,7 @@ func TestPLCService_AddMonitoringItem_GeneratesIDAndOrder(t *testing.T) {
 	if added.Order != 1 {
 		t.Errorf("expected Order 1 for first item, got %d", added.Order)
 	}
-	if added.ProtocolType != "modbus" {
+	if added.ProtocolType != "modbus-tcp" {
 		t.Errorf("expected protocolType 'modbus', got '%s'", added.ProtocolType)
 	}
 }
@@ -462,7 +422,7 @@ func TestPLCService_AddMonitoringItem_OrderIncrementsSequentially(t *testing.T) 
 
 	for i := 0; i < 3; i++ {
 		item := &MonitoringItemDTO{
-			ProtocolType: "modbus",
+			ProtocolType: "modbus-tcp",
 			MemoryArea:   "holdingRegisters",
 			Address:      i,
 			BitWidth:     16,
@@ -492,7 +452,7 @@ func TestPLCService_GetMonitoringItems_SortedByOrder(t *testing.T) {
 	var firstID string
 	for i := 0; i < 3; i++ {
 		item := &MonitoringItemDTO{
-			ProtocolType: "modbus",
+			ProtocolType: "modbus-tcp",
 			MemoryArea:   "holdingRegisters",
 			Address:      i,
 			BitWidth:     16,
@@ -520,7 +480,7 @@ func TestPLCService_DeleteMonitoringItem(t *testing.T) {
 	svc := newTestService(t)
 
 	added, _ := svc.AddMonitoringItem(&MonitoringItemDTO{
-		ProtocolType: "modbus",
+		ProtocolType: "modbus-tcp",
 		MemoryArea:   "holdingRegisters",
 		Address:      0,
 		BitWidth:     16,
@@ -547,7 +507,7 @@ func TestPLCService_UpdateMonitoringItem(t *testing.T) {
 	svc := newTestService(t)
 
 	added, _ := svc.AddMonitoringItem(&MonitoringItemDTO{
-		ProtocolType: "modbus",
+		ProtocolType: "modbus-tcp",
 		MemoryArea:   "holdingRegisters",
 		Address:      0,
 		BitWidth:     16,
@@ -586,7 +546,7 @@ func TestPLCService_ReorderMonitoringItem(t *testing.T) {
 	var ids []string
 	for i := 0; i < 3; i++ {
 		item := &MonitoringItemDTO{
-			ProtocolType: "modbus",
+			ProtocolType: "modbus-tcp",
 			MemoryArea:   "holdingRegisters",
 			Address:      i,
 			BitWidth:     16,
@@ -627,7 +587,7 @@ func TestPLCService_ClearMonitoringItems(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		svc.AddMonitoringItem(&MonitoringItemDTO{
-			ProtocolType: "modbus",
+			ProtocolType: "modbus-tcp",
 			MemoryArea:   "holdingRegisters",
 			Address:      i,
 			BitWidth:     16,
@@ -644,19 +604,19 @@ func TestPLCService_ClearMonitoringItems(t *testing.T) {
 func TestPLCService_MonitoringItem_ProtocolType_MultiServer(t *testing.T) {
 	svc := newTestService(t)
 
-	if err := svc.AddServer("fins", "udp"); err != nil {
-		t.Fatalf("AddServer fins failed: %v", err)
+	if err := svc.AddServer("modbus-rtu", "rtu"); err != nil {
+		t.Fatalf("AddServer modbus-rtu failed: %v", err)
 	}
 
 	svc.AddMonitoringItem(&MonitoringItemDTO{
-		ProtocolType: "modbus",
+		ProtocolType: "modbus-tcp",
 		MemoryArea:   "holdingRegisters",
 		Address:      10,
 		BitWidth:     16,
 	})
 	svc.AddMonitoringItem(&MonitoringItemDTO{
-		ProtocolType: "fins",
-		MemoryArea:   "DM",
+		ProtocolType: "modbus-rtu",
+		MemoryArea:   "holdingRegisters",
 		Address:      20,
 		BitWidth:     16,
 	})
@@ -667,11 +627,11 @@ func TestPLCService_MonitoringItem_ProtocolType_MultiServer(t *testing.T) {
 		protocolTypes[item.ProtocolType] = true
 	}
 
-	if !protocolTypes["modbus"] {
-		t.Error("expected modbus monitoring item")
+	if !protocolTypes["modbus-tcp"] {
+		t.Error("expected modbus-tcp monitoring item")
 	}
-	if !protocolTypes["fins"] {
-		t.Error("expected fins monitoring item")
+	if !protocolTypes["modbus-rtu"] {
+		t.Error("expected modbus-rtu monitoring item")
 	}
 }
 
@@ -844,7 +804,7 @@ func TestPLCService_ExportProject_Version3(t *testing.T) {
 	// modbus サーバーが含まれていることを確認
 	found := false
 	for _, s := range exported.Servers {
-		if s.ProtocolType == "modbus" {
+		if s.ProtocolType == "modbus-tcp" {
 			found = true
 			if s.Variant == "" {
 				t.Error("expected non-empty variant for modbus server snapshot")
@@ -860,14 +820,14 @@ func TestPLCService_ExportProject_ContainsMemorySnapshot(t *testing.T) {
 	svc := newTestService(t)
 
 	// メモリに書き込み
-	if err := svc.WriteWord("modbus", "holdingRegisters", 5, 9999); err != nil {
+	if err := svc.WriteWord("modbus-tcp", "holdingRegisters", 5, 9999); err != nil {
 		t.Fatalf("WriteWord failed: %v", err)
 	}
 
 	exported := svc.ExportProject()
 
 	for _, s := range exported.Servers {
-		if s.ProtocolType == "modbus" {
+		if s.ProtocolType == "modbus-tcp" {
 			if s.MemorySnapshot == nil {
 				t.Error("expected non-nil memory snapshot for modbus server")
 			}
@@ -880,8 +840,8 @@ func TestPLCService_ExportProject_ContainsMemorySnapshot(t *testing.T) {
 func TestPLCService_ExportProject_MultipleServers(t *testing.T) {
 	svc := newTestService(t)
 
-	if err := svc.AddServer("fins", "udp"); err != nil {
-		t.Fatalf("AddServer fins failed: %v", err)
+	if err := svc.AddServer("modbus-rtu", "rtu"); err != nil {
+		t.Fatalf("AddServer modbus-rtu failed: %v", err)
 	}
 
 	exported := svc.ExportProject()
@@ -894,7 +854,7 @@ func TestPLCService_ExportProject_ContainsMonitoringItems(t *testing.T) {
 	svc := newTestService(t)
 
 	svc.AddMonitoringItem(&MonitoringItemDTO{
-		ProtocolType: "modbus",
+		ProtocolType: "modbus-tcp",
 		MemoryArea:   "holdingRegisters",
 		Address:      0,
 		BitWidth:     16,
@@ -905,7 +865,7 @@ func TestPLCService_ExportProject_ContainsMonitoringItems(t *testing.T) {
 	if len(exported.MonitoringItems) != 1 {
 		t.Errorf("expected 1 monitoring item in export, got %d", len(exported.MonitoringItems))
 	}
-	if exported.MonitoringItems[0].ProtocolType != "modbus" {
+	if exported.MonitoringItems[0].ProtocolType != "modbus-tcp" {
 		t.Errorf("expected protocolType 'modbus', got '%s'", exported.MonitoringItems[0].ProtocolType)
 	}
 }
@@ -916,8 +876,8 @@ func TestPLCService_ImportProject_Version3_RestoresServers(t *testing.T) {
 	data := &ProjectDataDTO{
 		Version: 3,
 		Servers: []ServerSnapshotDTO{
-			{ProtocolType: "modbus", Variant: "tcp"},
-			{ProtocolType: "fins", Variant: "udp"},
+			{ProtocolType: "modbus-tcp", Variant: "tcp"},
+			{ProtocolType: "modbus-rtu", Variant: "rtu"},
 		},
 		Scripts: []*ScriptDTO{},
 	}
@@ -935,11 +895,11 @@ func TestPLCService_ImportProject_Version3_RestoresServers(t *testing.T) {
 	for _, inst := range instances {
 		typeMap[inst.ProtocolType] = true
 	}
-	if !typeMap["modbus"] {
-		t.Error("expected modbus server after import")
+	if !typeMap["modbus-tcp"] {
+		t.Error("expected modbus-tcp server after import")
 	}
-	if !typeMap["fins"] {
-		t.Error("expected fins server after import")
+	if !typeMap["modbus-rtu"] {
+		t.Error("expected modbus-rtu server after import")
 	}
 }
 
@@ -947,13 +907,13 @@ func TestPLCService_ImportProject_Version3_RestoresMemory(t *testing.T) {
 	svc := newTestService(t)
 
 	// 書き込んでエクスポート
-	if err := svc.WriteWord("modbus", "holdingRegisters", 10, 5678); err != nil {
+	if err := svc.WriteWord("modbus-tcp", "holdingRegisters", 10, 5678); err != nil {
 		t.Fatalf("WriteWord failed: %v", err)
 	}
 	exported := svc.ExportProject()
 
 	// 値を上書きしてから
-	if err := svc.WriteWord("modbus", "holdingRegisters", 10, 0); err != nil {
+	if err := svc.WriteWord("modbus-tcp", "holdingRegisters", 10, 0); err != nil {
 		t.Fatalf("WriteWord clear failed: %v", err)
 	}
 
@@ -962,7 +922,7 @@ func TestPLCService_ImportProject_Version3_RestoresMemory(t *testing.T) {
 		t.Fatalf("ImportProject failed: %v", err)
 	}
 
-	words, err := svc.ReadWords("modbus", "holdingRegisters", 10, 1)
+	words, err := svc.ReadWords("modbus-tcp", "holdingRegisters", 10, 1)
 	if err != nil {
 		t.Fatalf("ReadWords failed after import: %v", err)
 	}
@@ -977,7 +937,7 @@ func TestPLCService_ImportProject_Version2_Compat(t *testing.T) {
 	// Version 2 形式
 	data := &ProjectDataDTO{
 		Version:      2,
-		ProtocolType: "modbus",
+		ProtocolType: "modbus-tcp",
 		Variant:      "tcp",
 		Settings:     map[string]interface{}{},
 		Scripts:      []*ScriptDTO{},
@@ -991,7 +951,7 @@ func TestPLCService_ImportProject_Version2_Compat(t *testing.T) {
 	if len(instances) != 1 {
 		t.Fatalf("expected 1 server instance, got %d", len(instances))
 	}
-	if instances[0].ProtocolType != "modbus" {
+	if instances[0].ProtocolType != "modbus-tcp" {
 		t.Errorf("expected 'modbus', got '%s'", instances[0].ProtocolType)
 	}
 }
@@ -1013,7 +973,7 @@ func TestPLCService_ImportProject_Version2_EmptyProtocol_DefaultsToModbusTCP(t *
 	if len(instances) != 1 {
 		t.Fatalf("expected 1 server, got %d", len(instances))
 	}
-	if instances[0].ProtocolType != "modbus" {
+	if instances[0].ProtocolType != "modbus-tcp" {
 		t.Errorf("expected default 'modbus', got '%s'", instances[0].ProtocolType)
 	}
 }
@@ -1024,7 +984,7 @@ func TestPLCService_ImportProject_RestoresScripts(t *testing.T) {
 	data := &ProjectDataDTO{
 		Version: 3,
 		Servers: []ServerSnapshotDTO{
-			{ProtocolType: "modbus", Variant: "tcp"},
+			{ProtocolType: "modbus-tcp", Variant: "tcp"},
 		},
 		Scripts: []*ScriptDTO{
 			{ID: "script-1", Name: "counter", Code: "1+1", IntervalMs: 1000},
@@ -1048,12 +1008,12 @@ func TestPLCService_ImportProject_RestoresMonitoringItems(t *testing.T) {
 	data := &ProjectDataDTO{
 		Version: 3,
 		Servers: []ServerSnapshotDTO{
-			{ProtocolType: "modbus", Variant: "tcp"},
+			{ProtocolType: "modbus-tcp", Variant: "tcp"},
 		},
 		Scripts: []*ScriptDTO{},
 		MonitoringItems: []*MonitoringItemDTO{
-			{ID: "item-1", ProtocolType: "modbus", MemoryArea: "holdingRegisters", Address: 0, BitWidth: 16, Order: 1},
-			{ID: "item-2", ProtocolType: "modbus", MemoryArea: "coils", Address: 5, BitWidth: 1, Order: 2},
+			{ID: "item-1", ProtocolType: "modbus-tcp", MemoryArea: "holdingRegisters", Address: 0, BitWidth: 16, Order: 1},
+			{ID: "item-2", ProtocolType: "modbus-tcp", MemoryArea: "coils", Address: 5, BitWidth: 1, Order: 2},
 		},
 	}
 
@@ -1070,15 +1030,15 @@ func TestPLCService_ImportProject_RestoresMonitoringItems(t *testing.T) {
 func TestPLCService_ImportProject_ClearsExistingServers(t *testing.T) {
 	svc := newTestService(t)
 
-	// FINS を追加してからインポートでリセット
-	if err := svc.AddServer("fins", "udp"); err != nil {
-		t.Fatalf("AddServer fins failed: %v", err)
+	// modbus-rtu を追加してからインポートでリセット
+	if err := svc.AddServer("modbus-rtu", "rtu"); err != nil {
+		t.Fatalf("AddServer modbus-rtu failed: %v", err)
 	}
 
 	data := &ProjectDataDTO{
 		Version: 3,
 		Servers: []ServerSnapshotDTO{
-			{ProtocolType: "modbus", Variant: "tcp"},
+			{ProtocolType: "modbus-tcp", Variant: "tcp"},
 		},
 		Scripts: []*ScriptDTO{},
 	}
@@ -1092,7 +1052,7 @@ func TestPLCService_ImportProject_ClearsExistingServers(t *testing.T) {
 	if len(instances) != 1 {
 		t.Fatalf("expected 1 server after import, got %d", len(instances))
 	}
-	if instances[0].ProtocolType != "modbus" {
+	if instances[0].ProtocolType != "modbus-tcp" {
 		t.Errorf("expected 'modbus', got '%s'", instances[0].ProtocolType)
 	}
 }
@@ -1101,22 +1061,22 @@ func TestPLCService_ExportImport_RoundTrip(t *testing.T) {
 	svc := newTestService(t)
 
 	// マルチサーバー構成
-	if err := svc.AddServer("fins", "udp"); err != nil {
-		t.Fatalf("AddServer fins failed: %v", err)
+	if err := svc.AddServer("modbus-rtu", "rtu"); err != nil {
+		t.Fatalf("AddServer modbus-rtu failed: %v", err)
 	}
 
 	// 各サーバーにデータを書き込み
-	if err := svc.WriteWord("modbus", "holdingRegisters", 3, 777); err != nil {
-		t.Fatalf("WriteWord modbus failed: %v", err)
+	if err := svc.WriteWord("modbus-tcp", "holdingRegisters", 3, 777); err != nil {
+		t.Fatalf("WriteWord modbus-tcp failed: %v", err)
 	}
-	if err := svc.WriteWord("fins", "DM", 3, 888); err != nil {
-		t.Fatalf("WriteWord fins failed: %v", err)
+	if err := svc.WriteWord("modbus-rtu", "holdingRegisters", 3, 888); err != nil {
+		t.Fatalf("WriteWord modbus-rtu failed: %v", err)
 	}
 
 	// スクリプトとモニタリング項目を追加
 	svc.CreateScript("rtt_script", "1+1", 100)
 	svc.AddMonitoringItem(&MonitoringItemDTO{
-		ProtocolType: "modbus",
+		ProtocolType: "modbus-tcp",
 		MemoryArea:   "holdingRegisters",
 		Address:      3,
 		BitWidth:     16,
@@ -1137,7 +1097,7 @@ func TestPLCService_ExportImport_RoundTrip(t *testing.T) {
 	}
 
 	// Modbus のメモリ値を確認
-	modbusWords, err := svc2.ReadWords("modbus", "holdingRegisters", 3, 1)
+	modbusWords, err := svc2.ReadWords("modbus-tcp", "holdingRegisters", 3, 1)
 	if err != nil {
 		t.Fatalf("ReadWords modbus failed: %v", err)
 	}
@@ -1145,13 +1105,13 @@ func TestPLCService_ExportImport_RoundTrip(t *testing.T) {
 		t.Errorf("expected modbus[3]=777, got %d", modbusWords[0])
 	}
 
-	// FINS のメモリ値を確認
-	finsWords, err := svc2.ReadWords("fins", "DM", 3, 1)
+	// Modbus RTU のメモリ値を確認
+	rtuWords, err := svc2.ReadWords("modbus-rtu", "holdingRegisters", 3, 1)
 	if err != nil {
-		t.Fatalf("ReadWords fins failed: %v", err)
+		t.Fatalf("ReadWords modbus-rtu failed: %v", err)
 	}
-	if finsWords[0] != 888 {
-		t.Errorf("expected fins DM[3]=888, got %d", finsWords[0])
+	if rtuWords[0] != 888 {
+		t.Errorf("expected modbus-rtu holdingRegisters[3]=888, got %d", rtuWords[0])
 	}
 
 	// スクリプト数を確認

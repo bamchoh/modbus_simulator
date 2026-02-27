@@ -168,28 +168,6 @@ type MonitoringConfigDTO struct {
 	Items   []*MonitoringItemDTO `json:"items"`
 }
 
-// === OPC UA変数DTO ===
-
-// OPCUAVariableDTO はOPC UA変数のDTO
-type OPCUAVariableDTO struct {
-	Name     string      `json:"name"`
-	DataType string      `json:"dataType"`
-	Value    interface{} `json:"value"`
-	NodeID   uint32      `json:"nodeId"`
-}
-
-// OPCUADataTypesDTO はOPC UAのデータ型一覧のDTO
-type OPCUADataTypesDTO struct {
-	Types []OPCUADataTypeDTO `json:"types"`
-}
-
-// OPCUADataTypeDTO はOPC UAのデータ型のDTO
-type OPCUADataTypeDTO struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"displayName"`
-	Description string `json:"description"`
-}
-
 // === 変数DTO ===
 
 // VariableDTO は変数のDTO

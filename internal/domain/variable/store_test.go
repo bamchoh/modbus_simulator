@@ -415,7 +415,7 @@ func TestVariableStore_FindVariableByMapping_NotFound(t *testing.T) {
 	})
 
 	// 異なるプロトコル
-	found, _ := s.FindVariableByMapping("fins", "DM", 10)
+	found, _ := s.FindVariableByMapping("modbus-rtu", "holdingRegisters", 10)
 	if found != nil {
 		t.Error("should not find variable for different protocol")
 	}
@@ -750,7 +750,7 @@ func TestVariableStore_GetAllMappingsForProtocol(t *testing.T) {
 		{ProtocolType: "modbus", MemoryArea: "holdingRegisters", Address: 10, Endianness: "big"},
 	})
 	_ = s.SetMappings(v2.ID, []ProtocolMapping{
-		{ProtocolType: "fins", MemoryArea: "DM", Address: 20, Endianness: "big"},
+		{ProtocolType: "modbus-rtu", MemoryArea: "holdingRegisters", Address: 20, Endianness: "big"},
 		{ProtocolType: "modbus", MemoryArea: "holdingRegisters", Address: 30, Endianness: "big"},
 	})
 
@@ -759,14 +759,14 @@ func TestVariableStore_GetAllMappingsForProtocol(t *testing.T) {
 		t.Errorf("modbus mappings: got %d entries, want 2", len(modbusMap))
 	}
 
-	finsMap := s.GetAllMappingsForProtocol("fins")
-	if len(finsMap) != 1 {
-		t.Errorf("fins mappings: got %d entries, want 1", len(finsMap))
+	modbusRtuMap := s.GetAllMappingsForProtocol("modbus-rtu")
+	if len(modbusRtuMap) != 1 {
+		t.Errorf("modbus-rtu mappings: got %d entries, want 1", len(modbusRtuMap))
 	}
 
 	// 存在しないプロトコル
-	emptyMap := s.GetAllMappingsForProtocol("opcua")
+	emptyMap := s.GetAllMappingsForProtocol("unknown-protocol")
 	if len(emptyMap) != 0 {
-		t.Errorf("opcua mappings: got %d entries, want 0", len(emptyMap))
+		t.Errorf("unknown-protocol mappings: got %d entries, want 0", len(emptyMap))
 	}
 }

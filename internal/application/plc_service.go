@@ -74,7 +74,7 @@ func NewPLCService() *PLCService {
 	})
 
 	// デフォルトでModbus TCPを追加
-	_ = service.AddServer("modbus", "tcp")
+	_ = service.AddServer("modbus-tcp", "tcp")
 
 	// モニタリング設定を読み込み
 	_ = service.LoadMonitoringConfig()
@@ -982,7 +982,7 @@ func (s *PLCService) ImportProject(data *ProjectDataDTO) error {
 		protocolType := data.ProtocolType
 		variant := data.Variant
 		if protocolType == "" {
-			protocolType = "modbus"
+			protocolType = "modbus-tcp"
 			variant = "tcp"
 		}
 
@@ -1332,7 +1332,7 @@ func (s *PLCService) LoadMonitoringConfig() error {
 	defer s.mu.Unlock()
 
 	// デフォルトサーバーのプロトコルタイプを取得（後方互換用）
-	defaultProtocol := "modbus"
+	defaultProtocol := "modbus-tcp"
 	for pt := range s.servers {
 		defaultProtocol = string(pt)
 		break
@@ -1348,122 +1348,6 @@ func (s *PLCService) LoadMonitoringConfig() error {
 	}
 
 	return nil
-}
-
-// === OPC UA変数管理 ===
-
-// IsOPCUAProtocol はOPC UAプロトコルがアクティブかどうかを返す
-func (s *PLCService) IsOPCUAProtocol() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	_, exists := s.servers[protocol.ProtocolOPCUA]
-	return exists
-}
-
-// GetOPCUAVariables はOPC UA変数一覧を返す
-func (s *PLCService) GetOPCUAVariables() []*OPCUAVariableDTO {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	inst, exists := s.servers[protocol.ProtocolOPCUA]
-	if !exists {
-		return nil
-	}
-
-	type variableStore interface {
-		GetAllVariablesDTOs() []*OPCUAVariableDTO
-	}
-
-	vs, ok := inst.dataStore.(variableStore)
-	if !ok {
-		return nil
-	}
-
-	return vs.GetAllVariablesDTOs()
-}
-
-// GetOPCUADataTypes はOPC UAのデータ型一覧を返す
-func (s *PLCService) GetOPCUADataTypes() *OPCUADataTypesDTO {
-	return &OPCUADataTypesDTO{
-		Types: []OPCUADataTypeDTO{
-			{ID: "BOOL", DisplayName: "BOOL", Description: "ブール値 (true/false)"},
-			{ID: "SINT", DisplayName: "SINT", Description: "符号付き8ビット整数 (-128 ~ 127)"},
-			{ID: "INT", DisplayName: "INT", Description: "符号付き16ビット整数 (-32768 ~ 32767)"},
-			{ID: "DINT", DisplayName: "DINT", Description: "符号付き32ビット整数"},
-			{ID: "USINT", DisplayName: "USINT", Description: "符号なし8ビット整数 (0 ~ 255)"},
-			{ID: "UINT", DisplayName: "UINT", Description: "符号なし16ビット整数 (0 ~ 65535)"},
-			{ID: "UDINT", DisplayName: "UDINT", Description: "符号なし32ビット整数"},
-			{ID: "REAL", DisplayName: "REAL", Description: "32ビット浮動小数点"},
-			{ID: "LREAL", DisplayName: "LREAL", Description: "64ビット浮動小数点"},
-			{ID: "STRING", DisplayName: "STRING", Description: "文字列"},
-		},
-	}
-}
-
-// CreateOPCUAVariable はOPC UA変数を作成する
-func (s *PLCService) CreateOPCUAVariable(name, dataType string, value interface{}) (*OPCUAVariableDTO, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	inst, exists := s.servers[protocol.ProtocolOPCUA]
-	if !exists {
-		return nil, fmt.Errorf("OPC UA protocol is not active")
-	}
-
-	type variableCreator interface {
-		CreateVariable(name, dataType string, value interface{}) (*OPCUAVariableDTO, error)
-	}
-
-	vc, ok := inst.dataStore.(variableCreator)
-	if !ok {
-		return nil, fmt.Errorf("datastore does not support variable creation")
-	}
-
-	return vc.CreateVariable(name, dataType, value)
-}
-
-// UpdateOPCUAVariable はOPC UA変数を更新する
-func (s *PLCService) UpdateOPCUAVariable(name string, value interface{}) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	inst, exists := s.servers[protocol.ProtocolOPCUA]
-	if !exists {
-		return fmt.Errorf("OPC UA protocol is not active")
-	}
-
-	type variableUpdater interface {
-		UpdateVariable(name string, value interface{}) error
-	}
-
-	vu, ok := inst.dataStore.(variableUpdater)
-	if !ok {
-		return fmt.Errorf("datastore does not support variable update")
-	}
-
-	return vu.UpdateVariable(name, value)
-}
-
-// DeleteOPCUAVariable はOPC UA変数を削除する
-func (s *PLCService) DeleteOPCUAVariable(name string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	inst, exists := s.servers[protocol.ProtocolOPCUA]
-	if !exists {
-		return fmt.Errorf("OPC UA protocol is not active")
-	}
-
-	type variableDeleter interface {
-		DeleteVariableByName(name string) error
-	}
-
-	vd, ok := inst.dataStore.(variableDeleter)
-	if !ok {
-		return fmt.Errorf("datastore does not support variable deletion")
-	}
-
-	return vd.DeleteVariableByName(name)
 }
 
 // === 変数管理API ===

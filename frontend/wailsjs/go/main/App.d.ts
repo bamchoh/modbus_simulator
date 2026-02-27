@@ -12,15 +12,11 @@ export function ClearMonitoringItems():Promise<void>;
 
 export function ClearScriptError(arg1:string):Promise<void>;
 
-export function CreateOPCUAVariable(arg1:string,arg2:string,arg3:any):Promise<application.OPCUAVariableDTO>;
-
 export function CreateScript(arg1:string,arg2:string,arg3:number):Promise<application.ScriptDTO>;
 
 export function CreateVariable(arg1:string,arg2:string,arg3:any):Promise<application.VariableDTO>;
 
 export function DeleteMonitoringItem(arg1:string):Promise<void>;
-
-export function DeleteOPCUAVariable(arg1:string):Promise<void>;
 
 export function DeleteScript(arg1:string):Promise<void>;
 
@@ -43,10 +39,6 @@ export function GetIntervalPresets():Promise<Array<application.IntervalPresetDTO
 export function GetMemoryAreas(arg1:string):Promise<Array<application.MemoryAreaDTO>>;
 
 export function GetMonitoringItems():Promise<Array<application.MonitoringItemDTO>>;
-
-export function GetOPCUADataTypes():Promise<application.OPCUADataTypesDTO>;
-
-export function GetOPCUAVariables():Promise<Array<application.OPCUAVariableDTO>>;
 
 export function GetProtocolSchema(arg1:string):Promise<application.ProtocolSchemaDTO>;
 
@@ -71,8 +63,6 @@ export function GetVariableMappings(arg1:string):Promise<Array<application.Proto
 export function GetVariables():Promise<Array<application.VariableDTO>>;
 
 export function ImportProject():Promise<void>;
-
-export function IsOPCUAProtocol():Promise<boolean>;
 
 export function MoveMonitoringItem(arg1:string,arg2:string):Promise<void>;
 
@@ -101,8 +91,6 @@ export function StopScript(arg1:string):Promise<void>;
 export function StopServer(arg1:string):Promise<void>;
 
 export function UpdateMonitoringItem(arg1:application.MonitoringItemDTO):Promise<void>;
-
-export function UpdateOPCUAVariable(arg1:string,arg2:any):Promise<void>;
 
 export function UpdateScript(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
 

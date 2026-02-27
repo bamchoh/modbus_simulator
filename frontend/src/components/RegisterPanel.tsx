@@ -9,7 +9,6 @@ import {
 } from '../../wailsjs/go/main/App';
 import { application } from '../../wailsjs/go/models';
 import { MonitoringView } from './MonitoringView';
-import { OPCUAVariableView } from './OPCUAVariableView';
 
 export type RegisterTab = 'list' | 'monitoring';
 
@@ -173,12 +172,9 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
     return () => clearInterval(interval);
   }, []);
 
-  // OPC UAプロトコルかどうか（selectedProtocolから派生）
-  const isOPCUA = selectedProtocol === 'opcua';
-
   // メモリエリア一覧を取得（プロトコルが変更されたら再ロード）
   useEffect(() => {
-    if (!selectedProtocol || isOPCUA) {
+    if (!selectedProtocol) {
       setMemoryAreas([]);
       setSelectedArea('');
       return;
@@ -198,7 +194,7 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
       }
     };
     loadAreas();
-  }, [selectedProtocol, isOPCUA]);
+  }, [selectedProtocol]);
 
   const currentArea = memoryAreas.find(a => a.id === selectedArea);
   const isBitType = currentArea?.isBit ?? false;
@@ -498,16 +494,6 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
     }
     return rows;
   };
-
-  // OPC UAの場合は変数ビューを表示
-  if (isOPCUA) {
-    return (
-      <div className="panel">
-        <h2>OPC UA 変数</h2>
-        <OPCUAVariableView autoRefresh={autoRefresh} />
-      </div>
-    );
-  }
 
   return (
     <div className="panel">

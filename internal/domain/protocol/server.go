@@ -8,10 +8,9 @@ import (
 type ProtocolType string
 
 const (
-	ProtocolModbus  ProtocolType = "modbus"
-	ProtocolFINS    ProtocolType = "fins"
-	ProtocolOPCUA   ProtocolType = "opcua"
-	ProtocolS7Comm  ProtocolType = "s7comm"
+	ProtocolModbusTCP   ProtocolType = "modbus-tcp"
+	ProtocolModbusRTU   ProtocolType = "modbus-rtu"
+	ProtocolModbusASCII ProtocolType = "modbus-ascii"
 )
 
 // ServerStatus はサーバーの状態を表す

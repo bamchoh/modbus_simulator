@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-// ASCIIServer はModbus RTU ASCIIサーバーを表す
+// ASCIIServer はModbus ASCIIサーバーを表す
 type ASCIIServer struct {
 	mu        sync.Mutex
 	serial    *ASCIISerialManager

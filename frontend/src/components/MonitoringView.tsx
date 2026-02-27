@@ -303,7 +303,6 @@ export function MonitoringView({ serverInstances }: Props) {
     const loadMemoryAreas = async () => {
       const areasMap: Record<string, application.MemoryAreaDTO[]> = {};
       for (const inst of serverInstances) {
-        if (inst.protocolType === 'opcua') continue;
         try {
           const areas = await GetMemoryAreas(inst.protocolType);
           areasMap[inst.protocolType] = areas || [];
@@ -416,7 +415,7 @@ export function MonitoringView({ serverInstances }: Props) {
 
   // 追加ダイアログを開く
   const handleAdd = () => {
-    const firstProtocol = serverInstances.find(i => i.protocolType !== 'opcua')?.protocolType || serverInstances[0]?.protocolType || '';
+    const firstProtocol = serverInstances[0]?.protocolType || '';
     const firstAreas = memoryAreasByProtocol[firstProtocol] || [];
     setFormProtocolType(firstProtocol);
     setFormArea(firstAreas.find(a => !a.isBit)?.id || firstAreas[0]?.id || '');
@@ -621,8 +620,6 @@ export function MonitoringView({ serverInstances }: Props) {
   // 書き込みダイアログ用エリア情報
   const writingAreas = writingItem ? memoryAreasByProtocol[writingItem.item.protocolType] || [] : [];
 
-  // OPC UA以外のサーバーインスタンス（追加ダイアログ用）
-  const nonOpcuaInstances = serverInstances.filter(i => i.protocolType !== 'opcua');
 
   return (
     <div className="monitoring-view">
@@ -696,11 +693,11 @@ export function MonitoringView({ serverInstances }: Props) {
             <h3>モニタリング項目を追加</h3>
 
             <div className="dialog-content">
-              {nonOpcuaInstances.length > 1 && (
+              {serverInstances.length > 1 && (
                 <div className="dialog-row">
                   <label>プロトコル:</label>
                   <select value={formProtocolType} onChange={(e) => handleFormProtocolChange(e.target.value)}>
-                    {nonOpcuaInstances.map(inst => (
+                    {serverInstances.map(inst => (
                       <option key={inst.protocolType} value={inst.protocolType}>
                         {inst.displayName} ({inst.variant})
                       </option>
