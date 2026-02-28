@@ -8,13 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-このプロジェクトは PLC シミュレーター です。Modbus（TCP/RTU/ASCII）をサポートしています。
+このプロジェクトは PLC シミュレーター です。Modbus（TCP/RTU/ASCII）と OPC UA をサポートしています。
 
 ### 主な機能
 
-- **マルチプロトコル対応**: Modbus TCP / Modbus RTU / Modbus ASCII を個別のサーバーとして起動可能
-- **複数サーバー同時実行**: 異なるプロトコル（例: Modbus TCP + Modbus RTU）を同時に起動可能。各サーバーは独立したメモリ空間を持つ
-- **変数管理**: IEC 61131-3準拠のデータ型（スカラー、配列、構造体、STRING[n]）をサポート
+- **マルチプロトコル対応**: Modbus TCP / Modbus RTU / Modbus ASCII / OPC UA を個別のサーバーとして起動可能
+- **複数サーバー同時実行**: 異なるプロトコル（例: Modbus TCP + OPC UA）を同時に起動可能。各サーバーは独立したメモリ空間を持つ
+- **変数管理**: IEC 61131-3準拠のデータ型（スカラー、配列、構造体、STRING[n]）をサポート。OPC UA でノードとして公開可能
 - **スクリプト機能**: JavaScriptで周期処理を記述。const/let対応（IIFE wrapping）、実行エラーのGUI表示
 - **レジスタ操作**: GUIからメモリエリアの値を直接操作可能
 - **モニタリング**: 任意のレジスタをリアルタイム監視・書き込み（ドラッグ&ドロップ並べ替え対応）
@@ -60,6 +60,13 @@ internal/
     │   ├── factory.go      # ModbusServerFactory（TCP/RTU/ASCIIの3ファクトリー）
     │   ├── server.go       # ModbusServer
     │   └── datastore.go    # ModbusDataStore
+    ├── opcua/        # OPC UAサーバー実装
+    │   ├── factory.go      # OpcuaServerFactory
+    │   ├── server.go       # OpcuaServer + PLCNameSpace（カスタム名前空間）
+    │   └── datastore.go    # OpcuaDataStore（変数ストアを DataStore として公開）
+    ├── adapter/      # アダプター層
+    │   ├── variable_datastore.go       # VariableBackedDataStore（変数↔DataStore双方向同期）
+    │   └── variable_store_accessor.go  # VariableStoreAccessor 実装（OPC UA用）
     └── scripting/    # JSエンジン（goja使用）
 ```
 
@@ -69,7 +76,10 @@ internal/
   - `servers map[protocol.ProtocolType]*serverInstance` で各プロトコルのサーバーを保持
   - 各プロトコルタイプは最大1インスタンス（プロトコルタイプをサーバー識別子として利用）
   - Modbus の各バリアントは独立した ProtocolType: `"modbus-tcp"`, `"modbus-rtu"`, `"modbus-ascii"`
+  - OPC UA の ProtocolType は `"opcua"`
   - `variableStore` と `scriptEngine` は全サーバーで共有
+  - `AddServer()` 時に `VariableStoreInjector` を実装するファクトリーへ `VariableStoreAccessor` を注入
+  - `UpdateVariableMappings()` 後に `NodePublishingAware` を実装するサーバーへ変更通知を送信
 - **ServerFactory** (`internal/domain/protocol/server.go`): プロトコルサーバーを作成するファクトリーインターフェース
   - `GetConfigFields()`: スキーマ駆動UIのためのフィールド定義を返す
   - `GetProtocolCapabilities()`: UnitIDサポート等の機能情報を返す
@@ -78,10 +88,31 @@ internal/
   - `NewModbusTCPServerFactory()`, `NewModbusRTUServerFactory()`, `NewModbusASCIIServerFactory()` で生成
   - それぞれ `ProtocolType()` が `"modbus-tcp"` / `"modbus-rtu"` / `"modbus-ascii"` を返す
   - `init()` で3つ全てを `protocol.Register()` に登録
+- **OpcuaServerFactory** (`internal/infrastructure/opcua/factory.go`): OPC UA サーバーのファクトリー
+  - `ProtocolType()` が `"opcua"` を返す
+  - `VariableStoreInjector` を実装し、PLCService から `VariableStoreAccessor` を遅延注入
+  - `GetProtocolCapabilities()` が `SupportsNodePublishing: true` を返す
+  - `init()` で `protocol.Register()` に登録
+- **PLCNameSpace** (`internal/infrastructure/opcua/server.go`): gopcua の NameSpace インターフェースを直接実装したカスタム名前空間
+  - `VariableStore` の変数を OPC UA ノードとして公開（`loadFromAccessor()` で初期化）
+  - NodeID は String 型: ルートノードは `ns=X;s={uuid}`、子ノードは `ns=X;s={uuid}.fieldName` / `ns=X;s={uuid}[index]`
+  - `Browse()`: 構造体フィールドと配列インデックスを子ノードとして返す
+  - `Attribute()` / `SetAttribute()`: 子ノードパスをナビゲートして値の読み書きを行う
+  - `pollChanges()`: `allNodeIDs` に登録された全 NodeID（子ノードを含む）の変更を通知
+  - 構造体型には専用 DataType ノード `ns=X;s=_dt_型名` を割り当て
 - **DataStore** (`internal/domain/protocol/server.go`): プロトコル共通のメモリ操作インターフェース
   - `ReadBits()`, `WriteBit()`, `ReadWords()`, `WriteWord()`: 汎用メモリ操作
   - `Snapshot()`, `Restore()`: Export/Import用
   - `GetAreas()`: `MemoryArea` スライスを返す。`MemoryArea.OneOrigin` が true のエリアはUIで1オリジンアドレスを表示する（内部は常に0ベース）。Modbusの全4エリアは `OneOrigin: true`
+- **VariableStoreAccessor** (`internal/domain/protocol/server.go`): プロトコルが VariableStore にアクセスするための汎用インターフェース
+  - `GetEnabledNodePublishings(protocolType)`: 指定プロトコルで公開設定された変数一覧を返す
+  - `ReadVariableValue(variableID)` / `WriteVariableValue(variableID, value)`: 変数値の読み書き
+  - `GetStructFields(typeName)`: 構造体型のフィールド一覧を返す（子ノードブラウズ用）
+  - 実装: `internal/infrastructure/adapter/variable_store_accessor.go`
+- **VariableStoreInjector** / **NodePublishingAware** (`internal/domain/protocol/server.go`): OPC UA 等のノードベースプロトコル向けインターフェース
+  - `VariableStoreInjector`: `InjectVariableStore(accessor)` で遅延注入を受け付ける
+  - `NodePublishingAware`: `OnNodePublishingUpdated()` でノード公開設定変更通知を受け付ける
+  - `ProtocolCapabilities.SupportsNodePublishing: true` のプロトコルで利用される
 - **ScriptEngine** (`internal/infrastructure/scripting/engine.go`): gojaベースのJavaScript実行エンジン
   - `plc`オブジェクトでDataStoreおよびVariableStoreにアクセス可能
   - スクリプトコードをIIFE `(function(){...})();` でラップして、const/let再宣言エラーを回避
@@ -318,6 +349,50 @@ JavaScript（goja）でPLC動作を記述。
   - `STRING[n]` → スカラーカテゴリ + STRING型 + バイト長
   - 構造体型名 → 構造体カテゴリ + 型名
 - **型名の不変性**: 編集モード時は型名の入力欄を無効化（型名は変更不可）
+
+### OPC UA 実装
+
+#### NodeID スキーム
+
+| ノード種別 | NodeID 形式 | 例 |
+|-----------|------------|---|
+| ルート変数ノード | `ns=X;s={uuid}` | `ns=2;s=395a704c-...` |
+| 構造体フィールド | `ns=X;s={uuid}.fieldName` | `ns=2;s=395a704c-....speed` |
+| ネストフィールド | `ns=X;s={uuid}.field1.field2` | `ns=2;s=...-....motor.speed` |
+| 配列要素 | `ns=X;s={uuid}[index]` | `ns=2;s=395a704c-...[0]` |
+| カスタムDataTypeノード | `ns=X;s=_dt_TypeName` | `ns=2;s=_dt_MyStruct` |
+
+#### 子ノードブラウズ・サブスクリプション
+
+- **`Browse()`**: 配列型→インデックスノード、構造体型→フィールドノードを子として返す。再帰的に展開
+- **`collectAllNodeIDs()`**: 型情報を再帰的にたどって全 NodeID を列挙し、`allNodeIDs` に保存
+- **`pollChanges()`**: `allNodeIDs` に登録された全 NodeID（子ノードを含む）の変更を監視し、OPC UA クライアントに通知
+- **`GetStructFields(typeName)`**: `VariableStoreAccessor` 経由で構造体型のフィールド一覧を取得（子ノード生成に使用）
+
+#### パスナビゲーション
+
+- **`parseNodePath(s)`**: NodeID 文字列を `(varID, []pathSegment)` に分解
+- **`parseSegments(s)`**: パス文字列（`.field[index]...`）を `[]pathSegment` に分解
+- **`followTypeForPath(rootType, path)`**: 型情報に沿ってパスを辿り、末端の型名を取得
+- **`navigateValue(value, path)`**: 値ツリーをパスに沿って辿り、末端の値を取得
+- **`updateValue(root, path, newVal)`**: 値ツリーのパス位置を更新して新しいルートを返す
+
+#### DataType ノード
+
+- 構造体型にはカスタム DataType ノード（`_dt_` プレフィックス）を割り当て
+- `Node()` が `_dt_` 付き NodeID を受け取ると `NodeClass=DataType` のノードを返す
+- `isStructDataType(dataType)`: プリミティブでも配列でもない型名を構造体型と判定する
+
+#### 書き込み処理
+
+- **配列書き込み**: gopcua は型付きスライス（`[]int16` 等）を渡すため、`fromOpcuaValue()` で `[]interface{}` に変換
+- **構造体書き込み**: OPC UA クライアントが JSON 文字列で送る場合に `json.Unmarshal` で `map[string]interface{}` に変換
+- **子ノード書き込み**: `updateValue()` でルートから新しい値を構築し `WriteVariableValue()` で保存
+
+#### OPC UA ライブラリ
+
+- **gopcua v0.8.0**: `server.Start(ctx)` はノンブロッキング、`server.Close()` でシャットダウン
+- セキュリティなし・匿名認証（`ua.SecurityModeNone` / `ua.MessageSecurityModeNone`）
 
 ## License
 

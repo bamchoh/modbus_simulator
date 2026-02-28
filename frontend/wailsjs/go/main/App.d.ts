@@ -98,6 +98,8 @@ export function UpdateServerConfig(arg1:application.ServerConfigDTO):Promise<voi
 
 export function UpdateVariableMappings(arg1:string,arg2:Array<application.ProtocolMappingDTO>):Promise<void>;
 
+export function UpdateVariableNodePublishing(arg1:string,arg2:string,arg3:application.NodePublishingDTO):Promise<void>;
+
 export function UpdateVariableValue(arg1:string,arg2:any):Promise<void>;
 
 export function WriteBit(arg1:string,arg2:string,arg3:number,arg4:boolean):Promise<void>;

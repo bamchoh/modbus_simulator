@@ -13,25 +13,70 @@ type ChangeListener interface {
 	OnVariableChanged(v *Variable, mappings []ProtocolMapping)
 }
 
+// NodePublishing はノードベースプロトコルへの変数公開設定
+type NodePublishing struct {
+	Enabled    bool   `json:"enabled"`
+	AccessMode string `json:"accessMode"` // "read" | "write" | "readwrite"
+}
+
 // VariableStore は中央変数ストア
 type VariableStore struct {
-	mu          sync.RWMutex
-	variables   map[string]*Variable        // id -> variable
-	byName      map[string]*Variable        // name -> variable
-	mappings    map[string][]ProtocolMapping // variableID -> mappings
-	structTypes map[string]*StructTypeDef   // 構造体型名 -> 型定義
-	listeners   []ChangeListener
-	onChange    func() // 変更時コールバック（永続化用）
+	mu              sync.RWMutex
+	variables       map[string]*Variable        // id -> variable
+	byName          map[string]*Variable        // name -> variable
+	mappings        map[string][]ProtocolMapping // variableID -> mappings
+	structTypes     map[string]*StructTypeDef   // 構造体型名 -> 型定義
+	nodePublishings map[string]map[string]*NodePublishing // variableID -> protocolType -> NodePublishing
+	listeners       []ChangeListener
+	onChange        func() // 変更時コールバック（永続化用）
 }
 
 // NewVariableStore は新しいVariableStoreを作成する
 func NewVariableStore() *VariableStore {
 	return &VariableStore{
-		variables:   make(map[string]*Variable),
-		byName:      make(map[string]*Variable),
-		mappings:    make(map[string][]ProtocolMapping),
-		structTypes: make(map[string]*StructTypeDef),
+		variables:       make(map[string]*Variable),
+		byName:          make(map[string]*Variable),
+		mappings:        make(map[string][]ProtocolMapping),
+		structTypes:     make(map[string]*StructTypeDef),
+		nodePublishings: make(map[string]map[string]*NodePublishing),
 	}
+}
+
+// GetNodePublishing は変数のプロトコル公開設定を取得する
+func (s *VariableStore) GetNodePublishing(variableID, protocolType string) *NodePublishing {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if m, ok := s.nodePublishings[variableID]; ok {
+		return m[protocolType]
+	}
+	return nil
+}
+
+// SetNodePublishing は変数のプロトコル公開設定を設定する
+func (s *VariableStore) SetNodePublishing(variableID, protocolType string, p *NodePublishing) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.nodePublishings[variableID]; !ok {
+		s.nodePublishings[variableID] = make(map[string]*NodePublishing)
+	}
+	s.nodePublishings[variableID][protocolType] = p
+	go s.triggerOnChange()
+}
+
+// GetAllNodePublishings は指定プロトコルの全変数の公開設定を返す（variableID → NodePublishing）
+func (s *VariableStore) GetAllNodePublishings(protocolType string) map[string]*NodePublishing {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make(map[string]*NodePublishing)
+	for varID, protocols := range s.nodePublishings {
+		if np, ok := protocols[protocolType]; ok {
+			result[varID] = np
+		}
+	}
+	return result
 }
 
 // ResolveStructWordCount はTypeResolverインターフェースの実装
@@ -340,6 +385,7 @@ func (s *VariableStore) DeleteVariable(id string) error {
 	delete(s.byName, v.Name)
 	delete(s.variables, id)
 	delete(s.mappings, id)
+	delete(s.nodePublishings, id)
 
 	go s.triggerOnChange()
 	return nil
@@ -469,9 +515,23 @@ func (s *VariableStore) Snapshot() map[string]interface{} {
 		})
 	}
 
+	// nodePublishings
+	npData := make(map[string]interface{})
+	for varID, protocols := range s.nodePublishings {
+		perProtocol := make(map[string]interface{})
+		for pt, np := range protocols {
+			perProtocol[pt] = map[string]interface{}{
+				"enabled":    np.Enabled,
+				"accessMode": np.AccessMode,
+			}
+		}
+		npData[varID] = perProtocol
+	}
+
 	return map[string]interface{}{
-		"variables":   vars,
-		"structTypes": structTypesData,
+		"variables":       vars,
+		"structTypes":     structTypesData,
+		"nodePublishings": npData,
 	}
 }
 
@@ -484,6 +544,7 @@ func (s *VariableStore) Restore(data map[string]interface{}) error {
 	s.byName = make(map[string]*Variable)
 	s.mappings = make(map[string][]ProtocolMapping)
 	s.structTypes = make(map[string]*StructTypeDef)
+	s.nodePublishings = make(map[string]map[string]*NodePublishing)
 
 	// 構造体型定義を先に復元
 	if stData, ok := data["structTypes"].([]interface{}); ok {
@@ -582,6 +643,29 @@ func (s *VariableStore) Restore(data map[string]interface{}) error {
 		}
 	}
 
+	// nodePublishings の復元
+	if npData, ok := data["nodePublishings"].(map[string]interface{}); ok {
+		for varID, protocols := range npData {
+			protocolsMap, ok := protocols.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			s.nodePublishings[varID] = make(map[string]*NodePublishing)
+			for pt, npRaw := range protocolsMap {
+				npMap, ok := npRaw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				enabled, _ := npMap["enabled"].(bool)
+				accessMode, _ := npMap["accessMode"].(string)
+				s.nodePublishings[varID][pt] = &NodePublishing{
+					Enabled:    enabled,
+					AccessMode: accessMode,
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -594,4 +678,5 @@ func (s *VariableStore) ClearAll() {
 	s.byName = make(map[string]*Variable)
 	s.mappings = make(map[string][]ProtocolMapping)
 	s.structTypes = make(map[string]*StructTypeDef)
+	s.nodePublishings = make(map[string]map[string]*NodePublishing)
 }

@@ -126,10 +126,11 @@ type IntervalPresetDTO struct {
 
 // ServerInstanceDTO はサーバーインスタンス一覧表示用
 type ServerInstanceDTO struct {
-	ProtocolType string `json:"protocolType"`
-	DisplayName  string `json:"displayName"`
-	Variant      string `json:"variant"`
-	Status       string `json:"status"` // "Running" | "Stopped" | "Error"
+	ProtocolType          string `json:"protocolType"`
+	DisplayName           string `json:"displayName"`
+	Variant               string `json:"variant"`
+	Status                string `json:"status"` // "Running" | "Stopped" | "Error"
+	SupportsNodePublishing bool   `json:"supportsNodePublishing"`
 }
 
 // ServerConfigDTO は特定サーバーの設定
@@ -170,13 +171,21 @@ type MonitoringConfigDTO struct {
 
 // === 変数DTO ===
 
+// NodePublishingDTO はノード公開設定のDTO（プロトコル非依存）
+type NodePublishingDTO struct {
+	ProtocolType string `json:"protocolType"`
+	Enabled      bool   `json:"enabled"`
+	AccessMode   string `json:"accessMode"` // "read" | "write" | "readwrite"
+}
+
 // VariableDTO は変数のDTO
 type VariableDTO struct {
-	ID       string               `json:"id"`
-	Name     string               `json:"name"`
-	DataType string               `json:"dataType"`
-	Value    interface{}          `json:"value"`
-	Mappings []ProtocolMappingDTO `json:"mappings,omitempty"`
+	ID              string               `json:"id"`
+	Name            string               `json:"name"`
+	DataType        string               `json:"dataType"`
+	Value           interface{}          `json:"value"`
+	Mappings        []ProtocolMappingDTO `json:"mappings,omitempty"`
+	NodePublishings []NodePublishingDTO  `json:"nodePublishings,omitempty"`
 }
 
 // ProtocolMappingDTO はプロトコルマッピングのDTO

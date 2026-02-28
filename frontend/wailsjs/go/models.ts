@@ -286,6 +286,22 @@ export namespace application {
 	        this.displayFormat = source["displayFormat"];
 	    }
 	}
+	export class NodePublishingDTO {
+	    protocolType: string;
+	    enabled: boolean;
+	    accessMode: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NodePublishingDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.protocolType = source["protocolType"];
+	        this.enabled = source["enabled"];
+	        this.accessMode = source["accessMode"];
+	    }
+	}
 	
 	export class ProtocolInfoDTO {
 	    type: string;
@@ -454,6 +470,7 @@ export namespace application {
 	    displayName: string;
 	    variant: string;
 	    status: string;
+	    supportsNodePublishing: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ServerInstanceDTO(source);
@@ -465,6 +482,7 @@ export namespace application {
 	        this.displayName = source["displayName"];
 	        this.variant = source["variant"];
 	        this.status = source["status"];
+	        this.supportsNodePublishing = source["supportsNodePublishing"];
 	    }
 	}
 	
@@ -491,6 +509,7 @@ export namespace application {
 	    dataType: string;
 	    value: any;
 	    mappings?: ProtocolMappingDTO[];
+	    nodePublishings?: NodePublishingDTO[];
 	
 	    static createFrom(source: any = {}) {
 	        return new VariableDTO(source);
@@ -503,6 +522,7 @@ export namespace application {
 	        this.dataType = source["dataType"];
 	        this.value = source["value"];
 	        this.mappings = this.convertValues(source["mappings"], ProtocolMappingDTO);
+	        this.nodePublishings = this.convertValues(source["nodePublishings"], NodePublishingDTO);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

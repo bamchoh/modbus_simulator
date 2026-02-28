@@ -6,6 +6,7 @@ import {
   UpdateVariableValue,
   DeleteVariable,
   UpdateVariableMappings,
+  UpdateVariableNodePublishing,
   GetServerInstances,
   GetMemoryAreas,
   GetStructTypes,
@@ -96,6 +97,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   // マッピング編集
   const [mappingVariable, setMappingVariable] = useState<application.VariableDTO | null>(null);
   const [editMappings, setEditMappings] = useState<application.ProtocolMappingDTO[]>([]);
+  const [editNodePublishings, setEditNodePublishings] = useState<application.NodePublishingDTO[]>([]);
   const [serverInstances, setServerInstances] = useState<application.ServerInstanceDTO[]>([]);
   const [memoryAreasByProtocol, setMemoryAreasByProtocol] = useState<Record<string, application.MemoryAreaDTO[]>>({});
 
@@ -945,6 +947,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   const handleMappingClick = (v: application.VariableDTO) => {
     setMappingVariable(v);
     setEditMappings(v.mappings ? [...v.mappings] : []);
+    setEditNodePublishings(v.nodePublishings ? [...v.nodePublishings] : []);
     setIsMappingDialogOpen(true);
   };
 
@@ -970,6 +973,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     if (!mappingVariable) return;
     try {
       await UpdateVariableMappings(mappingVariable.id, editMappings);
+      for (const pub of editNodePublishings) {
+        await UpdateVariableNodePublishing(mappingVariable.id, pub.protocolType, pub);
+      }
       await loadVariables();
       setIsMappingDialogOpen(false);
       setMappingVariable(null);
@@ -1384,6 +1390,52 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               <button onClick={handleAddMapping} className="btn-secondary">
                 + マッピング追加
               </button>
+
+              {/* プロトコル公開設定（SupportsNodePublishing が true のサーバーのみ表示）*/}
+              {(() => {
+                const publishableServers = serverInstances.filter(i => i.supportsNodePublishing);
+                if (publishableServers.length === 0) return null;
+                return (
+                  <div className="dialog-section" style={{ marginTop: '16px' }}>
+                    <h4 style={{ margin: '0 0 8px 0' }}>プロトコル公開設定</h4>
+                    {publishableServers.map(server => {
+                      const pub = editNodePublishings.find(p => p.protocolType === server.protocolType)
+                        ?? { protocolType: server.protocolType, enabled: false, accessMode: 'readwrite' };
+                      const updatePub = (patch: Partial<application.NodePublishingDTO>) => {
+                        const updated = editNodePublishings.filter(p => p.protocolType !== server.protocolType);
+                        setEditNodePublishings([...updated, { ...pub, ...patch }]);
+                      };
+                      return (
+                        <div key={server.protocolType} className="dialog-row" style={{ alignItems: 'center', gap: '8px' }}>
+                          <label style={{ minWidth: '80px' }}>{server.displayName}</label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <input
+                              type="checkbox"
+                              checked={pub.enabled}
+                              onChange={e => updatePub({ enabled: e.target.checked })}
+                            />
+                            公開する
+                          </label>
+                          <select
+                            value={pub.accessMode}
+                            disabled={!pub.enabled}
+                            onChange={e => updatePub({ accessMode: e.target.value })}
+                          >
+                            <option value="read">Read Only</option>
+                            <option value="write">Write Only</option>
+                            <option value="readwrite">Read / Write</option>
+                          </select>
+                          {pub.enabled && mappingVariable && (
+                            <span style={{ fontSize: '11px', color: '#888' }}>
+                              ns=1;s={mappingVariable.name}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
             <div className="dialog-buttons">
               <button onClick={() => setIsMappingDialogOpen(false)} className="btn-secondary">キャンセル</button>

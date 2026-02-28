@@ -37,6 +37,9 @@ type PLCService struct {
 	// 中央変数ストア
 	variableStore *variable.VariableStore
 
+	// VariableStoreAccessor（AddServer 時にファクトリーへ注入）
+	vsAccessor protocol.VariableStoreAccessor
+
 	// 複数サーバーインスタンス（protocolType → instance）
 	servers map[protocol.ProtocolType]*serverInstance
 
@@ -59,6 +62,7 @@ func NewPLCService() *PLCService {
 	service := &PLCService{
 		registry:        protocol.DefaultRegistry,
 		variableStore:   varStore,
+		vsAccessor:      adapter.NewVariableStoreAccessor(varStore),
 		servers:         make(map[protocol.ProtocolType]*serverInstance),
 		scriptEngine:    scripting.NewScriptEngine(varStore),
 		scripts:         make(map[string]*script.Script),
@@ -95,11 +99,13 @@ func (s *PLCService) GetServerInstances() []ServerInstanceDTO {
 		if inst.server != nil {
 			status = inst.server.Status().String()
 		}
+		caps := inst.factory.GetProtocolCapabilities()
 		result = append(result, ServerInstanceDTO{
-			ProtocolType: string(inst.protocolType),
-			DisplayName:  inst.factory.DisplayName(),
-			Variant:      inst.variant,
-			Status:       status,
+			ProtocolType:          string(inst.protocolType),
+			DisplayName:           inst.factory.DisplayName(),
+			Variant:               inst.variant,
+			Status:                status,
+			SupportsNodePublishing: caps.SupportsNodePublishing,
 		})
 	}
 
@@ -127,6 +133,11 @@ func (s *PLCService) AddServer(protocolType string, variantID string) error {
 	factory, err := s.registry.Get(pt)
 	if err != nil {
 		return err
+	}
+
+	// VariableStoreAccessor を注入（NodePublishing 対応プロトコル向け）
+	if injector, ok := factory.(protocol.VariableStoreInjector); ok {
+		injector.InjectVariableStore(s.vsAccessor)
 	}
 
 	// サーバーインスタンスを作成
@@ -1406,6 +1417,25 @@ func (s *PLCService) GetVariableMappings(id string) ([]ProtocolMappingDTO, error
 	return result, nil
 }
 
+// UpdateVariableNodePublishing は変数のプロトコル公開設定を更新する
+func (s *PLCService) UpdateVariableNodePublishing(variableID, protocolType string, dto *NodePublishingDTO) error {
+	s.variableStore.SetNodePublishing(variableID, protocolType, &variable.NodePublishing{
+		Enabled:    dto.Enabled,
+		AccessMode: dto.AccessMode,
+	})
+
+	// 対象サーバーが NodePublishingAware なら通知
+	s.mu.RLock()
+	inst, ok := s.servers[protocol.ProtocolType(protocolType)]
+	s.mu.RUnlock()
+	if ok && inst.server != nil {
+		if aware, ok := inst.server.(protocol.NodePublishingAware); ok {
+			aware.OnNodePublishingUpdated()
+		}
+	}
+	return nil
+}
+
 // UpdateVariableMappings は変数のマッピングを更新する
 func (s *PLCService) UpdateVariableMappings(id string, mappingDTOs []ProtocolMappingDTO) error {
 	mappings := make([]variable.ProtocolMapping, len(mappingDTOs))
@@ -1516,12 +1546,38 @@ func (s *PLCService) variableToDTO(v *variable.Variable) *VariableDTO {
 			Endianness:   m.Endianness,
 		}
 	}
+
+	// NodePublishings: 全プロトコルの公開設定を収集
+	var npDTOs []NodePublishingDTO
+	s.mu.RLock()
+	for _, inst := range s.servers {
+		caps := inst.factory.GetProtocolCapabilities()
+		if !caps.SupportsNodePublishing {
+			continue
+		}
+		pt := string(inst.protocolType)
+		np := s.variableStore.GetNodePublishing(v.ID, pt)
+		enabled := false
+		accessMode := "readwrite"
+		if np != nil {
+			enabled = np.Enabled
+			accessMode = np.AccessMode
+		}
+		npDTOs = append(npDTOs, NodePublishingDTO{
+			ProtocolType: pt,
+			Enabled:      enabled,
+			AccessMode:   accessMode,
+		})
+	}
+	s.mu.RUnlock()
+
 	return &VariableDTO{
-		ID:       v.ID,
-		Name:     v.Name,
-		DataType: string(v.DataType),
-		Value:    v.Value,
-		Mappings: mappingDTOs,
+		ID:              v.ID,
+		Name:            v.Name,
+		DataType:        string(v.DataType),
+		Value:           v.Value,
+		Mappings:        mappingDTOs,
+		NodePublishings: npDTOs,
 	}
 }
 

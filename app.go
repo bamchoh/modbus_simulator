@@ -11,6 +11,7 @@ import (
 
 	// プロトコル実装をレジストリに登録するためのブランクインポート
 	_ "modbus_simulator/internal/infrastructure/modbus"
+	_ "modbus_simulator/internal/infrastructure/opcua"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"go.bug.st/serial"
@@ -360,6 +361,11 @@ func (a *App) GetVariableMappings(id string) ([]application.ProtocolMappingDTO, 
 // UpdateVariableMappings は変数のマッピングを更新する
 func (a *App) UpdateVariableMappings(id string, mappings []application.ProtocolMappingDTO) error {
 	return a.plcService.UpdateVariableMappings(id, mappings)
+}
+
+// UpdateVariableNodePublishing は変数のプロトコル公開設定を更新する
+func (a *App) UpdateVariableNodePublishing(variableID, protocolType string, dto *application.NodePublishingDTO) error {
+	return a.plcService.UpdateVariableNodePublishing(variableID, protocolType, dto)
 }
 
 // === 構造体型管理 ===

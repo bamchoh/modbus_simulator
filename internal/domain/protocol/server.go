@@ -150,7 +150,43 @@ type FieldCondition struct {
 
 // ProtocolCapabilities はプロトコルの機能情報
 type ProtocolCapabilities struct {
-	SupportsUnitID bool `json:"supportsUnitId"`
-	UnitIDMin      int  `json:"unitIdMin,omitempty"`
-	UnitIDMax      int  `json:"unitIdMax,omitempty"`
+	SupportsUnitID         bool `json:"supportsUnitId"`
+	UnitIDMin              int  `json:"unitIdMin,omitempty"`
+	UnitIDMax              int  `json:"unitIdMax,omitempty"`
+	SupportsNodePublishing bool `json:"supportsNodePublishing"` // OPC UA, MQTT 等のノードベースプロトコル向け汎用フラグ
+}
+
+// NodePublishingInfo はノード公開設定を持つ変数の情報（プロトコル非依存）
+type NodePublishingInfo struct {
+	VariableID   string
+	VariableName string
+	DataType     string // "INT", "REAL", "STRING[20]" 等のプリミティブ文字列表現
+	AccessMode   string // "read" | "write" | "readwrite"
+}
+
+// StructFieldInfo は OPC UA ノードツリー構築用の構造体フィールド情報
+type StructFieldInfo struct {
+	Name     string
+	DataType string
+}
+
+// VariableStoreAccessor はプロトコルが VariableStore にアクセスするための汎用インターフェース。
+// plugin 化時はこのインターフェースを gRPC 越しに提供することを想定している。
+type VariableStoreAccessor interface {
+	GetEnabledNodePublishings(protocolType string) []NodePublishingInfo
+	ReadVariableValue(variableID string) (interface{}, error)
+	WriteVariableValue(variableID string, value interface{}) error
+	// GetStructFields は指定した構造体型のフィールド一覧を返す（子ノードブラウズ・サブスクリプション用）
+	GetStructFields(typeName string) []StructFieldInfo
+}
+
+// VariableStoreInjector は VariableStoreAccessor の遅延注入を受け付ける ServerFactory 用インターフェース。
+// init() で登録した後、AddServer 時に PLCService から注入される。
+type VariableStoreInjector interface {
+	InjectVariableStore(accessor VariableStoreAccessor)
+}
+
+// NodePublishingAware はノード公開設定変更通知を受け付ける ProtocolServer 用インターフェース
+type NodePublishingAware interface {
+	OnNodePublishingUpdated()
 }
