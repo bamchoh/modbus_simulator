@@ -123,6 +123,26 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     }
   }, []);
 
+  // サーバー一覧とメモリエリアを取得
+  const loadServerInstancesAndAreas = useCallback(async () => {
+    try {
+      const instances = await GetServerInstances();
+      setServerInstances(instances || []);
+      const areasMap: Record<string, application.MemoryAreaDTO[]> = {};
+      for (const inst of (instances || [])) {
+        try {
+          const areas = await GetMemoryAreas(inst.protocolType);
+          areasMap[inst.protocolType] = areas || [];
+        } catch {
+          areasMap[inst.protocolType] = [];
+        }
+      }
+      setMemoryAreasByProtocol(areasMap);
+    } catch (e) {
+      console.error('Failed to load server instances:', e);
+    }
+  }, []);
+
   // データ型一覧を取得
   useEffect(() => {
     const loadDataTypes = async () => {
@@ -137,27 +157,8 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     };
     loadDataTypes();
     loadStructTypes();
-
-    const loadServerInstancesAndAreas = async () => {
-      try {
-        const instances = await GetServerInstances();
-        setServerInstances(instances || []);
-        const areasMap: Record<string, application.MemoryAreaDTO[]> = {};
-        for (const inst of (instances || [])) {
-          try {
-            const areas = await GetMemoryAreas(inst.protocolType);
-            areasMap[inst.protocolType] = areas || [];
-          } catch {
-            areasMap[inst.protocolType] = [];
-          }
-        }
-        setMemoryAreasByProtocol(areasMap);
-      } catch (e) {
-        console.error('Failed to load server instances:', e);
-      }
-    };
     loadServerInstancesAndAreas();
-  }, []);
+  }, [loadStructTypes, loadServerInstancesAndAreas]);
 
   // 変数一覧の初回読み込み
   useEffect(() => {
@@ -515,6 +516,17 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     return mappings.map(m => {
       const addr = isOneOriginArea(m.protocolType, m.memoryArea) ? m.address + 1 : m.address;
       return `${m.protocolType}:${areaShortName(m.memoryArea)}:${addr}`;
+    }).join(', ');
+  };
+
+  // ノード公開設定のフォーマット（有効なものだけ、OPC UA 等）
+  const formatNodePublishings = (publishings: application.NodePublishingDTO[] | undefined): string => {
+    if (!publishings) return '';
+    const enabled = publishings.filter(p => p.enabled);
+    if (enabled.length === 0) return '';
+    return enabled.map(p => {
+      const accessLabel = p.accessMode === 'read' ? 'RO' : p.accessMode === 'write' ? 'WO' : 'R/W';
+      return `${p.protocolType}(${accessLabel})`;
     }).join(', ');
   };
 
@@ -944,7 +956,8 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   };
 
   // マッピングダイアログを開く
-  const handleMappingClick = (v: application.VariableDTO) => {
+  const handleMappingClick = async (v: application.VariableDTO) => {
+    await loadServerInstancesAndAreas();
     setMappingVariable(v);
     setEditMappings(v.mappings ? [...v.mappings] : []);
     setEditNodePublishings(v.nodePublishings ? [...v.nodePublishings] : []);
@@ -1068,7 +1081,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                         >⚠</span>
                       ) : null;
                     })()}
-                    {formatMappings(row.variable.mappings)}
+                    {(() => {
+                      const parts: string[] = [];
+                      if (row.variable.mappings && row.variable.mappings.length > 0) {
+                        parts.push(formatMappings(row.variable.mappings));
+                      }
+                      const npStr = formatNodePublishings(row.variable.nodePublishings);
+                      if (npStr) parts.push(npStr);
+                      return parts.length > 0 ? parts.join(', ') : '-';
+                    })()}
                   </span>
                 ) : (
                   <span style={{ fontSize: '0.85em', color: '#aaa' }}>

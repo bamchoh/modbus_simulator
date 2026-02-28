@@ -175,6 +175,10 @@ IEC 61131-3準拠の変数管理機能。
   - メモリエリア選択は `memoryAreasByProtocol[m.protocolType]` で取得
   - 2行表示レイアウト（ヘッダ行 + コントロール行）
   - マッピング競合警告: 他の変数と同じレジスタを使用している場合、ダイアログ内と変数一覧の両方に警告を表示
+  - **マッピング列の表示**: Modbus マッピング（`protocol:area:addr`）と OPC UA 公開設定（`opcua(R/W)` 等）をカンマ区切りで両方表示
+  - **ダイアログを開く際に `loadServerInstancesAndAreas()` を再実行**: マウント後に追加されたサーバーも「プロトコル公開設定」セクションに反映
+  - `loadServerInstancesAndAreas` は `useCallback` で定義し、マウント時・ダイアログオープン時の両方から呼び出す
+- **OPC UA 公開設定表示**: `formatNodePublishings()` で有効な NodePublishing を `opcua(RO)` / `opcua(WO)` / `opcua(R/W)` 形式にフォーマットして変数一覧の「マッピング」列に追加表示
 - **構造体型管理**: 構造体型の登録・編集・削除機能
   - 編集時は既存の定義を読み込んでフォームに展開
   - データ型の自動解析（ARRAY、STRING、構造体、スカラー）
