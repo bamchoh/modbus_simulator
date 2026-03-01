@@ -828,6 +828,12 @@ func convertToOpcuaArray(val interface{}, elemType string, size int) interface{}
 			arr[i] = int32(toF64(elems[i]))
 		}
 		return arr
+	case "LINT":
+		arr := make([]int64, size)
+		for i := 0; i < size; i++ {
+			arr[i] = int64(toF64(elems[i]))
+		}
+		return arr
 	case "USINT":
 		arr := make([]uint8, size)
 		for i := 0; i < size; i++ {
@@ -844,6 +850,12 @@ func convertToOpcuaArray(val interface{}, elemType string, size int) interface{}
 		arr := make([]uint32, size)
 		for i := 0; i < size; i++ {
 			arr[i] = uint32(toF64(elems[i]))
+		}
+		return arr
+	case "ULINT":
+		arr := make([]uint64, size)
+		for i := 0; i < size; i++ {
+			arr[i] = uint64(toF64(elems[i]))
 		}
 		return arr
 	case "REAL":
@@ -1093,6 +1105,12 @@ func fromOpcuaValue(val interface{}) interface{} {
 			arr[i] = e
 		}
 		return arr
+	case []uint64:
+		arr := make([]interface{}, len(v))
+		for i, e := range v {
+			arr[i] = e
+		}
+		return arr
 	case []uint8:
 		arr := make([]interface{}, len(v))
 		for i, e := range v {
@@ -1144,7 +1162,7 @@ func isStructDataType(dataType string) bool {
 		return false
 	}
 	switch dataType {
-	case "BOOL", "SINT", "INT", "DINT", "USINT", "UINT", "UDINT", "REAL", "LREAL",
+	case "BOOL", "SINT", "INT", "DINT", "LINT", "USINT", "UINT", "UDINT", "ULINT", "REAL", "LREAL",
 		"STRING", "TIME", "DATE", "TIME_OF_DAY", "DATE_AND_TIME":
 		return false
 	}
@@ -1183,12 +1201,16 @@ func (ns *PLCNameSpace) dataTypeNodeID(dataType string) *ua.NodeID {
 		return ua.NewNumericNodeID(0, 4) // Int16
 	case "DINT":
 		return ua.NewNumericNodeID(0, 6) // Int32
+	case "LINT":
+		return ua.NewNumericNodeID(0, 8) // Int64
 	case "USINT":
 		return ua.NewNumericNodeID(0, 3) // Byte
 	case "UINT":
 		return ua.NewNumericNodeID(0, 5) // UInt16
 	case "UDINT":
 		return ua.NewNumericNodeID(0, 7) // UInt32
+	case "ULINT":
+		return ua.NewNumericNodeID(0, 9) // UInt64
 	case "REAL":
 		return ua.NewNumericNodeID(0, 10) // Float
 	case "LREAL":

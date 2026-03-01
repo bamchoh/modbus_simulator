@@ -1517,10 +1517,47 @@ func (s *PLCService) variableToDTO(v *variable.Variable) *VariableDTO {
 		ID:              v.ID,
 		Name:            v.Name,
 		DataType:        string(v.DataType),
-		Value:           v.Value,
+		Value:           normalizeVariableValueForJSON(v.Value, v.DataType),
 		Mappings:        mappingDTOs,
 		NodePublishings: npDTOs,
 	}
+}
+
+// normalizeVariableValueForJSON はJSONシリアライズ時の精度損失を防ぐため
+// LINT/ULINT の int64/uint64 値を文字列に変換する
+// JavaScript の Number は ±2^53 を超える整数を正確に表現できないため
+func normalizeVariableValueForJSON(value interface{}, dt variable.DataType) interface{} {
+	switch dt {
+	case variable.TypeLINT:
+		if val, ok := value.(int64); ok {
+			return fmt.Sprintf("%d", val)
+		}
+	case variable.TypeULINT:
+		if val, ok := value.(uint64); ok {
+			return fmt.Sprintf("%d", val)
+		}
+	default:
+		// ARRAY[LINT;n] / ARRAY[ULINT;n] の要素も文字列化する
+		if dt.IsArrayType() {
+			elemType, _, err := variable.ParseArrayType(dt)
+			if err != nil {
+				return value
+			}
+			if elemType != variable.TypeLINT && elemType != variable.TypeULINT {
+				return value
+			}
+			arr, ok := value.([]interface{})
+			if !ok {
+				return value
+			}
+			result := make([]interface{}, len(arr))
+			for i, v := range arr {
+				result[i] = normalizeVariableValueForJSON(v, elemType)
+			}
+			return result
+		}
+	}
+	return value
 }
 
 // dataTypeDescription はデータ型の説明を返す
@@ -1534,12 +1571,16 @@ func dataTypeDescription(dt variable.DataType) string {
 		return "符号付き16ビット整数"
 	case variable.TypeDINT:
 		return "符号付き32ビット整数"
+	case variable.TypeLINT:
+		return "符号付き64ビット整数"
 	case variable.TypeUSINT:
 		return "符号なし8ビット整数"
 	case variable.TypeUINT:
 		return "符号なし16ビット整数"
 	case variable.TypeUDINT:
 		return "符号なし32ビット整数"
+	case variable.TypeULINT:
+		return "符号なし64ビット整数"
 	case variable.TypeREAL:
 		return "32ビット浮動小数点"
 	case variable.TypeLREAL:

@@ -90,6 +90,42 @@ func ConvertValue(value interface{}, dataType DataType) (interface{}, error) {
 		case int64:
 			return uint32(v), nil
 		}
+	case TypeLINT:
+		switch v := value.(type) {
+		case int64:
+			return v, nil
+		case float64:
+			return int64(v), nil
+		case int:
+			return int64(v), nil
+		case uint64:
+			return int64(v), nil
+		case string:
+			// JSONを文字列で転送した場合（精度損失防止）
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return int64(0), fmt.Errorf("cannot parse %q as LINT: %w", v, err)
+			}
+			return n, nil
+		}
+	case TypeULINT:
+		switch v := value.(type) {
+		case uint64:
+			return v, nil
+		case float64:
+			return uint64(v), nil
+		case int:
+			return uint64(v), nil
+		case int64:
+			return uint64(v), nil
+		case string:
+			// JSONを文字列で転送した場合（精度損失防止）
+			n, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				return uint64(0), fmt.Errorf("cannot parse %q as ULINT: %w", v, err)
+			}
+			return n, nil
+		}
 	case TypeREAL:
 		switch v := value.(type) {
 		case float32:
@@ -284,6 +320,14 @@ func ValueToWords(value interface{}, dataType DataType, endianness string) []uin
 			bits := math.Float64bits(val)
 			return uint64ToWords(bits, endianness)
 		}
+	case TypeLINT:
+		if val, ok := value.(int64); ok {
+			return uint64ToWords(uint64(val), endianness)
+		}
+	case TypeULINT:
+		if val, ok := value.(uint64); ok {
+			return uint64ToWords(val, endianness)
+		}
 	case TypeSTRING:
 		if val, ok := value.(string); ok {
 			return stringToWords(val)
@@ -378,6 +422,16 @@ func WordsToValue(words []uint16, dataType DataType, endianness string) (interfa
 		}
 		bits := wordsToUint64(words[:4], endianness)
 		return math.Float64frombits(bits), nil
+	case TypeLINT:
+		if len(words) < 4 {
+			return int64(0), nil
+		}
+		return int64(wordsToUint64(words[:4], endianness)), nil
+	case TypeULINT:
+		if len(words) < 4 {
+			return uint64(0), nil
+		}
+		return wordsToUint64(words[:4], endianness), nil
 	case TypeSTRING:
 		return wordsToString(words), nil
 	case TypeTIME:

@@ -3,6 +3,7 @@ package scripting
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/dop251/goja"
 )
+
+// jsMaxSafeInt はJavaScriptのNumber型が正確に表現できる整数の最大値（2^53）
+const jsMaxSafeInt = int64(1) << 53 // 9007199254740992
 
 const maxConsoleLogs = 500
 
@@ -79,12 +83,44 @@ func (e *ScriptEngine) createVM(scriptID, scriptName string) *goja.Runtime {
 	// PLCオブジェクト - 変数アクセス用
 	plc := vm.NewObject()
 
+	// addConsoleWarn はコンソールログに警告を追加するヘルパー
+	addConsoleWarn := func(msg string) {
+		fmt.Printf("[WARN][%s] %s\n", scriptName, msg)
+		entry := ConsoleLogEntry{
+			ScriptID:   scriptID,
+			ScriptName: scriptName,
+			Message:    "[WARN] " + msg,
+			At:         time.Now(),
+		}
+		e.mu.Lock()
+		e.consoleLogs = append(e.consoleLogs, entry)
+		if len(e.consoleLogs) > maxConsoleLogs {
+			e.consoleLogs = e.consoleLogs[len(e.consoleLogs)-maxConsoleLogs:]
+		}
+		e.mu.Unlock()
+	}
+
 	if e.variableStore != nil {
 		// readVariable(name) - 変数名で値を読む
 		plc.Set("readVariable", func(name string) any {
 			v, err := e.variableStore.GetVariableByName(name)
 			if err != nil {
 				return nil
+			}
+			// LINT/ULINT が safe integer 範囲を超えた場合は精度損失の警告を出す
+			switch val := v.Value.(type) {
+			case int64:
+				if val > jsMaxSafeInt || val < -jsMaxSafeInt {
+					addConsoleWarn(fmt.Sprintf(
+						"readVariable('%s'): LINT値 %d はJSのsafe integer範囲(±2^53)を超えています。精度損失が発生します。plc.readLintBig() を使用してください。",
+						name, val))
+				}
+			case uint64:
+				if val > uint64(jsMaxSafeInt) {
+					addConsoleWarn(fmt.Sprintf(
+						"readVariable('%s'): ULINT値 %d はJSのsafe integer範囲(2^53)を超えています。精度損失が発生します。plc.readUlintBig() を使用してください。",
+						name, val))
+				}
 			}
 			// gojaがJavaScript numberとして扱えるようGoの標準型に変換
 			return toJSCompatibleValue(v.Value)
@@ -167,6 +203,70 @@ func (e *ScriptEngine) createVM(scriptID, scriptName string) *goja.Runtime {
 				names[i] = v.Name
 			}
 			return names
+		})
+	}
+
+	// LINT/ULINT BigInt API（精度損失なく64ビット整数を読み書きするための専用関数）
+	// JavaScriptのBigIntリテラル（例: 9007199254740993n）を使った演算が可能
+
+	if e.variableStore != nil {
+		// readLintBig(name) -> BigInt - LINT変数をBigIntとして読む（精度損失なし）
+		plc.Set("readLintBig", func(name string) goja.Value {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return vm.ToValue(nil)
+			}
+			val, ok := v.Value.(int64)
+			if !ok {
+				return vm.ToValue(nil)
+			}
+			return vm.ToValue(new(big.Int).SetInt64(val))
+		})
+
+		// writeLintBig(name, value) - BigIntまたはNumberをLINT変数に書く（精度損失なし）
+		// 例: plc.writeLintBig("myVar", plc.readLintBig("myVar") + 1n)
+		plc.Set("writeLintBig", func(name string, val goja.Value) {
+			var int64Val int64
+			if goja.IsBigInt(val) {
+				if bigInt, ok := val.Export().(*big.Int); ok {
+					int64Val = bigInt.Int64()
+				}
+			} else {
+				int64Val = val.ToInteger()
+			}
+			e.variableStore.UpdateValueByName(name, int64Val)
+		})
+
+		// readUlintBig(name) -> BigInt - ULINT変数をBigIntとして読む（精度損失なし）
+		plc.Set("readUlintBig", func(name string) goja.Value {
+			v, err := e.variableStore.GetVariableByName(name)
+			if err != nil {
+				return vm.ToValue(nil)
+			}
+			val, ok := v.Value.(uint64)
+			if !ok {
+				return vm.ToValue(nil)
+			}
+			return vm.ToValue(new(big.Int).SetUint64(val))
+		})
+
+		// writeUlintBig(name, value) - BigIntまたはNumberをULINT変数に書く（精度損失なし）
+		// 例: plc.writeUlintBig("myVar", plc.readUlintBig("myVar") + 1n)
+		plc.Set("writeUlintBig", func(name string, val goja.Value) {
+			var uint64Val uint64
+			if goja.IsBigInt(val) {
+				if bigInt, ok := val.Export().(*big.Int); ok {
+					if bigInt.Sign() >= 0 {
+						uint64Val = bigInt.Uint64()
+					}
+				}
+			} else {
+				f := val.ToFloat()
+				if f >= 0 {
+					uint64Val = uint64(f)
+				}
+			}
+			e.variableStore.UpdateValueByName(name, uint64Val)
 		})
 	}
 
@@ -319,6 +419,7 @@ func (e *ScriptEngine) createVM(scriptID, scriptName string) *goja.Runtime {
 
 // toJSCompatibleValue はGoの型をgojaが扱えるJavaScript互換の型に変換する
 // int8/int16/int32 → int64, uint8/uint16/uint32 → int64, float32 → float64
+// int64/uint64はそのまま返す（JavaScriptのNumber精度: ±2^53以内なら正確）
 func toJSCompatibleValue(value any) any {
 	switch v := value.(type) {
 	case int8:
@@ -333,6 +434,10 @@ func toJSCompatibleValue(value any) any {
 		return int64(v)
 	case uint32:
 		return int64(v)
+	case int64:
+		return v // LINT型（2^53超の値はJSで精度損失あり）
+	case uint64:
+		return v // ULINT型（2^53超の値はJSで精度損失あり）
 	case float32:
 		return float64(v)
 	default:

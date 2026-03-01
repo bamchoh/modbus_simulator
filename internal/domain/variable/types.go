@@ -14,9 +14,11 @@ const (
 	TypeSINT          DataType = "SINT"          // 符号付き8ビット整数
 	TypeINT           DataType = "INT"           // 符号付き16ビット整数
 	TypeDINT          DataType = "DINT"          // 符号付き32ビット整数
+	TypeLINT          DataType = "LINT"          // 符号付き64ビット整数
 	TypeUSINT         DataType = "USINT"         // 符号なし8ビット整数
 	TypeUINT          DataType = "UINT"          // 符号なし16ビット整数
 	TypeUDINT         DataType = "UDINT"         // 符号なし32ビット整数
+	TypeULINT         DataType = "ULINT"         // 符号なし64ビット整数
 	TypeREAL          DataType = "REAL"          // 32ビット浮動小数点
 	TypeLREAL         DataType = "LREAL"         // 64ビット浮動小数点
 	TypeSTRING        DataType = "STRING"        // 文字列
@@ -29,8 +31,8 @@ const (
 // AllDataTypes はすべてのデータ型を返す
 func AllDataTypes() []DataType {
 	return []DataType{
-		TypeBOOL, TypeSINT, TypeINT, TypeDINT,
-		TypeUSINT, TypeUINT, TypeUDINT,
+		TypeBOOL, TypeSINT, TypeINT, TypeDINT, TypeLINT,
+		TypeUSINT, TypeUINT, TypeUDINT, TypeULINT,
 		TypeREAL, TypeLREAL, TypeSTRING,
 		TypeTIME, TypeDATE, TypeTIME_OF_DAY, TypeDATE_AND_TIME,
 	}
@@ -43,7 +45,7 @@ func (dt DataType) WordCount() int {
 		return 1
 	case TypeDINT, TypeUDINT, TypeREAL, TypeTIME, TypeTIME_OF_DAY:
 		return 2
-	case TypeLREAL, TypeDATE, TypeDATE_AND_TIME:
+	case TypeLREAL, TypeLINT, TypeULINT, TypeDATE, TypeDATE_AND_TIME:
 		return 4
 	case TypeSTRING:
 		return 1 // 後方互換: 長さ未指定のSTRING
@@ -111,6 +113,10 @@ func (dt DataType) DefaultValue() interface{} {
 		return uint16(0)
 	case TypeUDINT:
 		return uint32(0)
+	case TypeLINT:
+		return int64(0)
+	case TypeULINT:
+		return uint64(0)
 	case TypeREAL:
 		return float32(0)
 	case TypeLREAL:

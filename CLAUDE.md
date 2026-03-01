@@ -119,6 +119,7 @@ internal/
   - 実行時エラーを保存して`GetLastError()`で取得可能
   - 周期実行中のpanicをキャッチしてエラーとして記録
   - TIME/DATE型シンタックスシュガー: `plc.readTimeMs(name)`, `plc.writeTimeMs(name, ms)` など、変数の読み取り〜数値変換〜書き込みをワンステップで実行（内部でparse/formatを自動適用）
+  - LINT/ULINT BigInt API: `plc.readLintBig(name)`, `plc.writeLintBig(name, val)`, `plc.readUlintBig(name)`, `plc.writeUlintBig(name, val)`（2^53超の値をJavaScript BigInt型で精度損失なく操作。`readVariable()` で±2^53超の値を読んだ場合はコンソールに `[WARN]` を出力）
 
 ### フロントエンド構成（スキーマ駆動UI）
 
@@ -202,6 +203,8 @@ JavaScript（goja）でPLC動作を記述。
 - **plcオブジェクト**:
   - メモリアクセス: `plc.readBit()`, `plc.writeBit()`, `plc.readWord()`, `plc.writeWord()`
   - 変数アクセス: `plc.readVariable()`, `plc.writeVariable()`, `plc.readArrayElement()`, `plc.writeArrayElement()`, `plc.readStructField()`, `plc.writeStructField()`
+  - LINT/ULINT BigInt API: `plc.readLintBig(name)`, `plc.writeLintBig(name, val)`, `plc.readUlintBig(name)`, `plc.writeUlintBig(name, val)`（JavaScriptのBigInt型で64ビット整数を精度損失なく読み書き。例: `plc.writeLintBig("myVar", plc.readLintBig("myVar") + 1n)`）
+    - `plc.readVariable()` でLINT/ULINT値が±2^53を超えた場合は `[WARN]` をコンソールに出力して `readLintBig()`/`readUlintBig()` の使用を促す
   - TIME/DATE シンタックスシュガー: `plc.readTimeMs()`, `plc.writeTimeMs()`, `plc.readDateSec()`, `plc.writeDateSec()`, `plc.readTimeOfDayMs()`, `plc.writeTimeOfDayMs()`, `plc.readDateAndTimeSec()`, `plc.writeDateAndTimeSec()`（変数の読み取り・パース・フォーマット・書き込みをワンステップで実行）
   - TIME/DATE 文字列変換: `plc.parseTime()`, `plc.formatTime()`, `plc.parseDate()`, `plc.formatDate()`, `plc.parseTimeOfDay()`, `plc.formatTimeOfDay()`, `plc.parseDateAndTime()`, `plc.formatDateAndTime()`
 

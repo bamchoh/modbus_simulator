@@ -287,9 +287,11 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       "SINT",
       "INT",
       "DINT",
+      "LINT",
       "USINT",
       "UINT",
       "UDINT",
+      "ULINT",
       "REAL",
       "LREAL",
       "STRING",
@@ -996,6 +998,33 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     return parseFloat(trimmed) || 0;
   };
 
+  // 64ビット整数入力のパース（BigInt使用、精度損失なし）
+  // 10進・16進（0x）・2進（0b）の入力に対応し、正規化された10進文字列を返す
+  const parseBigIntInput = (input: string, dataType: string): string | null => {
+    const trimmed = input.trim();
+    if (trimmed === "" || trimmed === "-") return null;
+    try {
+      const bigVal =
+        trimmed.startsWith("0x") || trimmed.startsWith("0X") ||
+        trimmed.startsWith("0b") || trimmed.startsWith("0B")
+          ? BigInt(trimmed)
+          : BigInt(trimmed);
+      if (dataType === "LINT") {
+        const min = BigInt("-9223372036854775808");
+        const max = BigInt("9223372036854775807");
+        const clamped = bigVal < min ? min : bigVal > max ? max : bigVal;
+        return clamped.toString(10);
+      } else {
+        // ULINT
+        const max = BigInt("18446744073709551615");
+        const clamped = bigVal < 0n ? 0n : bigVal > max ? max : bigVal;
+        return clamped.toString(10);
+      }
+    } catch {
+      return null;
+    }
+  };
+
   // 数値フォーマット
   const formatNumeric = (
     value: number,
@@ -1045,6 +1074,31 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
           style={{ flex: 1 }}
           maxLength={maxLen > 0 ? maxLen : undefined}
           placeholder={maxLen > 0 ? `最大${maxLen}バイト` : undefined}
+        />
+      );
+    }
+    // 64ビット整数型（LINT/ULINT）- 文字列で精度を保持
+    if (dataType === "LINT" || dataType === "ULINT") {
+      const placeholder =
+        dataType === "LINT"
+          ? "-9223372036854775808〜9223372036854775807 (0x/0b対応)"
+          : "0〜18446744073709551615 (0x/0b対応)";
+      return (
+        <input
+          type="text"
+          value={String(value ?? "0")}
+          onChange={(e) => {
+            // 入力中は文字列のまま保持（確定時に正規化）
+            onChange(e.target.value);
+          }}
+          onBlur={(e) => {
+            const normalized = parseBigIntInput(e.target.value, dataType);
+            if (normalized !== null) {
+              onChange(normalized);
+            }
+          }}
+          style={{ flex: 1 }}
+          placeholder={placeholder}
         />
       );
     }

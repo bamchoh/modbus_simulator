@@ -23,10 +23,11 @@ Modbus（TCP/RTU/ASCII）と OPC UA に対応した PLC シミュレーターで
 
 - **変数管理（v0.0.8〜）**
   - **IEC 61131-3準拠のデータ型**
-    - スカラー型: BOOL, SINT, INT, DINT, USINT, UINT, UDINT, REAL, LREAL, STRING[n], TIME, DATE, TIME_OF_DAY, DATE_AND_TIME
-    - 配列型: ARRAY[型;サイズ]（例: ARRAY[INT;10]）
+    - スカラー型: BOOL, SINT, INT, DINT, **LINT**, USINT, UINT, UDINT, **ULINT**, REAL, LREAL, STRING[n], TIME, DATE, TIME_OF_DAY, DATE_AND_TIME
+    - 配列型: ARRAY[型;サイズ]（例: ARRAY[INT;10], ARRAY[LINT;4]）
     - 構造体型: カスタム構造体定義（ネスト可能）
     - 時間・日付型はメモリ上で数値として保存（TIME: int32/2ワード、DATE: uint64/4ワード、TIME_OF_DAY: uint32/2ワード、DATE_AND_TIME: uint64/4ワード）
+    - LINT（符号付き64ビット整数）・ULINT（符号なし64ビット整数）: 各4ワード保存
   - 構造体フィールドと配列要素をフラット化して表示
   - 再帰的値編集ダイアログ（複雑なデータ構造に対応）
   - プロトコルマッピング: 変数を複数プロトコルのメモリアドレスにマッピング
@@ -194,6 +195,27 @@ plc.setHoldingRegister(0, value + 1);
 | `plc.readStructField(name, fieldName)`           | 構造体変数のフィールドを読み取り       |
 | `plc.writeStructField(name, fieldName, value)`   | 構造体変数のフィールドを書き込み       |
 | `plc.getVariables()`                             | 全変数名の一覧を取得                   |
+
+> **注意**: `plc.readVariable()` で LINT/ULINT の値が ±2^53 を超えていた場合、JavaScript の `Number` 精度の都合でコンソールに `[WARN]` が出力されます。大きな値を扱う場合は下記の **LINT/ULINT BigInt API** を使用してください。
+
+**LINT/ULINT BigInt API（64ビット整数を精度損失なく操作）**:
+
+JavaScript の `BigInt` 型（`n` サフィックス）を使用するため、±2^53 を超える値でも正確に計算できます。
+
+| メソッド                              | 説明                                              |
+| ------------------------------------- | ------------------------------------------------- |
+| `plc.readLintBig(name)`               | LINT 変数を BigInt として読み取り                 |
+| `plc.writeLintBig(name, val)`         | BigInt または Number を LINT 変数に書き込み       |
+| `plc.readUlintBig(name)`              | ULINT 変数を BigInt として読み取り                |
+| `plc.writeUlintBig(name, val)`        | BigInt または Number を ULINT 変数に書き込み      |
+
+```javascript
+// LINT 変数に 1 加算する例（精度損失なし）
+plc.writeLintBig("counter", plc.readLintBig("counter") + 1n);
+
+// ULINT 変数を 16進リテラルで書き込む例
+plc.writeUlintBig("flags", 0xFFFFFFFFFFFFFFFFn);
+```
 
 **TIME/DATE シンタックスシュガー**:
 
