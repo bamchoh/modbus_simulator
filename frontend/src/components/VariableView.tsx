@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import {
   GetVariables,
   GetDataTypes,
@@ -12,8 +12,8 @@ import {
   GetStructTypes,
   RegisterStructType,
   DeleteStructType,
-} from '../../wailsjs/go/main/App';
-import { application } from '../../wailsjs/go/models';
+} from "../../wailsjs/go/main/App";
+import { application } from "../../wailsjs/go/models";
 
 interface VariableViewProps {
   autoRefresh?: boolean;
@@ -24,25 +24,42 @@ const StructArrayElementEditor = ({
   elemType,
   elem,
   onChange,
-  renderEditor
+  renderEditor,
 }: {
   elemType: string;
   elem: any;
   onChange: (v: any) => void;
-  renderEditor: (dataType: string, value: any, onChange: (v: any) => void) => JSX.Element;
+  renderEditor: (
+    dataType: string,
+    value: any,
+    onChange: (v: any) => void,
+  ) => JSX.Element;
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   return (
-    <div style={{ border: '1px solid #444', borderRadius: '3px', padding: '2px 4px' }}>
+    <div
+      style={{
+        border: "1px solid #444",
+        borderRadius: "3px",
+        padding: "2px 4px",
+      }}
+    >
       <div
-        style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '4px' }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          cursor: "pointer",
+          gap: "4px",
+        }}
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <span style={{ fontSize: '0.8em' }}>{isExpanded ? '\u25BC' : '\u25B6'}</span>
-        <span style={{ fontSize: '0.8em', color: '#aaa' }}>{elemType}</span>
+        <span style={{ fontSize: "0.8em" }}>
+          {isExpanded ? "\u25BC" : "\u25B6"}
+        </span>
+        <span style={{ fontSize: "0.8em", color: "#aaa" }}>{elemType}</span>
       </div>
       {isExpanded && (
-        <div style={{ marginTop: '4px' }}>
+        <div style={{ marginTop: "4px" }}>
           {renderEditor(elemType, elem, onChange)}
         </div>
       )}
@@ -53,38 +70,55 @@ const StructArrayElementEditor = ({
 export function VariableView({ autoRefresh = true }: VariableViewProps) {
   const [variables, setVariables] = useState<application.VariableDTO[]>([]);
   const [dataTypes, setDataTypes] = useState<application.DataTypeInfoDTO[]>([]);
-  const [structTypes, setStructTypes] = useState<application.StructTypeDTO[]>([]);
+  const [structTypes, setStructTypes] = useState<application.StructTypeDTO[]>(
+    [],
+  );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isMappingDialogOpen, setIsMappingDialogOpen] = useState(false);
   const [isStructTypeDialogOpen, setIsStructTypeDialogOpen] = useState(false);
-  const [editingVariable, setEditingVariable] = useState<application.VariableDTO | null>(null);
+  const [editingVariable, setEditingVariable] =
+    useState<application.VariableDTO | null>(null);
 
   // 新規変数フォーム
-  const [newName, setNewName] = useState('');
-  const [newDataType, setNewDataType] = useState('INT');
-  const [newValue, setNewValue] = useState('');
+  const [newName, setNewName] = useState("");
+  const [newDataType, setNewDataType] = useState("INT");
+  const [newValue, setNewValue] = useState("");
   // 配列型追加用
-  const [newArrayElemType, setNewArrayElemType] = useState('INT');
+  const [newArrayElemType, setNewArrayElemType] = useState("INT");
   const [newArraySize, setNewArraySize] = useState(10);
   // STRING型のバイト長
   const [newStringLength, setNewStringLength] = useState(20);
   // 型カテゴリ: 'scalar' | 'array' | 'struct'
-  const [newTypeCategory, setNewTypeCategory] = useState<'scalar' | 'array' | 'struct'>('scalar');
+  const [newTypeCategory, setNewTypeCategory] = useState<
+    "scalar" | "array" | "struct"
+  >("scalar");
 
   // 構造体型定義フォーム
-  const [structTypeName, setStructTypeName] = useState('');
-  const [editingStructTypeName, setEditingStructTypeName] = useState<string | null>(null);
-  const [structTypeFields, setStructTypeFields] = useState<{
-    name: string;
-    category: 'scalar' | 'struct' | 'array';
-    dataType: string;
-    stringLength: number;
-    arrayElemType: string;
-    arrayElemCategory: 'scalar' | 'struct';
-    arraySize: number;
-  }[]>([
-    { name: '', category: 'scalar', dataType: 'INT', stringLength: 20, arrayElemType: 'INT', arrayElemCategory: 'scalar', arraySize: 10 },
+  const [structTypeName, setStructTypeName] = useState("");
+  const [editingStructTypeName, setEditingStructTypeName] = useState<
+    string | null
+  >(null);
+  const [structTypeFields, setStructTypeFields] = useState<
+    {
+      name: string;
+      category: "scalar" | "struct" | "array";
+      dataType: string;
+      stringLength: number;
+      arrayElemType: string;
+      arrayElemCategory: "scalar" | "struct";
+      arraySize: number;
+    }[]
+  >([
+    {
+      name: "",
+      category: "scalar",
+      dataType: "INT",
+      stringLength: 20,
+      arrayElemType: "INT",
+      arrayElemCategory: "scalar",
+      arraySize: 10,
+    },
   ]);
 
   // 展開/縮小状態（keyはFlatRowのヘッダーキー）
@@ -92,14 +126,29 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
   // 編集フォーム
   const [editData, setEditData] = useState<any>(null);
-  const [editValue, setEditValue] = useState('');
+  const [editValue, setEditValue] = useState("");
 
   // マッピング編集
-  const [mappingVariable, setMappingVariable] = useState<application.VariableDTO | null>(null);
-  const [editMappings, setEditMappings] = useState<application.ProtocolMappingDTO[]>([]);
-  const [editNodePublishings, setEditNodePublishings] = useState<application.NodePublishingDTO[]>([]);
-  const [serverInstances, setServerInstances] = useState<application.ServerInstanceDTO[]>([]);
-  const [memoryAreasByProtocol, setMemoryAreasByProtocol] = useState<Record<string, application.MemoryAreaDTO[]>>({});
+  const [mappingVariable, setMappingVariable] =
+    useState<application.VariableDTO | null>(null);
+  const [editMappings, setEditMappings] = useState<
+    application.ProtocolMappingDTO[]
+  >([]);
+  const [editNodePublishings, setEditNodePublishings] = useState<
+    application.NodePublishingDTO[]
+  >([]);
+  const [serverInstances, setServerInstances] = useState<
+    application.ServerInstanceDTO[]
+  >([]);
+  const [memoryAreasByProtocol, setMemoryAreasByProtocol] = useState<
+    Record<string, application.MemoryAreaDTO[]>
+  >({});
+
+  // 一括マッピング編集ダイアログ
+  const [isBulkMappingOpen, setIsBulkMappingOpen] = useState(false);
+  const [bulkProtocol, setBulkProtocol] = useState<string>("");
+  const [bulkRows, setBulkRows] = useState<BulkEditRow[]>([]);
+  const [bulkIsSaving, setBulkIsSaving] = useState(false);
 
   // 変数一覧を取得
   const loadVariables = useCallback(async () => {
@@ -109,7 +158,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         setVariables(vars);
       }
     } catch (e) {
-      console.error('Failed to load variables:', e);
+      console.error("Failed to load variables:", e);
     }
   }, []);
 
@@ -119,7 +168,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       const types = await GetStructTypes();
       setStructTypes(types || []);
     } catch (e) {
-      console.error('Failed to load struct types:', e);
+      console.error("Failed to load struct types:", e);
     }
   }, []);
 
@@ -129,7 +178,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       const instances = await GetServerInstances();
       setServerInstances(instances || []);
       const areasMap: Record<string, application.MemoryAreaDTO[]> = {};
-      for (const inst of (instances || [])) {
+      for (const inst of instances || []) {
         try {
           const areas = await GetMemoryAreas(inst.protocolType);
           areasMap[inst.protocolType] = areas || [];
@@ -139,7 +188,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       }
       setMemoryAreasByProtocol(areasMap);
     } catch (e) {
-      console.error('Failed to load server instances:', e);
+      console.error("Failed to load server instances:", e);
     }
   }, []);
 
@@ -152,7 +201,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
           setDataTypes(types.types);
         }
       } catch (e) {
-        console.error('Failed to load data types:', e);
+        console.error("Failed to load data types:", e);
       }
     };
     loadDataTypes();
@@ -176,12 +225,24 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   // ESCキーでダイアログを閉じる
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (isStructTypeDialogOpen) {
+      if (e.key !== "Escape") return;
+      if (isBulkMappingOpen) {
+        setIsBulkMappingOpen(false);
+      } else if (isStructTypeDialogOpen) {
         setIsStructTypeDialogOpen(false);
         setEditingStructTypeName(null);
-        setStructTypeName('');
-        setStructTypeFields([{ name: '', category: 'scalar', dataType: 'INT', stringLength: 20, arrayElemType: 'INT', arrayElemCategory: 'scalar', arraySize: 10 }]);
+        setStructTypeName("");
+        setStructTypeFields([
+          {
+            name: "",
+            category: "scalar",
+            dataType: "INT",
+            stringLength: 20,
+            arrayElemType: "INT",
+            arrayElemCategory: "scalar",
+            arraySize: 10,
+          },
+        ]);
       } else if (isMappingDialogOpen) {
         setIsMappingDialogOpen(false);
       } else if (isEditDialogOpen) {
@@ -192,31 +253,56 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         setIsAddDialogOpen(false);
       }
     };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isAddDialogOpen, isEditDialogOpen, isMappingDialogOpen, isStructTypeDialogOpen]);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isAddDialogOpen,
+    isEditDialogOpen,
+    isMappingDialogOpen,
+    isStructTypeDialogOpen,
+    isBulkMappingOpen,
+  ]);
 
   // スカラー値のフォーマット
   const formatScalarValue = (value: any, dataType: string): string => {
-    if (value === null || value === undefined) return '-';
+    if (value === null || value === undefined) return "-";
     switch (dataType) {
-      case 'BOOL':
-        return value ? 'TRUE' : 'FALSE';
-      case 'STRING':
+      case "BOOL":
+        return value ? "TRUE" : "FALSE";
+      case "STRING":
         return `"${value}"`;
-      case 'REAL':
-      case 'LREAL':
-        return typeof value === 'number' ? value.toFixed(2) : String(value);
+      case "REAL":
+      case "LREAL":
+        return typeof value === "number" ? value.toFixed(2) : String(value);
       default:
-        if (dataType.startsWith('STRING[')) return `"${value}"`;
+        if (dataType.startsWith("STRING[")) return `"${value}"`;
         return String(value);
     }
   };
 
   // 構造体型かどうか判定
   const isStructType = (dataType: string): boolean => {
-    const scalarTypes = ['BOOL', 'SINT', 'INT', 'DINT', 'USINT', 'UINT', 'UDINT', 'REAL', 'LREAL', 'STRING', 'TIME', 'DATE', 'TIME_OF_DAY', 'DATE_AND_TIME'];
-    return !scalarTypes.includes(dataType) && !dataType.startsWith('ARRAY[') && !dataType.startsWith('STRING[');
+    const scalarTypes = [
+      "BOOL",
+      "SINT",
+      "INT",
+      "DINT",
+      "USINT",
+      "UINT",
+      "UDINT",
+      "REAL",
+      "LREAL",
+      "STRING",
+      "TIME",
+      "DATE",
+      "TIME_OF_DAY",
+      "DATE_AND_TIME",
+    ];
+    return (
+      !scalarTypes.includes(dataType) &&
+      !dataType.startsWith("ARRAY[") &&
+      !dataType.startsWith("STRING[")
+    );
   };
 
   // データ型のワード数を取得
@@ -228,10 +314,10 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       return Math.ceil(maxBytes / 2);
     }
     // スカラー型
-    const dt = dataTypes.find(t => t.id === dataType);
+    const dt = dataTypes.find((t) => t.id === dataType);
     if (dt) return dt.wordCount;
     // 構造体型
-    const st = structTypes.find(s => s.name === dataType);
+    const st = structTypes.find((s) => s.name === dataType);
     if (st) return st.wordCount;
     // 配列型
     const match = dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
@@ -259,6 +345,21 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     wordOffset: number;
   }
 
+  // 一括マッピング編集用の行データ
+  interface BulkEditRow {
+    variableId: string;
+    variableName: string;
+    dataType: string;
+    wordCount: number;
+    // Modbus系
+    memoryArea: string;
+    addressStr: string; // 空文字 = マッピングなし（削除）
+    endianness: string;
+    // OPC UA系（SupportsNodePublishing=true）
+    nodeEnabled: boolean;
+    accessMode: string;
+  }
+
   // 変数をフラットな行に展開
   const flattenVariable = (v: application.VariableDTO): FlatRow[] => {
     const rows: FlatRow[] = [];
@@ -272,13 +373,13 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       wordOffset: number,
     ) => {
       // 配列型
-      if (dataType.startsWith('ARRAY[')) {
+      if (dataType.startsWith("ARRAY[")) {
         const match = dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
-        const elemType = match ? match[1] : '';
+        const elemType = match ? match[1] : "";
         const elemWordCount = getWordCount(elemType);
         // 親ヘッダー行
         rows.push({
-          key: `${v.id}:${valuePath.join('.')}:header`,
+          key: `${v.id}:${valuePath.join(".")}:header`,
           displayName,
           dataType,
           value,
@@ -298,7 +399,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               expand(elemName, elemType, elem, depth + 1, elemPath, elemOffset);
             } else {
               rows.push({
-                key: `${v.id}:${elemPath.join('.')}`,
+                key: `${v.id}:${elemPath.join(".")}`,
                 displayName: elemName,
                 dataType: elemType,
                 value: elem,
@@ -315,11 +416,16 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       }
 
       // 構造体型
-      if (isStructType(dataType) && typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        const st = structTypes.find(s => s.name === dataType);
+      if (
+        isStructType(dataType) &&
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value)
+      ) {
+        const st = structTypes.find((s) => s.name === dataType);
         // 親ヘッダー行
         rows.push({
-          key: `${v.id}:${valuePath.join('.')}:header`,
+          key: `${v.id}:${valuePath.join(".")}:header`,
           displayName,
           dataType,
           value,
@@ -334,11 +440,21 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
             const fieldPath = [...valuePath, field.name];
             const fieldName = `${displayName}.${field.name}`;
             const fieldOffset = wordOffset + field.offset;
-            if (isStructType(field.dataType) || field.dataType.startsWith('ARRAY[')) {
-              expand(fieldName, field.dataType, value[field.name], depth + 1, fieldPath, fieldOffset);
+            if (
+              isStructType(field.dataType) ||
+              field.dataType.startsWith("ARRAY[")
+            ) {
+              expand(
+                fieldName,
+                field.dataType,
+                value[field.name],
+                depth + 1,
+                fieldPath,
+                fieldOffset,
+              );
             } else {
               rows.push({
-                key: `${v.id}:${fieldPath.join('.')}`,
+                key: `${v.id}:${fieldPath.join(".")}`,
                 displayName: fieldName,
                 dataType: field.dataType,
                 value: value[field.name],
@@ -356,7 +472,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
       // スカラー型
       rows.push({
-        key: `${v.id}:${valuePath.join('.')}`,
+        key: `${v.id}:${valuePath.join(".")}`,
         displayName,
         dataType,
         value,
@@ -381,7 +497,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     const visible: FlatRow[] = [];
     // 縮小中のヘッダーの depth を追跡（この depth 以下の行を非表示）
     let collapseDepth = -1; // -1 = 非表示なし
-    let collapseVarId = '';
+    let collapseVarId = "";
 
     for (const row of allFlatRows) {
       // 別の変数に移ったらリセット
@@ -390,7 +506,11 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       }
 
       // 縮小中のヘッダーより深い行は非表示
-      if (collapseDepth >= 0 && row.variable.id === collapseVarId && row.depth > collapseDepth) {
+      if (
+        collapseDepth >= 0 &&
+        row.variable.id === collapseVarId &&
+        row.depth > collapseDepth
+      ) {
         continue;
       } else {
         // 抜けたのでリセット
@@ -410,7 +530,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
   // ヘッダー行の展開/縮小をトグル
   const toggleExpand = (headerKey: string) => {
-    setExpandedRows(prev => {
+    setExpandedRows((prev) => {
       const next = new Set(prev);
       if (next.has(headerKey)) {
         next.delete(headerKey);
@@ -423,27 +543,30 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
   // デフォルト値を取得
   const getDefaultValue = (dataType: string): string => {
-    if (dataType.startsWith('STRING[') || dataType === 'STRING') return '';
+    if (dataType.startsWith("STRING[") || dataType === "STRING") return "";
     switch (dataType) {
-      case 'BOOL': return 'false';
-      case 'REAL':
-      case 'LREAL': return '0.0';
-      default: return '0';
+      case "BOOL":
+        return "false";
+      case "REAL":
+      case "LREAL":
+        return "0.0";
+      default:
+        return "0";
     }
   };
 
   // 入力値をパース
   const parseValue = (input: string, dataType: string): any => {
     switch (dataType) {
-      case 'BOOL':
-        return input.toLowerCase() === 'true' || input === '1';
-      case 'STRING':
+      case "BOOL":
+        return input.toLowerCase() === "true" || input === "1";
+      case "STRING":
         return input;
-      case 'REAL':
-      case 'LREAL':
+      case "REAL":
+      case "LREAL":
         return parseFloat(input) || 0;
       default:
-        if (dataType.startsWith('STRING[')) return input;
+        if (dataType.startsWith("STRING[")) return input;
         return parseInt(input, 10) || 0;
     }
   };
@@ -451,19 +574,27 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   // メモリエリアIDを短い表示名に変換（Modbusは番号、その他はそのまま）
   const areaShortName = (areaId: string): string => {
     const map: Record<string, string> = {
-      'coils': '0',
-      'discreteInputs': '1',
-      'inputRegisters': '3',
-      'holdingRegisters': '4',
+      coils: "0",
+      discreteInputs: "1",
+      inputRegisters: "3",
+      holdingRegisters: "4",
     };
     return map[areaId] ?? areaId;
   };
 
   const isOneOriginArea = (protocolType: string, areaId: string): boolean =>
-    (memoryAreasByProtocol[protocolType] || []).find(a => a.id === areaId)?.oneOrigin ?? false;
+    (memoryAreasByProtocol[protocolType] || []).find((a) => a.id === areaId)
+      ?.oneOrigin ?? false;
+
+  // 指定プロトコルが SupportsNodePublishing かどうか
+  const isNodePublishingProtocol = (protocolType: string): boolean =>
+    serverInstances.find((i) => i.protocolType === protocolType)
+      ?.supportsNodePublishing ?? false;
 
   // 指定したマッピングが他の変数のマッピングと重複しているか確認し、変数名一覧を返す
-  const findMappingConflicts = (mapping: application.ProtocolMappingDTO): string[] => {
+  const findMappingConflicts = (
+    mapping: application.ProtocolMappingDTO,
+  ): string[] => {
     if (!mappingVariable) return [];
     const currStart = mapping.address;
     const currEnd = currStart + getWordCount(mappingVariable.dataType);
@@ -473,7 +604,11 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       if (v.id === mappingVariable.id || !v.mappings) continue;
       const otherWordCount = getWordCount(v.dataType);
       for (const vm of v.mappings) {
-        if (vm.protocolType !== mapping.protocolType || vm.memoryArea !== mapping.memoryArea) continue;
+        if (
+          vm.protocolType !== mapping.protocolType ||
+          vm.memoryArea !== mapping.memoryArea
+        )
+          continue;
         const otherStart = vm.address;
         const otherEnd = otherStart + otherWordCount;
         // アドレス範囲の重複チェック
@@ -487,7 +622,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   };
 
   // 変数のマッピングが他の変数と重複しているか確認し、変数名一覧を返す（テーブル表示用）
-  const getVariableMappingConflicts = (v: application.VariableDTO): string[] => {
+  const getVariableMappingConflicts = (
+    v: application.VariableDTO,
+  ): string[] => {
     if (!v.mappings || v.mappings.length === 0) return [];
     const currWordCount = getWordCount(v.dataType);
     const conflictNames = new Set<string>();
@@ -499,7 +636,11 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         if (other.id === v.id || !other.mappings) continue;
         const otherWordCount = getWordCount(other.dataType);
         for (const vm of other.mappings) {
-          if (vm.protocolType !== m.protocolType || vm.memoryArea !== m.memoryArea) continue;
+          if (
+            vm.protocolType !== m.protocolType ||
+            vm.memoryArea !== m.memoryArea
+          )
+            continue;
           if (currStart < vm.address + otherWordCount && currEnd > vm.address) {
             conflictNames.add(other.name);
             break;
@@ -511,49 +652,85 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   };
 
   // マッピングのフォーマット
-  const formatMappings = (mappings: application.ProtocolMappingDTO[] | undefined): string => {
-    if (!mappings || mappings.length === 0) return '-';
-    return mappings.map(m => {
-      const addr = isOneOriginArea(m.protocolType, m.memoryArea) ? m.address + 1 : m.address;
-      return `${m.protocolType}:${areaShortName(m.memoryArea)}:${addr}`;
-    }).join(', ');
+  const formatMappings = (
+    mappings: application.ProtocolMappingDTO[] | undefined,
+  ): string => {
+    if (!mappings || mappings.length === 0) return "-";
+    return mappings
+      .map((m) => {
+        const addr = isOneOriginArea(m.protocolType, m.memoryArea)
+          ? m.address + 1
+          : m.address;
+        return `${m.protocolType}:${areaShortName(m.memoryArea)}:${addr}`;
+      })
+      .join(", ");
   };
 
   // ノード公開設定のフォーマット（有効なものだけ、OPC UA 等）
-  const formatNodePublishings = (publishings: application.NodePublishingDTO[] | undefined): string => {
-    if (!publishings) return '';
-    const enabled = publishings.filter(p => p.enabled);
-    if (enabled.length === 0) return '';
-    return enabled.map(p => {
-      const accessLabel = p.accessMode === 'read' ? 'RO' : p.accessMode === 'write' ? 'WO' : 'R/W';
-      return `${p.protocolType}(${accessLabel})`;
-    }).join(', ');
+  const formatNodePublishings = (
+    publishings: application.NodePublishingDTO[] | undefined,
+  ): string => {
+    if (!publishings) return "";
+    const enabled = publishings.filter((p) => p.enabled);
+    if (enabled.length === 0) return "";
+    return enabled
+      .map((p) => {
+        const accessLabel =
+          p.accessMode === "read"
+            ? "RO"
+            : p.accessMode === "write"
+              ? "WO"
+              : "R/W";
+        return `${p.protocolType}(${accessLabel})`;
+      })
+      .join(", ");
   };
 
   // オフセット付きマッピングのフォーマット（フィールド/要素用）
-  const formatMappingsWithOffset = (mappings: application.ProtocolMappingDTO[] | undefined, offset: number): string => {
-    if (!mappings || mappings.length === 0) return '-';
-    return mappings.map(m => {
-      const addr = isOneOriginArea(m.protocolType, m.memoryArea) ? m.address + offset + 1 : m.address + offset;
-      return `${areaShortName(m.memoryArea)}:${addr}`;
-    }).join(', ');
+  const formatMappingsWithOffset = (
+    mappings: application.ProtocolMappingDTO[] | undefined,
+    offset: number,
+  ): string => {
+    if (!mappings || mappings.length === 0) return "-";
+    return mappings
+      .map((m) => {
+        const addr = isOneOriginArea(m.protocolType, m.memoryArea)
+          ? m.address + offset + 1
+          : m.address + offset;
+        return `${areaShortName(m.memoryArea)}:${addr}`;
+      })
+      .join(", ");
   };
 
   // 構造体のデフォルト値を再帰的に生成
   const generateStructDefault = (typeName: string): any => {
-    const st = structTypes.find(s => s.name === typeName);
+    const st = structTypes.find((s) => s.name === typeName);
     if (!st) return {};
     const obj: Record<string, any> = {};
     for (const f of st.fields) {
-      if (f.dataType.startsWith('ARRAY[')) {
+      if (f.dataType.startsWith("ARRAY[")) {
         // ARRAY[ElemType;Size] をパース
         const match = f.dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
         if (match) {
           const elemType = match[1];
           const size = parseInt(match[2]);
-          const isElemStruct = !['BOOL','SINT','INT','DINT','USINT','UINT','UDINT','REAL','LREAL','STRING'].includes(elemType) && !elemType.startsWith('STRING[');
+          const isElemStruct =
+            ![
+              "BOOL",
+              "SINT",
+              "INT",
+              "DINT",
+              "USINT",
+              "UINT",
+              "UDINT",
+              "REAL",
+              "LREAL",
+              "STRING",
+            ].includes(elemType) && !elemType.startsWith("STRING[");
           obj[f.name] = Array.from({ length: size }, () =>
-            isElemStruct ? generateStructDefault(elemType) : parseValue(getDefaultValue(elemType), elemType)
+            isElemStruct
+              ? generateStructDefault(elemType)
+              : parseValue(getDefaultValue(elemType), elemType),
           );
         } else {
           obj[f.name] = [];
@@ -574,23 +751,30 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       let dataType = newDataType;
       let value: any;
 
-      if (newTypeCategory === 'array') {
-        const elemType = newArrayElemType === 'STRING' ? `STRING[${newStringLength}]` : newArrayElemType;
+      if (newTypeCategory === "array") {
+        const elemType =
+          newArrayElemType === "STRING"
+            ? `STRING[${newStringLength}]`
+            : newArrayElemType;
         dataType = `ARRAY[${elemType};${newArraySize}]`;
         // デフォルト配列を生成（構造体要素にも対応）
         if (isStructType(newArrayElemType)) {
-          value = Array.from({ length: newArraySize }, () => generateStructDefault(newArrayElemType));
+          value = Array.from({ length: newArraySize }, () =>
+            generateStructDefault(newArrayElemType),
+          );
         } else {
           const defaultVal = getDefaultValue(elemType);
-          value = Array.from({ length: newArraySize }, () => parseValue(defaultVal, elemType));
+          value = Array.from({ length: newArraySize }, () =>
+            parseValue(defaultVal, elemType),
+          );
         }
-      } else if (newTypeCategory === 'struct') {
+      } else if (newTypeCategory === "struct") {
         // 構造体のデフォルト値を再帰的に生成
         value = generateStructDefault(newDataType);
       } else {
         // スカラー型
         // STRING選択時は STRING[n] 形式にする
-        if (newDataType === 'STRING') {
+        if (newDataType === "STRING") {
           dataType = `STRING[${newStringLength}]`;
         }
         value = parseValue(newValue || getDefaultValue(dataType), dataType);
@@ -599,28 +783,30 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       await CreateVariable(newName.trim(), dataType, value);
       await loadVariables();
       setIsAddDialogOpen(false);
-      setNewName('');
-      setNewDataType('INT');
-      setNewValue('');
-      setNewTypeCategory('scalar');
-      setNewArrayElemType('INT');
+      setNewName("");
+      setNewDataType("INT");
+      setNewValue("");
+      setNewTypeCategory("scalar");
+      setNewArrayElemType("INT");
       setNewArraySize(10);
     } catch (e) {
-      console.error('Failed to create variable:', e);
-      alert('変数の作成に失敗しました: ' + e);
+      console.error("Failed to create variable:", e);
+      alert("変数の作成に失敗しました: " + e);
     }
   };
 
   // フィールドの実際のデータ型文字列を取得
-  const resolveFieldDataType = (field: typeof structTypeFields[0]): string => {
-    if (field.category === 'scalar') {
-      if (field.dataType === 'STRING') return `STRING[${field.stringLength}]`;
+  const resolveFieldDataType = (
+    field: (typeof structTypeFields)[0],
+  ): string => {
+    if (field.category === "scalar") {
+      if (field.dataType === "STRING") return `STRING[${field.stringLength}]`;
       return field.dataType;
     }
-    if (field.category === 'struct') return field.dataType;
+    if (field.category === "struct") return field.dataType;
     // array
     let elemType = field.arrayElemType;
-    if (field.arrayElemCategory === 'scalar' && elemType === 'STRING') {
+    if (field.arrayElemCategory === "scalar" && elemType === "STRING") {
       elemType = `STRING[${field.stringLength}]`;
     }
     return `ARRAY[${elemType};${field.arraySize}]`;
@@ -629,9 +815,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   // 構造体型を登録または更新
   const handleRegisterStructType = async () => {
     if (!structTypeName.trim()) return;
-    const validFields = structTypeFields.filter(f => f.name.trim());
+    const validFields = structTypeFields.filter((f) => f.name.trim());
     if (validFields.length === 0) {
-      alert('少なくとも1つのフィールドを定義してください。');
+      alert("少なくとも1つのフィールドを定義してください。");
       return;
     }
     try {
@@ -641,16 +827,30 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       }
       await RegisterStructType({
         name: structTypeName.trim(),
-        fields: validFields.map(f => ({ name: f.name.trim(), dataType: resolveFieldDataType(f), offset: 0 })),
+        fields: validFields.map((f) => ({
+          name: f.name.trim(),
+          dataType: resolveFieldDataType(f),
+          offset: 0,
+        })),
         wordCount: 0,
       } as application.StructTypeDTO);
       await loadStructTypes();
-      setStructTypeName('');
+      setStructTypeName("");
       setEditingStructTypeName(null);
-      setStructTypeFields([{ name: '', category: 'scalar', dataType: 'INT', stringLength: 20, arrayElemType: 'INT', arrayElemCategory: 'scalar', arraySize: 10 }]);
+      setStructTypeFields([
+        {
+          name: "",
+          category: "scalar",
+          dataType: "INT",
+          stringLength: 20,
+          arrayElemType: "INT",
+          arrayElemCategory: "scalar",
+          arraySize: 10,
+        },
+      ]);
     } catch (e) {
-      console.error('Failed to register struct type:', e);
-      alert('構造体型の登録に失敗しました: ' + e);
+      console.error("Failed to register struct type:", e);
+      alert("構造体型の登録に失敗しました: " + e);
     }
   };
 
@@ -660,48 +860,48 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     setStructTypeName(st.name);
 
     // フィールドをフォーム形式に変換
-    const formFields = st.fields.map(f => {
-      const field: typeof structTypeFields[0] = {
+    const formFields = st.fields.map((f) => {
+      const field: (typeof structTypeFields)[0] = {
         name: f.name,
-        category: 'scalar',
+        category: "scalar",
         dataType: f.dataType,
         stringLength: 20,
-        arrayElemType: 'INT',
-        arrayElemCategory: 'scalar',
+        arrayElemType: "INT",
+        arrayElemCategory: "scalar",
         arraySize: 10,
       };
 
       // データ型を解析してカテゴリを判定
-      if (f.dataType.startsWith('ARRAY[')) {
-        field.category = 'array';
+      if (f.dataType.startsWith("ARRAY[")) {
+        field.category = "array";
         const match = f.dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
         if (match) {
           let elemType = match[1];
           field.arraySize = parseInt(match[2]);
 
-          if (elemType.startsWith('STRING[')) {
-            field.arrayElemCategory = 'scalar';
-            field.arrayElemType = 'STRING';
+          if (elemType.startsWith("STRING[")) {
+            field.arrayElemCategory = "scalar";
+            field.arrayElemType = "STRING";
             const lenMatch = elemType.match(/^STRING\[(\d+)\]$/);
             if (lenMatch) field.stringLength = parseInt(lenMatch[1]);
-          } else if (structTypes.some(s => s.name === elemType)) {
-            field.arrayElemCategory = 'struct';
+          } else if (structTypes.some((s) => s.name === elemType)) {
+            field.arrayElemCategory = "struct";
             field.arrayElemType = elemType;
           } else {
-            field.arrayElemCategory = 'scalar';
+            field.arrayElemCategory = "scalar";
             field.arrayElemType = elemType;
           }
         }
-      } else if (f.dataType.startsWith('STRING[')) {
-        field.category = 'scalar';
-        field.dataType = 'STRING';
+      } else if (f.dataType.startsWith("STRING[")) {
+        field.category = "scalar";
+        field.dataType = "STRING";
         const match = f.dataType.match(/^STRING\[(\d+)\]$/);
         if (match) field.stringLength = parseInt(match[1]);
-      } else if (structTypes.some(s => s.name === f.dataType)) {
-        field.category = 'struct';
+      } else if (structTypes.some((s) => s.name === f.dataType)) {
+        field.category = "struct";
         field.dataType = f.dataType;
       } else {
-        field.category = 'scalar';
+        field.category = "scalar";
         field.dataType = f.dataType;
       }
 
@@ -718,8 +918,8 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       await DeleteStructType(name);
       await loadStructTypes();
     } catch (e) {
-      console.error('Failed to delete struct type:', e);
-      alert('構造体型の削除に失敗しました: ' + e);
+      console.error("Failed to delete struct type:", e);
+      alert("構造体型の削除に失敗しました: " + e);
     }
   };
 
@@ -730,7 +930,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   const handleEditClick = (v: application.VariableDTO) => {
     setEditingVariable(v);
     // 構造体・配列はディープコピーして編集用データを作る
-    if (v.dataType.startsWith('ARRAY[') || isStructType(v.dataType)) {
+    if (v.dataType.startsWith("ARRAY[") || isStructType(v.dataType)) {
       setEditData(JSON.parse(JSON.stringify(v.value ?? null)));
     } else {
       setEditData(v.value);
@@ -749,7 +949,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     }
     setEditingVariable(row.variable);
     setEditingRow(row);
-    setEditData(row.value != null ? JSON.parse(JSON.stringify(row.value)) : row.value);
+    setEditData(
+      row.value != null ? JSON.parse(JSON.stringify(row.value)) : row.value,
+    );
 
     setIsEditDialogOpen(true);
   };
@@ -765,7 +967,8 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         for (let i = 0; i < editingRow.valuePath.length - 1; i++) {
           target = target[editingRow.valuePath[i]];
         }
-        target[editingRow.valuePath[editingRow.valuePath.length - 1]] = editData;
+        target[editingRow.valuePath[editingRow.valuePath.length - 1]] =
+          editData;
         await UpdateVariableValue(editingVariable.id, fullValue);
       } else {
         await UpdateVariableValue(editingVariable.id, editData);
@@ -776,39 +979,49 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       setEditingRow(null);
       setEditData(null);
     } catch (e) {
-      console.error('Failed to update variable:', e);
-      alert('変数の更新に失敗しました: ' + e);
+      console.error("Failed to update variable:", e);
+      alert("変数の更新に失敗しました: " + e);
     }
   };
 
   // 数値入力のパース（接頭辞で自動判定）
   const parseNumericInput = (input: string): number => {
     const trimmed = input.trim();
-    if (trimmed.startsWith('0x') || trimmed.startsWith('0X')) {
+    if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
       return parseInt(trimmed, 16);
     }
-    if (trimmed.startsWith('0b') || trimmed.startsWith('0B')) {
+    if (trimmed.startsWith("0b") || trimmed.startsWith("0B")) {
       return parseInt(trimmed.slice(2), 2);
     }
     return parseFloat(trimmed) || 0;
   };
 
   // 数値フォーマット
-  const formatNumeric = (value: number, format: 'dec' | 'hex' | 'bin'): string => {
+  const formatNumeric = (
+    value: number,
+    format: "dec" | "hex" | "bin",
+  ): string => {
     switch (format) {
-      case 'hex': return '0x' + (value >>> 0).toString(16).toUpperCase();
-      case 'bin': return '0b' + (value >>> 0).toString(2);
-      default: return String(value);
+      case "hex":
+        return "0x" + (value >>> 0).toString(16).toUpperCase();
+      case "bin":
+        return "0b" + (value >>> 0).toString(2);
+      default:
+        return String(value);
     }
   };
 
   // スカラー値エディタ
-  const renderScalarEditor = (dataType: string, value: any, onChange: (v: any) => void) => {
-    if (dataType === 'BOOL') {
+  const renderScalarEditor = (
+    dataType: string,
+    value: any,
+    onChange: (v: any) => void,
+  ) => {
+    if (dataType === "BOOL") {
       return (
         <select
-          value={value ? 'true' : 'false'}
-          onChange={(e) => onChange(e.target.value === 'true')}
+          value={value ? "true" : "false"}
+          onChange={(e) => onChange(e.target.value === "true")}
           style={{ flex: 1 }}
         >
           <option value="true">TRUE</option>
@@ -816,13 +1029,19 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         </select>
       );
     }
-    if (dataType === 'STRING' || dataType.startsWith('STRING[')) {
-      const maxLen = dataType.startsWith('STRING[') ? parseInt(dataType.match(/\[(\d+)\]/)?.[1] || '0') : 0;
+    if (dataType === "STRING" || dataType.startsWith("STRING[")) {
+      const maxLen = dataType.startsWith("STRING[")
+        ? parseInt(dataType.match(/\[(\d+)\]/)?.[1] || "0")
+        : 0;
       return (
         <input
           type="text"
-          value={value ?? ''}
-          onChange={(e) => onChange(maxLen > 0 ? e.target.value.slice(0, maxLen) : e.target.value)}
+          value={value ?? ""}
+          onChange={(e) =>
+            onChange(
+              maxLen > 0 ? e.target.value.slice(0, maxLen) : e.target.value,
+            )
+          }
           style={{ flex: 1 }}
           maxLength={maxLen > 0 ? maxLen : undefined}
           placeholder={maxLen > 0 ? `最大${maxLen}バイト` : undefined}
@@ -830,20 +1049,25 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       );
     }
     // 時間・日付型（文字列として編集）
-    if (dataType === 'TIME' || dataType === 'DATE' || dataType === 'TIME_OF_DAY' || dataType === 'DATE_AND_TIME') {
+    if (
+      dataType === "TIME" ||
+      dataType === "DATE" ||
+      dataType === "TIME_OF_DAY" ||
+      dataType === "DATE_AND_TIME"
+    ) {
       const placeholders: { [key: string]: string } = {
-        'TIME': 'T#1s, T#100ms, T#1h30m',
-        'DATE': 'D#2024-01-01',
-        'TIME_OF_DAY': 'TOD#12:30:15',
-        'DATE_AND_TIME': 'DT#2024-01-01-12:30:15'
+        TIME: "T#1s, T#100ms, T#1h30m",
+        DATE: "D#2024-01-01",
+        TIME_OF_DAY: "TOD#12:30:15",
+        DATE_AND_TIME: "DT#2024-01-01-12:30:15",
       };
       return (
         <input
           type="text"
-          value={value ?? ''}
+          value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
           style={{ flex: 1 }}
-          placeholder={placeholders[dataType] || ''}
+          placeholder={placeholders[dataType] || ""}
         />
       );
     }
@@ -871,11 +1095,16 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   };
 
   // 再帰的値エディタ
-  const renderValueEditor = (dataType: string, value: any, onChange: (v: any) => void, depth: number = 0): JSX.Element => {
+  const renderValueEditor = (
+    dataType: string,
+    value: any,
+    onChange: (v: any) => void,
+    depth: number = 0,
+  ): JSX.Element => {
     const indent = depth * 16;
 
     // 配列型
-    if (dataType.startsWith('ARRAY[')) {
+    if (dataType.startsWith("ARRAY[")) {
       const match = dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
       if (!match || !Array.isArray(value)) {
         return <span>-</span>;
@@ -886,8 +1115,20 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       return (
         <div style={{ marginLeft: indent }}>
           {value.map((elem: any, i: number) => (
-            <div key={i} style={{ display: 'flex', gap: '4px', alignItems: 'center', marginBottom: '2px' }}>
-              <span style={{ fontSize: '0.8em', color: '#888', minWidth: '30px' }}>[{i}]</span>
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                gap: "4px",
+                alignItems: "center",
+                marginBottom: "2px",
+              }}
+            >
+              <span
+                style={{ fontSize: "0.8em", color: "#888", minWidth: "30px" }}
+              >
+                [{i}]
+              </span>
               {elemIsStruct ? (
                 <StructArrayElementEditor
                   elemType={elemType}
@@ -914,24 +1155,39 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
     // 構造体型
     if (isStructType(dataType)) {
-      const st = structTypes.find(s => s.name === dataType);
-      if (!st || typeof value !== 'object' || value === null) {
+      const st = structTypes.find((s) => s.name === dataType);
+      if (!st || typeof value !== "object" || value === null) {
         return <span>-</span>;
       }
       return (
         <div style={{ marginLeft: indent }}>
           {st.fields.map((field) => (
-            <div key={field.name} style={{ marginBottom: '4px' }}>
-              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.85em', fontWeight: 'bold', minWidth: '80px' }}>
+            <div key={field.name} style={{ marginBottom: "4px" }}>
+              <div
+                style={{ display: "flex", gap: "4px", alignItems: "center" }}
+              >
+                <span
+                  style={{
+                    fontSize: "0.85em",
+                    fontWeight: "bold",
+                    minWidth: "80px",
+                  }}
+                >
                   {field.name}
                 </span>
-                <span style={{ fontSize: '0.75em', color: '#888' }}>({field.dataType})</span>
+                <span style={{ fontSize: "0.75em", color: "#888" }}>
+                  ({field.dataType})
+                </span>
               </div>
-              <div style={{ marginLeft: '8px' }}>
-                {renderValueEditor(field.dataType, value[field.name], (newVal) => {
-                  onChange({ ...value, [field.name]: newVal });
-                }, depth + 1)}
+              <div style={{ marginLeft: "8px" }}>
+                {renderValueEditor(
+                  field.dataType,
+                  value[field.name],
+                  (newVal) => {
+                    onChange({ ...value, [field.name]: newVal });
+                  },
+                  depth + 1,
+                )}
               </div>
             </div>
           ))}
@@ -950,8 +1206,8 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       await DeleteVariable(id);
       await loadVariables();
     } catch (e) {
-      console.error('Failed to delete variable:', e);
-      alert('変数の削除に失敗しました: ' + e);
+      console.error("Failed to delete variable:", e);
+      alert("変数の削除に失敗しました: " + e);
     }
   };
 
@@ -964,16 +1220,204 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     setIsMappingDialogOpen(true);
   };
 
+  // 変数一覧とプロトコルから BulkEditRow を構築
+  const buildBulkRows = (
+    vars: application.VariableDTO[],
+    protocolType: string,
+  ): BulkEditRow[] => {
+    const isNP = isNodePublishingProtocol(protocolType);
+    const defaultArea =
+      (memoryAreasByProtocol[protocolType] || [])[0]?.id ?? "";
+    return vars.map((v) => {
+      const wc = getWordCount(v.dataType);
+      if (isNP) {
+        const existing = (v.nodePublishings || []).find(
+          (np) => np.protocolType === protocolType,
+        );
+        return {
+          variableId: v.id,
+          variableName: v.name,
+          dataType: v.dataType,
+          wordCount: wc,
+          memoryArea: "",
+          addressStr: "",
+          endianness: "big",
+          nodeEnabled: existing?.enabled ?? false,
+          accessMode: existing?.accessMode ?? "readwrite",
+        } as BulkEditRow;
+      } else {
+        const existing = (v.mappings || []).find(
+          (m) => m.protocolType === protocolType,
+        );
+        const oneOrigin = isOneOriginArea(
+          protocolType,
+          existing?.memoryArea ?? defaultArea,
+        );
+        const displayAddr =
+          existing !== undefined
+            ? oneOrigin
+              ? existing.address + 1
+              : existing.address
+            : "";
+        return {
+          variableId: v.id,
+          variableName: v.name,
+          dataType: v.dataType,
+          wordCount: wc,
+          memoryArea: existing?.memoryArea ?? defaultArea,
+          addressStr: existing !== undefined ? String(displayAddr) : "",
+          endianness: existing?.endianness ?? "big",
+          nodeEnabled: false,
+          accessMode: "readwrite",
+        } as BulkEditRow;
+      }
+    });
+  };
+
+  // 一括マッピング編集ダイアログを開く
+  const handleBulkMappingOpen = async () => {
+    await loadServerInstancesAndAreas();
+    if (variables.length === 0) return;
+    const firstProtocol = serverInstances[0]?.protocolType ?? "";
+    setBulkProtocol(firstProtocol);
+    setBulkRows(buildBulkRows(variables, firstProtocol));
+    setIsBulkMappingOpen(true);
+  };
+
+  // 一括編集ダイアログ内のプロトコル変更
+  const handleBulkProtocolChange = (newProtocol: string) => {
+    setBulkProtocol(newProtocol);
+    setBulkRows(buildBulkRows(variables, newProtocol));
+  };
+
+  // 一括編集テーブルのセル更新
+  const handleBulkRowChange = (
+    variableId: string,
+    patch: Partial<BulkEditRow>,
+  ) => {
+    setBulkRows((prev) =>
+      prev.map((row) =>
+        row.variableId === variableId ? { ...row, ...patch } : row,
+      ),
+    );
+  };
+
+  // エリア変更（1オリジン変換を維持しながらアドレス文字列を再計算）
+  const handleBulkAreaChange = (variableId: string, newArea: string) => {
+    setBulkRows((prev) =>
+      prev.map((row) => {
+        if (row.variableId !== variableId) return row;
+        const oldOneOrigin = isOneOriginArea(bulkProtocol, row.memoryArea);
+        const newOneOrigin = isOneOriginArea(bulkProtocol, newArea);
+        let newAddrStr = row.addressStr;
+        if (row.addressStr !== "") {
+          const parsed = parseInt(row.addressStr, 10);
+          if (!isNaN(parsed)) {
+            const addr0based = oldOneOrigin ? parsed - 1 : parsed;
+            newAddrStr = String(newOneOrigin ? addr0based + 1 : addr0based);
+          }
+        }
+        return { ...row, memoryArea: newArea, addressStr: newAddrStr };
+      }),
+    );
+  };
+
+  // 一括編集ダイアログ内のアドレス競合を検出（Modbus系のみ）
+  const findBulkRowConflicts = (
+    rows: BulkEditRow[],
+    protocolType: string,
+  ): Set<string> => {
+    const conflictIds = new Set<string>();
+    const activeRows = rows
+      .filter((row) => row.addressStr.trim() !== "")
+      .map((row) => {
+        const parsed = parseInt(row.addressStr, 10);
+        if (isNaN(parsed)) return null;
+        const oneOrigin = isOneOriginArea(protocolType, row.memoryArea);
+        const addr0 = oneOrigin ? Math.max(0, parsed - 1) : parsed;
+        const wc = Math.max(1, row.wordCount);
+        return {
+          variableId: row.variableId,
+          memoryArea: row.memoryArea,
+          addr0,
+          addrEnd: addr0 + wc - 1,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+    for (let i = 0; i < activeRows.length; i++) {
+      for (let j = i + 1; j < activeRows.length; j++) {
+        const a = activeRows[i];
+        const b = activeRows[j];
+        if (a.memoryArea !== b.memoryArea) continue;
+        if (a.addr0 <= b.addrEnd && b.addr0 <= a.addrEnd) {
+          conflictIds.add(a.variableId);
+          conflictIds.add(b.variableId);
+        }
+      }
+    }
+    return conflictIds;
+  };
+
+  // 一括マッピング保存
+  const handleBulkMappingSave = async () => {
+    if (bulkIsSaving) return;
+    setBulkIsSaving(true);
+    try {
+      const isNP = isNodePublishingProtocol(bulkProtocol);
+      for (const row of bulkRows) {
+        const variable = variables.find((v) => v.id === row.variableId);
+        if (!variable) continue;
+        if (isNP) {
+          await UpdateVariableNodePublishing(row.variableId, bulkProtocol, {
+            protocolType: bulkProtocol,
+            enabled: row.nodeEnabled,
+            accessMode: row.accessMode,
+          } as application.NodePublishingDTO);
+        } else {
+          const otherMappings = (variable.mappings || []).filter(
+            (m) => m.protocolType !== bulkProtocol,
+          );
+          if (row.addressStr.trim() === "") {
+            await UpdateVariableMappings(row.variableId, otherMappings);
+          } else {
+            const parsed = parseInt(row.addressStr, 10);
+            if (isNaN(parsed)) continue;
+            const oneOrigin = isOneOriginArea(bulkProtocol, row.memoryArea);
+            const addr0based = oneOrigin ? Math.max(0, parsed - 1) : parsed;
+            await UpdateVariableMappings(row.variableId, [
+              ...otherMappings,
+              {
+                protocolType: bulkProtocol,
+                memoryArea: row.memoryArea,
+                address: addr0based,
+                endianness: row.endianness,
+              } as application.ProtocolMappingDTO,
+            ]);
+          }
+        }
+      }
+      await loadVariables();
+      setIsBulkMappingOpen(false);
+    } catch (e) {
+      alert("一括マッピングの保存に失敗しました: " + e);
+    } finally {
+      setBulkIsSaving(false);
+    }
+  };
+
   // マッピングを追加
   const handleAddMapping = () => {
-    const firstProtocol = serverInstances[0]?.protocolType || '';
-    const firstArea = (memoryAreasByProtocol[firstProtocol] || [])[0]?.id || '';
-    setEditMappings([...editMappings, {
-      protocolType: firstProtocol,
-      memoryArea: firstArea,
-      address: 0,
-      endianness: 'big',
-    } as application.ProtocolMappingDTO]);
+    const firstProtocol = serverInstances[0]?.protocolType || "";
+    const firstArea = (memoryAreasByProtocol[firstProtocol] || [])[0]?.id || "";
+    setEditMappings([
+      ...editMappings,
+      {
+        protocolType: firstProtocol,
+        memoryArea: firstArea,
+        address: 0,
+        endianness: "big",
+      } as application.ProtocolMappingDTO,
+    ]);
   };
 
   // マッピングを削除
@@ -987,25 +1431,45 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     try {
       await UpdateVariableMappings(mappingVariable.id, editMappings);
       for (const pub of editNodePublishings) {
-        await UpdateVariableNodePublishing(mappingVariable.id, pub.protocolType, pub);
+        await UpdateVariableNodePublishing(
+          mappingVariable.id,
+          pub.protocolType,
+          pub,
+        );
       }
       await loadVariables();
       setIsMappingDialogOpen(false);
       setMappingVariable(null);
     } catch (e) {
-      console.error('Failed to update mappings:', e);
-      alert('マッピングの更新に失敗しました: ' + e);
+      console.error("Failed to update mappings:", e);
+      alert("マッピングの更新に失敗しました: " + e);
     }
   };
 
   return (
     <div className="variable-view">
       <div className="variable-toolbar">
-        <button onClick={() => setIsAddDialogOpen(true)} className="btn-primary">
+        <button
+          onClick={() => setIsAddDialogOpen(true)}
+          className="btn-primary"
+        >
           変数を追加
         </button>
-        <button onClick={() => setIsStructTypeDialogOpen(true)} className="btn-secondary">
+        <button
+          onClick={() => setIsStructTypeDialogOpen(true)}
+          className="btn-secondary"
+        >
           構造体型管理
+        </button>
+        <button
+          onClick={handleBulkMappingOpen}
+          className="btn-secondary"
+          disabled={serverInstances.length === 0}
+          title={
+            serverInstances.length === 0 ? "サーバーが追加されていません" : ""
+          }
+        >
+          一括マッピング編集
         </button>
         <button onClick={loadVariables} className="btn-secondary">
           更新
@@ -1027,37 +1491,59 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
             <tr
               key={row.key}
               style={{
-                backgroundColor: row.isHeader ? 'rgba(255,255,255,0.03)' : undefined,
-                fontWeight: row.depth === 0 && row.isHeader ? 'bold' : undefined,
+                backgroundColor: row.isHeader
+                  ? "rgba(255,255,255,0.03)"
+                  : undefined,
+                fontWeight:
+                  row.depth === 0 && row.isHeader ? "bold" : undefined,
               }}
             >
               <td
                 className="var-name"
-                style={{ paddingLeft: `${8 + row.depth * 16}px`, cursor: row.isHeader ? 'pointer' : undefined }}
+                style={{
+                  paddingLeft: `${8 + row.depth * 16}px`,
+                  cursor: row.isHeader ? "pointer" : undefined,
+                }}
                 onClick={row.isHeader ? () => toggleExpand(row.key) : undefined}
               >
                 {row.isHeader ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ fontSize: '0.7em', width: '12px', display: 'inline-block' }}>
-                      {expandedRows.has(row.key) ? '\u25BC' : '\u25B6'}
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "0.7em",
+                        width: "12px",
+                        display: "inline-block",
+                      }}
+                    >
+                      {expandedRows.has(row.key) ? "\u25BC" : "\u25B6"}
                     </span>
                     {row.displayName}
                   </span>
                 ) : (
-                  <span style={{ paddingLeft: '16px' }}>{row.displayName}</span>
+                  <span style={{ paddingLeft: "16px" }}>{row.displayName}</span>
                 )}
               </td>
-              <td className="var-type" style={{ fontSize: row.isHeader ? undefined : '0.85em' }}>
+              <td
+                className="var-type"
+                style={{ fontSize: row.isHeader ? undefined : "0.85em" }}
+              >
                 <span>{row.dataType}</span>
               </td>
               <td
                 className="var-value"
                 onClick={() => handleRowEditClick(row)}
-                style={{ cursor: 'pointer' }}
+                style={{ cursor: "pointer" }}
               >
                 {row.isHeader ? (
-                  <span style={{ color: '#888', fontSize: '0.85em' }}>
-                    {row.dataType.startsWith('ARRAY[') && Array.isArray(row.value)
+                  <span style={{ color: "#888", fontSize: "0.85em" }}>
+                    {row.dataType.startsWith("ARRAY[") &&
+                    Array.isArray(row.value)
                       ? `(${row.value.length} 要素)`
                       : `{${row.dataType}}`}
                   </span>
@@ -1067,43 +1553,67 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               </td>
               <td
                 className="var-mapping"
-                onClick={row.depth === 0 ? () => handleMappingClick(row.variable) : undefined}
-                style={{ cursor: row.depth === 0 ? 'pointer' : undefined }}
+                onClick={
+                  row.depth === 0
+                    ? () => handleMappingClick(row.variable)
+                    : undefined
+                }
+                style={{ cursor: row.depth === 0 ? "pointer" : undefined }}
               >
                 {row.depth === 0 ? (
                   <span>
                     {(() => {
-                      const conflicts = getVariableMappingConflicts(row.variable);
+                      const conflicts = getVariableMappingConflicts(
+                        row.variable,
+                      );
                       return conflicts.length > 0 ? (
                         <span
                           className="mapping-conflict-icon"
-                          title={`以下の変数と重複: ${conflicts.join(', ')}`}
-                        >⚠</span>
+                          title={`以下の変数と重複: ${conflicts.join(", ")}`}
+                        >
+                          ⚠
+                        </span>
                       ) : null;
                     })()}
                     {(() => {
                       const parts: string[] = [];
-                      if (row.variable.mappings && row.variable.mappings.length > 0) {
+                      if (
+                        row.variable.mappings &&
+                        row.variable.mappings.length > 0
+                      ) {
                         parts.push(formatMappings(row.variable.mappings));
                       }
-                      const npStr = formatNodePublishings(row.variable.nodePublishings);
+                      const npStr = formatNodePublishings(
+                        row.variable.nodePublishings,
+                      );
                       if (npStr) parts.push(npStr);
-                      return parts.length > 0 ? parts.join(', ') : '-';
+                      return parts.length > 0 ? parts.join(", ") : "-";
                     })()}
                   </span>
                 ) : (
-                  <span style={{ fontSize: '0.85em', color: '#aaa' }}>
-                    {formatMappingsWithOffset(row.variable.mappings, row.wordOffset)}
+                  <span style={{ fontSize: "0.85em", color: "#aaa" }}>
+                    {formatMappingsWithOffset(
+                      row.variable.mappings,
+                      row.wordOffset,
+                    )}
                   </span>
                 )}
               </td>
               <td className="var-actions">
                 {row.depth === 0 && (
                   <div>
-                    <button onClick={() => handleMappingClick(row.variable)} className="btn-small btn-secondary">
+                    <button
+                      onClick={() => handleMappingClick(row.variable)}
+                      className="btn-small btn-secondary"
+                    >
                       マッピング
                     </button>
-                    <button onClick={() => handleDeleteVariable(row.variable.id, row.variable.name)} className="btn-small btn-danger">
+                    <button
+                      onClick={() =>
+                        handleDeleteVariable(row.variable.id, row.variable.name)
+                      }
+                      className="btn-small btn-danger"
+                    >
                       削除
                     </button>
                   </div>
@@ -1134,7 +1644,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="例: Motor_Speed"
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddVariable(); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddVariable();
+                  }}
                   autoFocus
                 />
               </div>
@@ -1143,19 +1655,22 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                 <select
                   value={newTypeCategory}
                   onChange={(e) => {
-                    const cat = e.target.value as 'scalar' | 'array' | 'struct';
+                    const cat = e.target.value as "scalar" | "array" | "struct";
                     setNewTypeCategory(cat);
-                    if (cat === 'scalar') setNewDataType('INT');
-                    else if (cat === 'struct' && structTypes.length > 0) setNewDataType(structTypes[0].name);
+                    if (cat === "scalar") setNewDataType("INT");
+                    else if (cat === "struct" && structTypes.length > 0)
+                      setNewDataType(structTypes[0].name);
                   }}
                 >
                   <option value="scalar">スカラー型</option>
                   <option value="array">配列型</option>
-                  {structTypes.length > 0 && <option value="struct">構造体型</option>}
+                  {structTypes.length > 0 && (
+                    <option value="struct">構造体型</option>
+                  )}
                 </select>
               </div>
 
-              {newTypeCategory === 'scalar' && (
+              {newTypeCategory === "scalar" && (
                 <>
                   <div className="dialog-row">
                     <label>データ型:</label>
@@ -1174,13 +1689,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       <option value="STRING">STRING (文字列)</option>
                     </select>
                   </div>
-                  {newDataType === 'STRING' && (
+                  {newDataType === "STRING" && (
                     <div className="dialog-row">
                       <label>バイト長:</label>
                       <input
                         type="number"
                         value={newStringLength}
-                        onChange={(e) => setNewStringLength(parseInt(e.target.value) || 1)}
+                        onChange={(e) =>
+                          setNewStringLength(parseInt(e.target.value) || 1)
+                        }
                         min={1}
                         max={256}
                       />
@@ -1198,7 +1715,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                 </>
               )}
 
-              {newTypeCategory === 'array' && (
+              {newTypeCategory === "array" && (
                 <>
                   <div className="dialog-row">
                     <label>要素型:</label>
@@ -1225,13 +1742,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       )}
                     </select>
                   </div>
-                  {newArrayElemType === 'STRING' && (
+                  {newArrayElemType === "STRING" && (
                     <div className="dialog-row">
                       <label>バイト長:</label>
                       <input
                         type="number"
                         value={newStringLength}
-                        onChange={(e) => setNewStringLength(parseInt(e.target.value) || 1)}
+                        onChange={(e) =>
+                          setNewStringLength(parseInt(e.target.value) || 1)
+                        }
                         min={1}
                         max={256}
                       />
@@ -1242,7 +1761,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                     <input
                       type="number"
                       value={newArraySize}
-                      onChange={(e) => setNewArraySize(parseInt(e.target.value) || 1)}
+                      onChange={(e) =>
+                        setNewArraySize(parseInt(e.target.value) || 1)
+                      }
                       min={1}
                       max={1000}
                     />
@@ -1250,7 +1771,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                 </>
               )}
 
-              {newTypeCategory === 'struct' && (
+              {newTypeCategory === "struct" && (
                 <div className="dialog-row">
                   <label>構造体型:</label>
                   <select
@@ -1267,8 +1788,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               )}
             </div>
             <div className="dialog-buttons">
-              <button onClick={() => setIsAddDialogOpen(false)} className="btn-secondary">キャンセル</button>
-              <button onClick={handleAddVariable} className="btn-primary">追加</button>
+              <button
+                onClick={() => setIsAddDialogOpen(false)}
+                className="btn-secondary"
+              >
+                キャンセル
+              </button>
+              <button onClick={handleAddVariable} className="btn-primary">
+                追加
+              </button>
             </div>
           </div>
         </div>
@@ -1277,9 +1805,20 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       {/* 変数編集ダイアログ */}
       {isEditDialogOpen && editingVariable && (
         <div className="dialog-overlay">
-          <div className="dialog" style={{ minWidth: '450px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+          <div
+            className="dialog"
+            style={{
+              minWidth: "450px",
+              maxHeight: "80vh",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
             <h3>値を編集</h3>
-            <div className="dialog-content" style={{ flex: 1, overflowY: 'auto' }}>
+            <div
+              className="dialog-content"
+              style={{ flex: 1, overflowY: "auto" }}
+            >
               <div className="dialog-row">
                 <label>変数名:</label>
                 <span className="dialog-value">
@@ -1292,19 +1831,40 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                   {editingRow ? editingRow.dataType : editingVariable.dataType}
                 </span>
               </div>
-              <div className="dialog-row" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+              <div
+                className="dialog-row"
+                style={{ flexDirection: "column", alignItems: "flex-start" }}
+              >
                 <label>値:</label>
-                <div style={{ width: '100%' }}>
+                <div style={{ width: "100%" }}>
                   {editingRow
-                    ? renderValueEditor(editingRow.dataType, editData, setEditData)
-                    : renderValueEditor(editingVariable.dataType, editData, setEditData)
-                  }
+                    ? renderValueEditor(
+                        editingRow.dataType,
+                        editData,
+                        setEditData,
+                      )
+                    : renderValueEditor(
+                        editingVariable.dataType,
+                        editData,
+                        setEditData,
+                      )}
                 </div>
               </div>
             </div>
             <div className="dialog-buttons">
-              <button onClick={() => { setIsEditDialogOpen(false); setEditData(null); setEditingRow(null); }} className="btn-secondary">キャンセル</button>
-              <button onClick={handleUpdateRow} className="btn-primary">更新</button>
+              <button
+                onClick={() => {
+                  setIsEditDialogOpen(false);
+                  setEditData(null);
+                  setEditingRow(null);
+                }}
+                className="btn-secondary"
+              >
+                キャンセル
+              </button>
+              <button onClick={handleUpdateRow} className="btn-primary">
+                更新
+              </button>
             </div>
           </div>
         </div>
@@ -1313,7 +1873,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       {/* マッピング編集ダイアログ */}
       {isMappingDialogOpen && mappingVariable && (
         <div className="dialog-overlay">
-          <div className="dialog" style={{ minWidth: '500px' }}>
+          <div className="dialog" style={{ minWidth: "500px" }}>
             <h3>マッピング設定: {mappingVariable.name}</h3>
             <div className="dialog-content">
               <p className="dialog-description">
@@ -1328,7 +1888,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                     <label style={{ flex: 1 }}>メモリエリア</label>
                     <label style={{ flex: 1 }}>アドレス</label>
                     <label style={{ flex: 1 }}>エンディアン</label>
-                    <span style={{ width: '60px' }}></span>
+                    <span style={{ width: "60px" }}></span>
                   </div>
                   {/* コントロール行 */}
                   <div className="dialog-row">
@@ -1337,14 +1897,25 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       onChange={(e) => {
                         const updated = [...editMappings];
                         const newProtocol = e.target.value;
-                        const firstArea = (memoryAreasByProtocol[newProtocol] || [])[0]?.id || '';
-                        updated[index] = { ...updated[index], protocolType: newProtocol, memoryArea: firstArea };
+                        const firstArea =
+                          (memoryAreasByProtocol[newProtocol] || [])[0]?.id ||
+                          "";
+                        updated[index] = {
+                          ...updated[index],
+                          protocolType: newProtocol,
+                          memoryArea: firstArea,
+                        };
                         setEditMappings(updated);
                       }}
                       style={{ flex: 1 }}
                     >
                       {serverInstances.map((inst) => (
-                        <option key={inst.protocolType} value={inst.protocolType}>{inst.displayName}</option>
+                        <option
+                          key={inst.protocolType}
+                          value={inst.protocolType}
+                        >
+                          {inst.displayName}
+                        </option>
                       ))}
                     </select>
 
@@ -1352,27 +1923,47 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       value={m.memoryArea}
                       onChange={(e) => {
                         const updated = [...editMappings];
-                        updated[index] = { ...updated[index], memoryArea: e.target.value };
+                        updated[index] = {
+                          ...updated[index],
+                          memoryArea: e.target.value,
+                        };
                         setEditMappings(updated);
                       }}
                       style={{ flex: 1 }}
                     >
-                      {(memoryAreasByProtocol[m.protocolType] || []).map((a) => (
-                        <option key={a.id} value={a.id}>{a.displayName}</option>
-                      ))}
+                      {(memoryAreasByProtocol[m.protocolType] || []).map(
+                        (a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.displayName}
+                          </option>
+                        ),
+                      )}
                     </select>
 
                     <input
                       type="number"
-                      value={isOneOriginArea(m.protocolType, m.memoryArea) ? m.address + 1 : m.address}
+                      value={
+                        isOneOriginArea(m.protocolType, m.memoryArea)
+                          ? m.address + 1
+                          : m.address
+                      }
                       onChange={(e) => {
-                        const oneOrigin = isOneOriginArea(m.protocolType, m.memoryArea);
-                        const v = parseInt(e.target.value) || (oneOrigin ? 1 : 0);
+                        const oneOrigin = isOneOriginArea(
+                          m.protocolType,
+                          m.memoryArea,
+                        );
+                        const v =
+                          parseInt(e.target.value) || (oneOrigin ? 1 : 0);
                         const updated = [...editMappings];
-                        updated[index] = { ...updated[index], address: oneOrigin ? Math.max(0, v - 1) : v };
+                        updated[index] = {
+                          ...updated[index],
+                          address: oneOrigin ? Math.max(0, v - 1) : v,
+                        };
                         setEditMappings(updated);
                       }}
-                      min={isOneOriginArea(m.protocolType, m.memoryArea) ? 1 : 0}
+                      min={
+                        isOneOriginArea(m.protocolType, m.memoryArea) ? 1 : 0
+                      }
                       style={{ flex: 1 }}
                     />
 
@@ -1380,7 +1971,10 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       value={m.endianness}
                       onChange={(e) => {
                         const updated = [...editMappings];
-                        updated[index] = { ...updated[index], endianness: e.target.value };
+                        updated[index] = {
+                          ...updated[index],
+                          endianness: e.target.value,
+                        };
                         setEditMappings(updated);
                       }}
                       style={{ flex: 1 }}
@@ -1401,7 +1995,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                     if (conflicts.length === 0) return null;
                     return (
                       <div className="mapping-conflict-warning">
-                        ⚠ 以下の変数と重複しています: {conflicts.join(', ')}
+                        ⚠ 以下の変数と重複しています: {conflicts.join(", ")}
                       </div>
                     );
                   })()}
@@ -1414,40 +2008,70 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
 
               {/* プロトコル公開設定（SupportsNodePublishing が true のサーバーのみ表示）*/}
               {(() => {
-                const publishableServers = serverInstances.filter(i => i.supportsNodePublishing);
+                const publishableServers = serverInstances.filter(
+                  (i) => i.supportsNodePublishing,
+                );
                 if (publishableServers.length === 0) return null;
                 return (
-                  <div className="dialog-section" style={{ marginTop: '16px' }}>
-                    <h4 style={{ margin: '0 0 8px 0' }}>プロトコル公開設定</h4>
-                    {publishableServers.map(server => {
-                      const pub = editNodePublishings.find(p => p.protocolType === server.protocolType)
-                        ?? { protocolType: server.protocolType, enabled: false, accessMode: 'readwrite' };
-                      const updatePub = (patch: Partial<application.NodePublishingDTO>) => {
-                        const updated = editNodePublishings.filter(p => p.protocolType !== server.protocolType);
-                        setEditNodePublishings([...updated, { ...pub, ...patch }]);
+                  <div className="dialog-section" style={{ marginTop: "16px" }}>
+                    <h4 style={{ margin: "0 0 8px 0" }}>プロトコル公開設定</h4>
+                    {publishableServers.map((server) => {
+                      const pub = editNodePublishings.find(
+                        (p) => p.protocolType === server.protocolType,
+                      ) ?? {
+                        protocolType: server.protocolType,
+                        enabled: false,
+                        accessMode: "readwrite",
+                      };
+                      const updatePub = (
+                        patch: Partial<application.NodePublishingDTO>,
+                      ) => {
+                        const updated = editNodePublishings.filter(
+                          (p) => p.protocolType !== server.protocolType,
+                        );
+                        setEditNodePublishings([
+                          ...updated,
+                          { ...pub, ...patch },
+                        ]);
                       };
                       return (
-                        <div key={server.protocolType} className="dialog-row" style={{ alignItems: 'center', gap: '8px' }}>
-                          <label style={{ minWidth: '80px' }}>{server.displayName}</label>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <div
+                          key={server.protocolType}
+                          className="dialog-row"
+                          style={{ alignItems: "center", gap: "8px" }}
+                        >
+                          <label style={{ minWidth: "80px" }}>
+                            {server.displayName}
+                          </label>
+                          <label
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
                             <input
                               type="checkbox"
                               checked={pub.enabled}
-                              onChange={e => updatePub({ enabled: e.target.checked })}
+                              onChange={(e) =>
+                                updatePub({ enabled: e.target.checked })
+                              }
                             />
                             公開する
                           </label>
                           <select
                             value={pub.accessMode}
                             disabled={!pub.enabled}
-                            onChange={e => updatePub({ accessMode: e.target.value })}
+                            onChange={(e) =>
+                              updatePub({ accessMode: e.target.value })
+                            }
                           >
                             <option value="read">Read Only</option>
                             <option value="write">Write Only</option>
                             <option value="readwrite">Read / Write</option>
                           </select>
                           {pub.enabled && mappingVariable && (
-                            <span style={{ fontSize: '11px', color: '#888' }}>
+                            <span style={{ fontSize: "11px", color: "#888" }}>
                               ns=1;s={mappingVariable.name}
                             </span>
                           )}
@@ -1459,8 +2083,319 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               })()}
             </div>
             <div className="dialog-buttons">
-              <button onClick={() => setIsMappingDialogOpen(false)} className="btn-secondary">キャンセル</button>
-              <button onClick={handleSaveMappings} className="btn-primary">保存</button>
+              <button
+                onClick={() => setIsMappingDialogOpen(false)}
+                className="btn-secondary"
+              >
+                キャンセル
+              </button>
+              <button onClick={handleSaveMappings} className="btn-primary">
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 一括マッピング編集ダイアログ */}
+      {isBulkMappingOpen && (
+        <div className="dialog-overlay">
+          <div
+            className="dialog"
+            style={{
+              minWidth: "700px",
+              maxWidth: "95vw",
+              maxHeight: "80vh",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <h3>一括マッピング編集</h3>
+            {/* プロトコル選択 */}
+            <div
+              className="dialog-content"
+              style={{ flex: "none", paddingBottom: 0 }}
+            >
+              <div className="dialog-row">
+                <label>プロトコル:</label>
+                <select
+                  value={bulkProtocol}
+                  onChange={(e) => handleBulkProtocolChange(e.target.value)}
+                >
+                  {serverInstances.map((inst) => (
+                    <option key={inst.protocolType} value={inst.protocolType}>
+                      {inst.displayName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {/* テーブル本体 */}
+            <div
+              className="dialog-content"
+              style={{ flex: 1, overflowY: "auto", paddingTop: "8px" }}
+            >
+              {bulkRows.length === 0 ? (
+                <p style={{ color: "#888", textAlign: "center" }}>
+                  変数がありません
+                </p>
+              ) : isNodePublishingProtocol(bulkProtocol) ? (
+                /* OPC UA 系テーブル */
+                <table className="variable-table">
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", minWidth: "140px" }}>
+                        変数名
+                      </th>
+                      <th style={{ textAlign: "left", minWidth: "100px" }}>
+                        データ型
+                      </th>
+                      <th style={{ textAlign: "center", minWidth: "60px" }}>
+                        W数
+                      </th>
+                      <th style={{ textAlign: "center", minWidth: "80px" }}>
+                        公開する
+                      </th>
+                      <th style={{ minWidth: "130px" }}>アクセスモード</th>
+                      <th
+                        style={{
+                          minWidth: "100px",
+                          fontSize: "0.8em",
+                          color: "#888",
+                        }}
+                      >
+                        NodeID
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkRows.map((row) => (
+                      <tr key={row.variableId}>
+                        <td style={{ fontWeight: "bold" }}>
+                          {row.variableName}
+                        </td>
+                        <td style={{ fontSize: "0.85em", color: "#aaa" }}>
+                          {row.dataType}
+                        </td>
+                        <td style={{ textAlign: "center" }}>{row.wordCount}</td>
+                        <td style={{ textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={row.nodeEnabled}
+                            onChange={(e) =>
+                              handleBulkRowChange(row.variableId, {
+                                nodeEnabled: e.target.checked,
+                              })
+                            }
+                          />
+                        </td>
+                        <td>
+                          <select
+                            value={row.accessMode}
+                            disabled={!row.nodeEnabled}
+                            onChange={(e) =>
+                              handleBulkRowChange(row.variableId, {
+                                accessMode: e.target.value,
+                              })
+                            }
+                            style={{ width: "100%" }}
+                          >
+                            <option value="read">Read Only</option>
+                            <option value="write">Write Only</option>
+                            <option value="readwrite">Read / Write</option>
+                          </select>
+                        </td>
+                        <td style={{ fontSize: "0.8em", color: "#888" }}>
+                          {row.nodeEnabled ? `ns=1;s=${row.variableName}` : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                /* Modbus 系テーブル */
+                (() => {
+                  const conflictIds = findBulkRowConflicts(
+                    bulkRows,
+                    bulkProtocol,
+                  );
+                  return (
+                    <>
+                      <table className="variable-table">
+                        <thead>
+                          <tr>
+                            <th
+                              style={{ textAlign: "left", minWidth: "140px" }}
+                            >
+                              変数名
+                            </th>
+                            <th
+                              style={{ textAlign: "left", minWidth: "100px" }}
+                            >
+                              データ型
+                            </th>
+                            <th
+                              style={{ textAlign: "center", minWidth: "60px" }}
+                            >
+                              W数
+                            </th>
+                            <th style={{ minWidth: "140px" }}>メモリエリア</th>
+                            <th style={{ minWidth: "110px" }}>
+                              アドレス
+                              <span
+                                style={{
+                                  fontSize: "0.75em",
+                                  color: "#888",
+                                  marginLeft: "4px",
+                                }}
+                              >
+                                (空=削除)
+                              </span>
+                            </th>
+                            <th style={{ minWidth: "100px" }}>エンディアン</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkRows.map((row) => {
+                            const areas =
+                              memoryAreasByProtocol[bulkProtocol] || [];
+                            const oneOrigin = isOneOriginArea(
+                              bulkProtocol,
+                              row.memoryArea,
+                            );
+                            const hasConflict = conflictIds.has(row.variableId);
+                            return (
+                              <tr
+                                key={row.variableId}
+                                style={
+                                  hasConflict
+                                    ? { background: "rgba(255, 150, 0, 0.08)" }
+                                    : undefined
+                                }
+                              >
+                                <td style={{ fontWeight: "bold" }}>
+                                  {row.variableName}
+                                </td>
+                                <td
+                                  style={{ fontSize: "0.85em", color: "#aaa" }}
+                                >
+                                  {row.dataType}
+                                </td>
+                                <td style={{ textAlign: "center" }}>
+                                  {row.wordCount}
+                                </td>
+                                <td>
+                                  <select
+                                    value={row.memoryArea}
+                                    onChange={(e) =>
+                                      handleBulkAreaChange(
+                                        row.variableId,
+                                        e.target.value,
+                                      )
+                                    }
+                                    style={{ width: "100%" }}
+                                  >
+                                    {areas.map((a) => (
+                                      <option key={a.id} value={a.id}>
+                                        {a.displayName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td>
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                    }}
+                                  >
+                                    <input
+                                      type="number"
+                                      value={row.addressStr}
+                                      min={oneOrigin ? 1 : 0}
+                                      placeholder="未設定"
+                                      onChange={(e) =>
+                                        handleBulkRowChange(row.variableId, {
+                                          addressStr: e.target.value,
+                                        })
+                                      }
+                                      style={{
+                                        width: "80px",
+                                        ...(hasConflict
+                                          ? { borderColor: "#ffa500" }
+                                          : {}),
+                                      }}
+                                    />
+                                    {hasConflict && (
+                                      <span
+                                        title="アドレスが他の変数と重複しています"
+                                        style={{ color: "#ffa500" }}
+                                      >
+                                        ⚠
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
+                                  <select
+                                    value={row.endianness}
+                                    onChange={(e) =>
+                                      handleBulkRowChange(row.variableId, {
+                                        endianness: e.target.value,
+                                      })
+                                    }
+                                    style={{ width: "100%" }}
+                                  >
+                                    <option value="big">Big</option>
+                                    <option value="little">Little</option>
+                                  </select>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </>
+                  );
+                })()
+              )}
+            </div>
+            {!isNodePublishingProtocol(bulkProtocol) &&
+              (() => {
+                const conflictIds = findBulkRowConflicts(
+                  bulkRows,
+                  bulkProtocol,
+                );
+                return conflictIds.size > 0 ? (
+                  <div
+                    style={{
+                      padding: "6px 16px",
+                      background: "rgba(255, 150, 0, 0.15)",
+                      borderTop: "1px solid rgba(255, 150, 0, 0.4)",
+                      color: "#ffa500",
+                      fontSize: "0.85em",
+                      flexShrink: 0,
+                    }}
+                  >
+                    ⚠ アドレスが重複している変数が {conflictIds.size} 件あります
+                  </div>
+                ) : null;
+              })()}
+            <div className="dialog-buttons">
+              <button
+                onClick={() => setIsBulkMappingOpen(false)}
+                className="btn-secondary"
+                disabled={bulkIsSaving}
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleBulkMappingSave}
+                className="btn-primary"
+                disabled={bulkIsSaving}
+              >
+                {bulkIsSaving ? "保存中..." : "一括保存"}
+              </button>
             </div>
           </div>
         </div>
@@ -1468,9 +2403,20 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       {/* 構造体型管理ダイアログ */}
       {isStructTypeDialogOpen && (
         <div className="dialog-overlay">
-          <div className="dialog" style={{ minWidth: '500px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+          <div
+            className="dialog"
+            style={{
+              minWidth: "500px",
+              maxHeight: "80vh",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
             <h3>構造体型管理</h3>
-            <div className="dialog-content" style={{ flex: 1, overflowY: 'auto' }}>
+            <div
+              className="dialog-content"
+              style={{ flex: 1, overflowY: "auto" }}
+            >
               {/* 既存の構造体型一覧 */}
               {structTypes.length > 0 && (
                 <div className="dialog-section">
@@ -1488,13 +2434,24 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       {structTypes.map((st) => (
                         <tr key={st.name}>
                           <td>{st.name}</td>
-                          <td>{st.fields.map(f => `${f.name}:${f.dataType}`).join(', ')}</td>
+                          <td>
+                            {st.fields
+                              .map((f) => `${f.name}:${f.dataType}`)
+                              .join(", ")}
+                          </td>
                           <td>{st.wordCount}</td>
                           <td>
-                            <button onClick={() => handleEditStructType(st)} className="btn-small btn-secondary" style={{ marginRight: '0.5rem' }}>
+                            <button
+                              onClick={() => handleEditStructType(st)}
+                              className="btn-small btn-secondary"
+                              style={{ marginRight: "0.5rem" }}
+                            >
                               編集
                             </button>
-                            <button onClick={() => handleDeleteStructType(st.name)} className="btn-small btn-danger">
+                            <button
+                              onClick={() => handleDeleteStructType(st.name)}
+                              className="btn-small btn-danger"
+                            >
                               削除
                             </button>
                           </td>
@@ -1506,7 +2463,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               )}
 
               {/* 新規構造体型登録 */}
-              <h4 className="dialog-section-title">{editingStructTypeName ? '構造体型を編集' : '新規構造体型'}</h4>
+              <h4 className="dialog-section-title">
+                {editingStructTypeName ? "構造体型を編集" : "新規構造体型"}
+              </h4>
               <div className="dialog-row">
                 <label>型名:</label>
                 <input
@@ -1521,10 +2480,20 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                 <label>フィールド:</label>
                 {structTypeFields.map((field, index) => (
                   <div key={index} className="dialog-field-editor">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: "0.5rem",
+                      }}
+                    >
                       <strong>フィールド {index + 1}</strong>
                       <button
-                        onClick={() => setStructTypeFields(structTypeFields.filter((_, i) => i !== index))}
+                        onClick={() =>
+                          setStructTypeFields(
+                            structTypeFields.filter((_, i) => i !== index),
+                          )
+                        }
                         className="btn-small btn-danger"
                         disabled={structTypeFields.length <= 1}
                       >
@@ -1539,7 +2508,10 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                         value={field.name}
                         onChange={(e) => {
                           const updated = [...structTypeFields];
-                          updated[index] = { ...updated[index], name: e.target.value };
+                          updated[index] = {
+                            ...updated[index],
+                            name: e.target.value,
+                          };
                           setStructTypeFields(updated);
                         }}
                         placeholder="フィールド名"
@@ -1552,38 +2524,53 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                         value={field.category}
                         onChange={(e) => {
                           const updated = [...structTypeFields];
-                          const cat = e.target.value as 'scalar' | 'struct' | 'array';
+                          const cat = e.target.value as
+                            | "scalar"
+                            | "struct"
+                            | "array";
                           updated[index] = {
                             ...updated[index],
                             category: cat,
-                            dataType: cat === 'struct' ? (structTypes.length > 0 ? structTypes[0].name : '') : 'INT',
+                            dataType:
+                              cat === "struct"
+                                ? structTypes.length > 0
+                                  ? structTypes[0].name
+                                  : ""
+                                : "INT",
                           };
                           setStructTypeFields(updated);
                         }}
                       >
                         <option value="scalar">スカラー</option>
-                        {structTypes.length > 0 && <option value="struct">構造体</option>}
+                        {structTypes.length > 0 && (
+                          <option value="struct">構造体</option>
+                        )}
                         <option value="array">配列</option>
                       </select>
                     </div>
 
-                    {field.category === 'scalar' && (
+                    {field.category === "scalar" && (
                       <div className="dialog-row">
                         <label>データ型:</label>
                         <select
                           value={field.dataType}
                           onChange={(e) => {
                             const updated = [...structTypeFields];
-                            updated[index] = { ...updated[index], dataType: e.target.value };
+                            updated[index] = {
+                              ...updated[index],
+                              dataType: e.target.value,
+                            };
                             setStructTypeFields(updated);
                           }}
                         >
                           {dataTypes.map((t) => (
-                            <option key={t.id} value={t.id}>{t.displayName}</option>
+                            <option key={t.id} value={t.id}>
+                              {t.displayName}
+                            </option>
                           ))}
                           <option value="STRING">STRING</option>
                         </select>
-                        {field.dataType === 'STRING' && (
+                        {field.dataType === "STRING" && (
                           <>
                             <label>バイト長:</label>
                             <input
@@ -1591,7 +2578,10 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                               value={field.stringLength}
                               onChange={(e) => {
                                 const updated = [...structTypeFields];
-                                updated[index] = { ...updated[index], stringLength: parseInt(e.target.value) || 1 };
+                                updated[index] = {
+                                  ...updated[index],
+                                  stringLength: parseInt(e.target.value) || 1,
+                                };
                                 setStructTypeFields(updated);
                               }}
                               min={1}
@@ -1602,27 +2592,32 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       </div>
                     )}
 
-                    {field.category === 'struct' && (
+                    {field.category === "struct" && (
                       <div className="dialog-row">
                         <label>構造体型:</label>
                         <select
                           value={field.dataType}
                           onChange={(e) => {
                             const updated = [...structTypeFields];
-                            updated[index] = { ...updated[index], dataType: e.target.value };
+                            updated[index] = {
+                              ...updated[index],
+                              dataType: e.target.value,
+                            };
                             setStructTypeFields(updated);
                           }}
                         >
                           {structTypes
-                            .filter(st => st.name !== structTypeName.trim())
+                            .filter((st) => st.name !== structTypeName.trim())
                             .map((st) => (
-                              <option key={st.name} value={st.name}>{st.name} ({st.wordCount}W)</option>
+                              <option key={st.name} value={st.name}>
+                                {st.name} ({st.wordCount}W)
+                              </option>
                             ))}
                         </select>
                       </div>
                     )}
 
-                    {field.category === 'array' && (
+                    {field.category === "array" && (
                       <>
                         <div className="dialog-row">
                           <label>要素カテゴリ:</label>
@@ -1630,17 +2625,26 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                             value={field.arrayElemCategory}
                             onChange={(e) => {
                               const updated = [...structTypeFields];
-                              const elemCat = e.target.value as 'scalar' | 'struct';
+                              const elemCat = e.target.value as
+                                | "scalar"
+                                | "struct";
                               updated[index] = {
                                 ...updated[index],
                                 arrayElemCategory: elemCat,
-                                arrayElemType: elemCat === 'struct' ? (structTypes.length > 0 ? structTypes[0].name : '') : 'INT',
+                                arrayElemType:
+                                  elemCat === "struct"
+                                    ? structTypes.length > 0
+                                      ? structTypes[0].name
+                                      : ""
+                                    : "INT",
                               };
                               setStructTypeFields(updated);
                             }}
                           >
                             <option value="scalar">スカラー</option>
-                            {structTypes.length > 0 && <option value="struct">構造体</option>}
+                            {structTypes.length > 0 && (
+                              <option value="struct">構造体</option>
+                            )}
                           </select>
                         </div>
 
@@ -1650,40 +2654,55 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                             value={field.arrayElemType}
                             onChange={(e) => {
                               const updated = [...structTypeFields];
-                              updated[index] = { ...updated[index], arrayElemType: e.target.value };
+                              updated[index] = {
+                                ...updated[index],
+                                arrayElemType: e.target.value,
+                              };
                               setStructTypeFields(updated);
                             }}
                           >
-                            {field.arrayElemCategory === 'scalar'
-                              ? <>
-                                  {dataTypes.map((t) => (
-                                    <option key={t.id} value={t.id}>{t.displayName}</option>
-                                  ))}
-                                  <option value="STRING">STRING</option>
-                                </>
-                              : structTypes
-                                  .filter(st => st.name !== structTypeName.trim())
-                                  .map((st) => (
-                                    <option key={st.name} value={st.name}>{st.name} ({st.wordCount}W)</option>
-                                  ))
-                            }
+                            {field.arrayElemCategory === "scalar" ? (
+                              <>
+                                {dataTypes.map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.displayName}
+                                  </option>
+                                ))}
+                                <option value="STRING">STRING</option>
+                              </>
+                            ) : (
+                              structTypes
+                                .filter(
+                                  (st) => st.name !== structTypeName.trim(),
+                                )
+                                .map((st) => (
+                                  <option key={st.name} value={st.name}>
+                                    {st.name} ({st.wordCount}W)
+                                  </option>
+                                ))
+                            )}
                           </select>
-                          {field.arrayElemCategory === 'scalar' && field.arrayElemType === 'STRING' && (
-                            <>
-                              <label>バイト長:</label>
-                              <input
-                                type="number"
-                                value={field.stringLength}
-                                onChange={(e) => {
-                                  const updated = [...structTypeFields];
-                                  updated[index] = { ...updated[index], stringLength: parseInt(e.target.value) || 1 };
-                                  setStructTypeFields(updated);
-                                }}
-                                min={1}
-                                max={256}
-                              />
-                            </>
-                          )}
+                          {field.arrayElemCategory === "scalar" &&
+                            field.arrayElemType === "STRING" && (
+                              <>
+                                <label>バイト長:</label>
+                                <input
+                                  type="number"
+                                  value={field.stringLength}
+                                  onChange={(e) => {
+                                    const updated = [...structTypeFields];
+                                    updated[index] = {
+                                      ...updated[index],
+                                      stringLength:
+                                        parseInt(e.target.value) || 1,
+                                    };
+                                    setStructTypeFields(updated);
+                                  }}
+                                  min={1}
+                                  max={256}
+                                />
+                              </>
+                            )}
                         </div>
 
                         <div className="dialog-row">
@@ -1693,7 +2712,10 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                             value={field.arraySize}
                             onChange={(e) => {
                               const updated = [...structTypeFields];
-                              updated[index] = { ...updated[index], arraySize: parseInt(e.target.value) || 1 };
+                              updated[index] = {
+                                ...updated[index],
+                                arraySize: parseInt(e.target.value) || 1,
+                              };
                               setStructTypeFields(updated);
                             }}
                             min={1}
@@ -1705,22 +2727,55 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                   </div>
                 ))}
                 <button
-                  onClick={() => setStructTypeFields([...structTypeFields, { name: '', category: 'scalar', dataType: 'INT', stringLength: 20, arrayElemType: 'INT', arrayElemCategory: 'scalar', arraySize: 10 }])}
+                  onClick={() =>
+                    setStructTypeFields([
+                      ...structTypeFields,
+                      {
+                        name: "",
+                        category: "scalar",
+                        dataType: "INT",
+                        stringLength: 20,
+                        arrayElemType: "INT",
+                        arrayElemCategory: "scalar",
+                        arraySize: 10,
+                      },
+                    ])
+                  }
                   className="btn-secondary"
-                  style={{ marginTop: '0.5rem' }}
+                  style={{ marginTop: "0.5rem" }}
                 >
                   + フィールド追加
                 </button>
               </div>
             </div>
             <div className="dialog-buttons">
-              <button onClick={() => {
-                setIsStructTypeDialogOpen(false);
-                setEditingStructTypeName(null);
-                setStructTypeName('');
-                setStructTypeFields([{ name: '', category: 'scalar', dataType: 'INT', stringLength: 20, arrayElemType: 'INT', arrayElemCategory: 'scalar', arraySize: 10 }]);
-              }} className="btn-secondary">閉じる</button>
-              <button onClick={handleRegisterStructType} className="btn-primary">{editingStructTypeName ? '更新' : '型を登録'}</button>
+              <button
+                onClick={() => {
+                  setIsStructTypeDialogOpen(false);
+                  setEditingStructTypeName(null);
+                  setStructTypeName("");
+                  setStructTypeFields([
+                    {
+                      name: "",
+                      category: "scalar",
+                      dataType: "INT",
+                      stringLength: 20,
+                      arrayElemType: "INT",
+                      arrayElemCategory: "scalar",
+                      arraySize: 10,
+                    },
+                  ]);
+                }}
+                className="btn-secondary"
+              >
+                閉じる
+              </button>
+              <button
+                onClick={handleRegisterStructType}
+                className="btn-primary"
+              >
+                {editingStructTypeName ? "更新" : "型を登録"}
+              </button>
             </div>
           </div>
         </div>

@@ -178,6 +178,12 @@ IEC 61131-3準拠の変数管理機能。
   - **マッピング列の表示**: Modbus マッピング（`protocol:area:addr`）と OPC UA 公開設定（`opcua(R/W)` 等）をカンマ区切りで両方表示
   - **ダイアログを開く際に `loadServerInstancesAndAreas()` を再実行**: マウント後に追加されたサーバーも「プロトコル公開設定」セクションに反映
   - `loadServerInstancesAndAreas` は `useCallback` で定義し、マウント時・ダイアログオープン時の両方から呼び出す
+- **一括マッピング編集**: ツールバーの「一括マッピング編集」ボタンで全変数のマッピングをテーブル形式で一括設定
+  - プロトコルを選択すると全変数が一覧表示され、まとめて編集・保存できる
+  - **Modbus系**: メモリエリア / アドレス（空欄=そのプロトコルのマッピング削除） / エンディアンをテーブル表示
+  - **OPC UA系** (`SupportsNodePublishing=true`): 公開チェック / アクセスモード / NodeID をテーブル表示
+  - アドレス重複検出: `findBulkRowConflicts()` で同じメモリエリア内のアドレス範囲重複を検出し、該当行をオレンジハイライト・入力欄のボーダーをオレンジに・⚠アイコン表示。重複件数バナーをダイアログ下部（スクロール外・ボタン上）に固定表示
+  - 保存時に他プロトコルのマッピングを保持（`variable.mappings.filter(m => m.protocolType !== bulkProtocol)`）
 - **OPC UA 公開設定表示**: `formatNodePublishings()` で有効な NodePublishing を `opcua(RO)` / `opcua(WO)` / `opcua(R/W)` 形式にフォーマットして変数一覧の「マッピング」列に追加表示
 - **構造体型管理**: 構造体型の登録・編集・削除機能
   - 編集時は既存の定義を読み込んでフォームに展開
@@ -333,6 +339,7 @@ JavaScript（goja）でPLC動作を記述。
 - **インラインスタイル削除**: すべての `<select>` と `<input>` からインラインスタイルを削除
 - **スクロール対応**: ダイアログ全体に `maxHeight: '80vh'` を設定し、コンテンツ領域で `overflowY: 'auto'`
 - **flexboxレイアウト**: ダイアログ全体を `display: flex, flexDirection: 'column'` でレイアウト
+- **テーブル内コンポーネント**: ダイアログ内の `variable-table` の `td` に含まれる `select` / `input` は `.dialog-row` が適用されないため、`App.css` の `.dialog .variable-table td select/input` セレクタで同等のスタイル（`padding: 0.5rem`, `border`, `border-radius`, `background`, `color`, `font-size`, `width: 100%`, `box-sizing: border-box`）を別途定義している
 
 ### 値編集ダイアログ
 
@@ -343,6 +350,7 @@ JavaScript（goja）でPLC動作を記述。
 
 - **`findMappingConflicts(mapping)`** (`VariableView.tsx`): マッピングダイアログで各行の競合チェック。`getWordCount` でワード数を計算し、アドレス範囲の重複をチェック
 - **`getVariableMappingConflicts(variable)`** (`VariableView.tsx`): 変数一覧テーブルで各変数の競合チェック。保存済みマッピングをすべてスキャン
+- **`findBulkRowConflicts(rows, protocolType)`** (`VariableView.tsx`): 一括マッピング編集ダイアログ内のアドレス重複を検出。`addressStr` が入力されている行の0ベースアドレス範囲（`addr0 〜 addr0+wordCount-1`）を計算し、同じメモリエリア内で重なるペアを返す。空欄行は対象外。競合バナーはスクロール外（`dialog-buttons` の直前）に固定表示し、テーブルが縦にスクロールしてもバナーが見切れないようにする
 - **未定義動作の注意**: 同一レジスタへの複数変数マッピングはサポート対象外。書き込みは last-writer-wins、DataStore → Variable の同期は Go マップの反復順に依存して非決定的
 
 ### 構造体型管理ダイアログ

@@ -416,6 +416,27 @@ button:disabled {
   border-color: #e94560;
 }
 
+/* ダイアログ内 variable-table の select / input スタイルを dialog-row に統一 */
+.dialog .variable-table td select,
+.dialog .variable-table td input[type="number"],
+.dialog .variable-table td input[type="text"] {
+  padding: 0.5rem;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #eaeaea;
+  font-size: 0.875rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dialog .variable-table td select:focus,
+.dialog .variable-table td input[type="number"]:focus,
+.dialog .variable-table td input[type="text"]:focus {
+  outline: none;
+  border-color: #e94560;
+}
+
 .dialog-value {
   font-family: 'Consolas', 'Monaco', monospace;
   color: #eaeaea;
