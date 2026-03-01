@@ -3,6 +3,7 @@ import {
   GetVariables,
   GetDataTypes,
   CreateVariable,
+  UpdateVariable,
   UpdateVariableValue,
   DeleteVariable,
   UpdateVariableMappings,
@@ -93,6 +94,18 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   const [newTypeCategory, setNewTypeCategory] = useState<
     "scalar" | "array" | "struct"
   >("scalar");
+
+  // 変数メタデータ編集ダイアログ
+  const [isMetaEditDialogOpen, setIsMetaEditDialogOpen] = useState(false);
+  const [metaEditVariableId, setMetaEditVariableId] = useState("");
+  const [metaEditName, setMetaEditName] = useState("");
+  const [metaEditDataType, setMetaEditDataType] = useState("INT");
+  const [metaEditTypeCategory, setMetaEditTypeCategory] = useState<
+    "scalar" | "array" | "struct"
+  >("scalar");
+  const [metaEditArrayElemType, setMetaEditArrayElemType] = useState("INT");
+  const [metaEditArraySize, setMetaEditArraySize] = useState(10);
+  const [metaEditStringLength, setMetaEditStringLength] = useState(20);
 
   // 構造体型定義フォーム
   const [structTypeName, setStructTypeName] = useState("");
@@ -245,6 +258,8 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         ]);
       } else if (isMappingDialogOpen) {
         setIsMappingDialogOpen(false);
+      } else if (isMetaEditDialogOpen) {
+        setIsMetaEditDialogOpen(false);
       } else if (isEditDialogOpen) {
         setIsEditDialogOpen(false);
         setEditData(null);
@@ -259,6 +274,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     isAddDialogOpen,
     isEditDialogOpen,
     isMappingDialogOpen,
+    isMetaEditDialogOpen,
     isStructTypeDialogOpen,
     isBulkMappingOpen,
   ]);
@@ -794,6 +810,69 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     } catch (e) {
       console.error("Failed to create variable:", e);
       alert("変数の作成に失敗しました: " + e);
+    }
+  };
+
+  // 変数メタデータ編集ダイアログを開く
+  const handleOpenMetaEditDialog = (v: application.VariableDTO) => {
+    setMetaEditVariableId(v.id);
+    setMetaEditName(v.name);
+
+    const dt = v.dataType;
+    if (dt.startsWith("ARRAY[")) {
+      const arrMatch = dt.match(/^ARRAY\[(.+);(\d+)\]$/);
+      if (arrMatch) {
+        const elemPart = arrMatch[1];
+        const sizeVal = parseInt(arrMatch[2]);
+        setMetaEditTypeCategory("array");
+        setMetaEditArraySize(sizeVal);
+        if (elemPart.startsWith("STRING[")) {
+          const sLen = elemPart.match(/^STRING\[(\d+)\]$/);
+          setMetaEditArrayElemType("STRING");
+          setMetaEditStringLength(sLen ? parseInt(sLen[1]) : 20);
+        } else {
+          setMetaEditArrayElemType(elemPart);
+        }
+      }
+    } else if (dt.startsWith("STRING[")) {
+      const sLen = dt.match(/^STRING\[(\d+)\]$/);
+      setMetaEditTypeCategory("scalar");
+      setMetaEditDataType("STRING");
+      setMetaEditStringLength(sLen ? parseInt(sLen[1]) : 20);
+    } else if (isStructType(dt)) {
+      setMetaEditTypeCategory("struct");
+      setMetaEditDataType(dt);
+    } else {
+      setMetaEditTypeCategory("scalar");
+      setMetaEditDataType(dt);
+    }
+
+    setIsMetaEditDialogOpen(true);
+  };
+
+  // 変数メタデータ（名前・データタイプ）を保存する
+  const handleSaveMetaEdit = async () => {
+    if (!metaEditName.trim()) return;
+    try {
+      let dataType = metaEditDataType;
+      if (metaEditTypeCategory === "array") {
+        const elemType =
+          metaEditArrayElemType === "STRING"
+            ? `STRING[${metaEditStringLength}]`
+            : metaEditArrayElemType;
+        dataType = `ARRAY[${elemType};${metaEditArraySize}]`;
+      } else if (
+        metaEditTypeCategory === "scalar" &&
+        metaEditDataType === "STRING"
+      ) {
+        dataType = `STRING[${metaEditStringLength}]`;
+      }
+      await UpdateVariable(metaEditVariableId, metaEditName.trim(), dataType);
+      await loadVariables();
+      setIsMetaEditDialogOpen(false);
+    } catch (e) {
+      console.error("Failed to update variable:", e);
+      alert("変数の更新に失敗しました: " + e);
     }
   };
 
@@ -1657,6 +1736,12 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                 {row.depth === 0 && (
                   <div>
                     <button
+                      onClick={() => handleOpenMetaEditDialog(row.variable)}
+                      className="btn-small btn-secondary"
+                    >
+                      編集
+                    </button>
+                    <button
                       onClick={() => handleMappingClick(row.variable)}
                       className="btn-small btn-secondary"
                     >
@@ -1850,6 +1935,177 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               </button>
               <button onClick={handleAddVariable} className="btn-primary">
                 追加
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 変数メタデータ編集ダイアログ（名前・データタイプ変更） */}
+      {isMetaEditDialogOpen && (
+        <div className="dialog-overlay">
+          <div className="dialog">
+            <h3>変数を編集</h3>
+            <div className="dialog-content">
+              <div className="dialog-row">
+                <label>変数名:</label>
+                <input
+                  type="text"
+                  value={metaEditName}
+                  onChange={(e) => setMetaEditName(e.target.value)}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveMetaEdit();
+                  }}
+                />
+              </div>
+              <div className="dialog-row">
+                <label>型カテゴリ:</label>
+                <select
+                  value={metaEditTypeCategory}
+                  onChange={(e) => {
+                    const cat = e.target.value as
+                      | "scalar"
+                      | "array"
+                      | "struct";
+                    setMetaEditTypeCategory(cat);
+                    if (cat === "scalar") setMetaEditDataType("INT");
+                    else if (cat === "struct" && structTypes.length > 0)
+                      setMetaEditDataType(structTypes[0].name);
+                  }}
+                >
+                  <option value="scalar">スカラー型</option>
+                  <option value="array">配列型</option>
+                  {structTypes.length > 0 && (
+                    <option value="struct">構造体型</option>
+                  )}
+                </select>
+              </div>
+
+              {metaEditTypeCategory === "scalar" && (
+                <>
+                  <div className="dialog-row">
+                    <label>データ型:</label>
+                    <select
+                      value={metaEditDataType}
+                      onChange={(e) => setMetaEditDataType(e.target.value)}
+                    >
+                      {dataTypes.map((t) => (
+                        <option key={t.id} value={t.id} title={t.description}>
+                          {t.displayName} ({t.description})
+                        </option>
+                      ))}
+                      <option value="STRING">STRING (文字列)</option>
+                    </select>
+                  </div>
+                  {metaEditDataType === "STRING" && (
+                    <div className="dialog-row">
+                      <label>バイト長:</label>
+                      <input
+                        type="number"
+                        value={metaEditStringLength}
+                        onChange={(e) =>
+                          setMetaEditStringLength(
+                            parseInt(e.target.value) || 1,
+                          )
+                        }
+                        min={1}
+                        max={256}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {metaEditTypeCategory === "array" && (
+                <>
+                  <div className="dialog-row">
+                    <label>要素型:</label>
+                    <select
+                      value={metaEditArrayElemType}
+                      onChange={(e) =>
+                        setMetaEditArrayElemType(e.target.value)
+                      }
+                    >
+                      <optgroup label="スカラー型">
+                        {dataTypes.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.displayName}
+                          </option>
+                        ))}
+                        <option value="STRING">STRING</option>
+                      </optgroup>
+                      {structTypes.length > 0 && (
+                        <optgroup label="構造体型">
+                          {structTypes.map((st) => (
+                            <option key={st.name} value={st.name}>
+                              {st.name} ({st.wordCount}W)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+                  {metaEditArrayElemType === "STRING" && (
+                    <div className="dialog-row">
+                      <label>バイト長:</label>
+                      <input
+                        type="number"
+                        value={metaEditStringLength}
+                        onChange={(e) =>
+                          setMetaEditStringLength(
+                            parseInt(e.target.value) || 1,
+                          )
+                        }
+                        min={1}
+                        max={256}
+                      />
+                    </div>
+                  )}
+                  <div className="dialog-row">
+                    <label>要素数:</label>
+                    <input
+                      type="number"
+                      value={metaEditArraySize}
+                      onChange={(e) =>
+                        setMetaEditArraySize(parseInt(e.target.value) || 1)
+                      }
+                      min={1}
+                      max={1000}
+                    />
+                  </div>
+                </>
+              )}
+
+              {metaEditTypeCategory === "struct" && (
+                <div className="dialog-row">
+                  <label>構造体型:</label>
+                  <select
+                    value={metaEditDataType}
+                    onChange={(e) => setMetaEditDataType(e.target.value)}
+                  >
+                    {structTypes.map((st) => (
+                      <option key={st.name} value={st.name}>
+                        {st.name} ({st.wordCount}ワード)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <p style={{ fontSize: "0.85em", color: "#aaa", margin: "8px 0 0" }}>
+                ※ データタイプを変更すると値はデフォルト値にリセットされます
+              </p>
+            </div>
+            <div className="dialog-buttons">
+              <button
+                onClick={() => setIsMetaEditDialogOpen(false)}
+                className="btn-secondary"
+              >
+                キャンセル
+              </button>
+              <button onClick={handleSaveMetaEdit} className="btn-primary">
+                保存
               </button>
             </div>
           </div>

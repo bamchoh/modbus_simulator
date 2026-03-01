@@ -348,6 +348,11 @@ func (a *App) DeleteVariable(id string) error {
 	return a.plcService.DeleteVariable(id)
 }
 
+// UpdateVariable は変数の名前とデータタイプを更新する
+func (a *App) UpdateVariable(id, name, dataType string) (*application.VariableDTO, error) {
+	return a.plcService.UpdateVariable(id, name, dataType)
+}
+
 // GetDataTypes はデータ型一覧を返す
 func (a *App) GetDataTypes() *application.DataTypesDTO {
 	return a.plcService.GetDataTypes()

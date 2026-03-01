@@ -1344,6 +1344,28 @@ func (s *PLCService) DeleteVariable(id string) error {
 	return s.variableStore.DeleteVariable(id)
 }
 
+// UpdateVariable は変数の名前とデータタイプを更新する
+// データタイプが変更された場合は値をデフォルト値にリセットする
+func (s *PLCService) UpdateVariable(id, name, dataType string) (*VariableDTO, error) {
+	v, err := s.variableStore.UpdateMetadata(id, name, variable.DataType(dataType))
+	if err != nil {
+		return nil, err
+	}
+
+	// NodePublishingAware なサーバー全てに変更通知を送信
+	s.mu.RLock()
+	for _, inst := range s.servers {
+		if inst.server != nil {
+			if aware, ok := inst.server.(protocol.NodePublishingAware); ok {
+				aware.OnNodePublishingUpdated()
+			}
+		}
+	}
+	s.mu.RUnlock()
+
+	return s.variableToDTO(v), nil
+}
+
 // GetVariableMappings は変数のマッピングを返す
 func (s *PLCService) GetVariableMappings(id string) ([]ProtocolMappingDTO, error) {
 	mappings := s.variableStore.GetMappings(id)

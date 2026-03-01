@@ -194,6 +194,88 @@ func (s *VariableStore) triggerOnChange() {
 	}
 }
 
+// generateDefaultValue はデータ型のデフォルト値を生成する（ロック済み前提）
+func (s *VariableStore) generateDefaultValue(dataType DataType) (interface{}, error) {
+	if dataType.IsValid() {
+		return dataType.DefaultValue(), nil
+	} else if dataType.IsArrayType() {
+		elemType, size, err := ParseArrayType(dataType)
+		if err != nil {
+			return nil, err
+		}
+		if !elemType.IsValid() && !elemType.IsStructType() {
+			return nil, fmt.Errorf("invalid element type: %s", elemType)
+		}
+		arr := make([]interface{}, size)
+		for i := range arr {
+			if elemType.IsStructType() {
+				elemDef, err := s.ResolveStructDef(string(elemType))
+				if err != nil {
+					return nil, fmt.Errorf("unknown struct element type: %s", elemType)
+				}
+				arr[i] = elemDef.DefaultValueWithResolver(s)
+			} else {
+				arr[i] = elemType.DefaultValue()
+			}
+		}
+		return arr, nil
+	} else if dataType.IsStructType() {
+		st, ok := s.structTypes[string(dataType)]
+		if !ok {
+			return nil, fmt.Errorf("struct type %s not found", dataType)
+		}
+		return st.DefaultValueWithResolver(s), nil
+	}
+	return nil, fmt.Errorf("invalid data type: %s", dataType)
+}
+
+// UpdateMetadata は変数の名前とデータタイプを更新する
+// データタイプが変更された場合は値をデフォルト値にリセットする
+func (s *VariableStore) UpdateMetadata(id string, newName string, newDataType DataType) (*Variable, error) {
+	s.mu.Lock()
+
+	v, exists := s.variables[id]
+	if !exists {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("variable %s not found", id)
+	}
+
+	// 名前変更の場合は重複チェック
+	if newName != v.Name {
+		if _, nameExists := s.byName[newName]; nameExists {
+			s.mu.Unlock()
+			return nil, fmt.Errorf("variable %s already exists", newName)
+		}
+		delete(s.byName, v.Name)
+		v.Name = newName
+		s.byName[newName] = v
+	}
+
+	// データタイプ変更の場合は値をデフォルト値にリセット
+	if newDataType != v.DataType {
+		newValue, err := s.generateDefaultValue(newDataType)
+		if err != nil {
+			s.mu.Unlock()
+			return nil, fmt.Errorf("failed to generate default value for %s: %w", newDataType, err)
+		}
+		v.DataType = newDataType
+		v.Value = newValue
+	}
+
+	mappings := s.getMappingsCopy(id)
+	listeners := make([]ChangeListener, len(s.listeners))
+	copy(listeners, s.listeners)
+	s.mu.Unlock()
+
+	// ロック外でリスナーに通知
+	for _, l := range listeners {
+		l.OnVariableChanged(v, mappings)
+	}
+
+	go s.triggerOnChange()
+	return v.Clone(), nil
+}
+
 // CreateVariable は新しい変数を作成する
 func (s *VariableStore) CreateVariable(name string, dataType DataType, initialValue interface{}) (*Variable, error) {
 	s.mu.Lock()

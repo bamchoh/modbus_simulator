@@ -96,6 +96,8 @@ export function UpdateScript(arg1:string,arg2:string,arg3:string,arg4:number):Pr
 
 export function UpdateServerConfig(arg1:application.ServerConfigDTO):Promise<void>;
 
+export function UpdateVariable(arg1:string,arg2:string,arg3:string):Promise<application.VariableDTO>;
+
 export function UpdateVariableMappings(arg1:string,arg2:Array<application.ProtocolMappingDTO>):Promise<void>;
 
 export function UpdateVariableNodePublishing(arg1:string,arg2:string,arg3:application.NodePublishingDTO):Promise<void>;
