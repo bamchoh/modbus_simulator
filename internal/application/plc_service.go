@@ -840,11 +840,6 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 			settings = inst.factory.ConfigToMap(inst.config)
 		}
 
-		var memorySnapshot map[string]interface{}
-		if inst.dataStore != nil {
-			memorySnapshot = inst.dataStore.Snapshot()
-		}
-
 		var unitIDSettings *UnitIDSettingsDTO
 		caps := inst.factory.GetProtocolCapabilities()
 		if caps.SupportsUnitID {
@@ -869,7 +864,6 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 			ProtocolType:   string(inst.protocolType),
 			Variant:        inst.variant,
 			Settings:       settings,
-			MemorySnapshot: memorySnapshot,
 			UnitIDSettings: unitIDSettings,
 		})
 	}
@@ -900,7 +894,6 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 	}
 
 	return &ProjectDataDTO{
-		Version:         3,
 		Servers:         servers,
 		Scripts:         scripts,
 		MonitoringItems: monitoringItems,
@@ -947,67 +940,19 @@ func (s *PLCService) ImportProject(data *ProjectDataDTO) error {
 		}
 	}
 
-	if data.Version >= 3 && len(data.Servers) > 0 {
-		// Version 3以降: Serversフィールドを使用
-		for _, snap := range data.Servers {
-			s.mu.Unlock()
-			err := s.AddServer(snap.ProtocolType, snap.Variant)
-			s.mu.Lock()
-			if err != nil {
-				return err
-			}
-
-			inst := s.servers[protocol.ProtocolType(snap.ProtocolType)]
-
-			// 設定を更新
-			if snap.Settings != nil && inst.factory != nil {
-				newConfig, err := inst.factory.MapToConfig(snap.Variant, snap.Settings)
-				if err == nil {
-					if err := inst.server.UpdateConfig(newConfig); err == nil {
-						inst.config = newConfig
-					}
-				}
-			}
-
-			// メモリデータを復元
-			if snap.MemorySnapshot != nil && inst.dataStore != nil {
-				inst.dataStore.Restore(snap.MemorySnapshot)
-			}
-
-			// UnitID設定を復元
-			if snap.UnitIDSettings != nil {
-				type unitIDSupporter interface {
-					SetDisabledUnitIDs(ids []uint8)
-				}
-				if us, ok := inst.server.(unitIDSupporter); ok {
-					uint8Ids := make([]uint8, len(snap.UnitIDSettings.DisabledIDs))
-					for i, id := range snap.UnitIDSettings.DisabledIDs {
-						uint8Ids[i] = uint8(id)
-					}
-					us.SetDisabledUnitIDs(uint8Ids)
-				}
-			}
-		}
-	} else {
-		// Version <= 2 後方互換
-		protocolType := data.ProtocolType
-		variant := data.Variant
-		if protocolType == "" {
-			protocolType = "modbus-tcp"
-			variant = "tcp"
-		}
-
+	for _, snap := range data.Servers {
 		s.mu.Unlock()
-		err := s.AddServer(protocolType, variant)
+		err := s.AddServer(snap.ProtocolType, snap.Variant)
 		s.mu.Lock()
 		if err != nil {
 			return err
 		}
 
-		inst := s.servers[protocol.ProtocolType(protocolType)]
+		inst := s.servers[protocol.ProtocolType(snap.ProtocolType)]
 
-		if data.Settings != nil && inst.factory != nil {
-			newConfig, err := inst.factory.MapToConfig(variant, data.Settings)
+		// 設定を更新
+		if snap.Settings != nil && inst.factory != nil {
+			newConfig, err := inst.factory.MapToConfig(snap.Variant, snap.Settings)
 			if err == nil {
 				if err := inst.server.UpdateConfig(newConfig); err == nil {
 					inst.config = newConfig
@@ -1015,17 +960,14 @@ func (s *PLCService) ImportProject(data *ProjectDataDTO) error {
 			}
 		}
 
-		if data.MemorySnapshot != nil && inst.dataStore != nil {
-			inst.dataStore.Restore(data.MemorySnapshot)
-		}
-
-		if data.UnitIDSettings != nil {
+		// UnitID設定を復元
+		if snap.UnitIDSettings != nil {
 			type unitIDSupporter interface {
 				SetDisabledUnitIDs(ids []uint8)
 			}
 			if us, ok := inst.server.(unitIDSupporter); ok {
-				uint8Ids := make([]uint8, len(data.UnitIDSettings.DisabledIDs))
-				for i, id := range data.UnitIDSettings.DisabledIDs {
+				uint8Ids := make([]uint8, len(snap.UnitIDSettings.DisabledIDs))
+				for i, id := range snap.UnitIDSettings.DisabledIDs {
 					uint8Ids[i] = uint8(id)
 				}
 				us.SetDisabledUnitIDs(uint8Ids)

@@ -145,7 +145,6 @@ type ServerSnapshotDTO struct {
 	ProtocolType   string                 `json:"protocolType"`
 	Variant        string                 `json:"variant"`
 	Settings       map[string]interface{} `json:"settings"`
-	MemorySnapshot map[string]interface{} `json:"memorySnapshot,omitempty"`
 	UnitIDSettings *UnitIDSettingsDTO     `json:"unitIdSettings,omitempty"`
 }
 
@@ -228,16 +227,7 @@ type DataTypeInfoDTO struct {
 
 // ProjectDataDTO はプロジェクト全体のエクスポート/インポート用DTO
 type ProjectDataDTO struct {
-	Version int `json:"version"`
-	// Version <= 2 互換フィールド
-	ProtocolType   string                 `json:"protocolType,omitempty"`
-	Variant        string                 `json:"variant,omitempty"`
-	Settings       map[string]interface{} `json:"settings,omitempty"`
-	MemorySnapshot map[string]interface{} `json:"memorySnapshot,omitempty"`
-	UnitIDSettings *UnitIDSettingsDTO     `json:"unitIdSettings,omitempty"`
-	// Version 3 以降
-	Servers []ServerSnapshotDTO `json:"servers,omitempty"`
-	// 共通
+	Servers         []ServerSnapshotDTO  `json:"servers,omitempty"`
 	Scripts         []*ScriptDTO         `json:"scripts"`
 	MonitoringItems []*MonitoringItemDTO `json:"monitoringItems,omitempty"`
 	Variables       []*VariableDTO       `json:"variables,omitempty"`

@@ -144,6 +144,7 @@ frontend/src/
 #### RegisterPanel.tsx
 「一覧表示」と「モニタリング」のサブタブを持ちます。
 - **プロトコル選択**: 複数サーバー起動時は上部にプロトコル選択セレクトを表示
+  - `supportsNodePublishing=true` のサーバー（OPC UA 等）はレジスタを持たないため除外
 - **一覧表示**: 選択中プロトコルのメモリエリアごとのレジスタ値を表示・編集
 - **モニタリング**: 任意のレジスタを登録してリアルタイム監視・書き込み可能
   - ドラッグ＆ドロップで並び替え可能（@dnd-kit使用）
@@ -290,7 +291,7 @@ JavaScript（goja）でPLC動作を記述。
 - **`ServerConfigDTO`**: サーバー設定の取得/更新用（`protocolType`, `variant`, `settings`）
 - **`ServerSnapshotDTO`**: Export/Import 用の単一サーバースナップショット
 - **`MonitoringItemDTO`**: `protocolType` フィールドを含む（どのサーバーのアドレスかを示す）
-- **`ProjectDataDTO`**: Version 3 形式で `Servers []ServerSnapshotDTO` にマルチサーバー構成を保存。Version 1/2 との後方互換性あり
+- **`ProjectDataDTO`**: `Servers []ServerSnapshotDTO` にマルチサーバー構成を保存。レジスタのスナップショットは含まない（バージョンフィールドなし）
 
 ### 設定ファイル
 

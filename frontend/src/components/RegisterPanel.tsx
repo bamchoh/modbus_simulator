@@ -155,10 +155,11 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
       try {
         const instances = await GetServerInstances();
         setServerInstances(instances || []);
-        if (instances?.length > 0) {
+        const registerInstances = (instances || []).filter(i => !i.supportsNodePublishing);
+        if (registerInstances.length > 0) {
           setSelectedProtocol(prev => {
-            if (!prev || !instances.find(i => i.protocolType === prev)) {
-              return instances[0].protocolType;
+            if (!prev || !registerInstances.find(i => i.protocolType === prev)) {
+              return registerInstances[0].protocolType;
             }
             return prev;
           });
@@ -523,8 +524,8 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
       {/* 一覧表示タブ */}
       {activeTab === 'list' && (
       <>
-      {/* プロトコル選択（複数サーバーの場合） */}
-      {serverInstances.length > 1 && (
+      {/* プロトコル選択（レジスタを持つサーバーが複数の場合） */}
+      {serverInstances.filter(i => !i.supportsNodePublishing).length > 1 && (
         <div className="register-controls" style={{ marginBottom: '0' }}>
           <div className="form-group">
             <label>プロトコル</label>
@@ -537,7 +538,7 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
                 setValues([]);
               }}
             >
-              {serverInstances.map(inst => (
+              {serverInstances.filter(i => !i.supportsNodePublishing).map(inst => (
                 <option key={inst.protocolType} value={inst.protocolType}>
                   {inst.displayName} ({inst.variant})
                 </option>

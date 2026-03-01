@@ -789,14 +789,11 @@ func TestPLCService_StartScript_NotFound(t *testing.T) {
 
 // ===== Export/Import テスト =====
 
-func TestPLCService_ExportProject_Version3(t *testing.T) {
+func TestPLCService_ExportProject_ContainsServers(t *testing.T) {
 	svc := newTestService(t)
 
 	exported := svc.ExportProject()
 
-	if exported.Version != 3 {
-		t.Errorf("expected version 3, got %d", exported.Version)
-	}
 	if len(exported.Servers) == 0 {
 		t.Error("expected at least one server in exported data")
 	}
@@ -816,26 +813,6 @@ func TestPLCService_ExportProject_Version3(t *testing.T) {
 	}
 }
 
-func TestPLCService_ExportProject_ContainsMemorySnapshot(t *testing.T) {
-	svc := newTestService(t)
-
-	// メモリに書き込み
-	if err := svc.WriteWord("modbus-tcp", "holdingRegisters", 5, 9999); err != nil {
-		t.Fatalf("WriteWord failed: %v", err)
-	}
-
-	exported := svc.ExportProject()
-
-	for _, s := range exported.Servers {
-		if s.ProtocolType == "modbus-tcp" {
-			if s.MemorySnapshot == nil {
-				t.Error("expected non-nil memory snapshot for modbus server")
-			}
-			return
-		}
-	}
-	t.Error("modbus server not found in export")
-}
 
 func TestPLCService_ExportProject_MultipleServers(t *testing.T) {
 	svc := newTestService(t)
@@ -870,11 +847,10 @@ func TestPLCService_ExportProject_ContainsMonitoringItems(t *testing.T) {
 	}
 }
 
-func TestPLCService_ImportProject_Version3_RestoresServers(t *testing.T) {
+func TestPLCService_ImportProject_RestoresServers(t *testing.T) {
 	svc := newTestService(t)
 
 	data := &ProjectDataDTO{
-		Version: 3,
 		Servers: []ServerSnapshotDTO{
 			{ProtocolType: "modbus-tcp", Variant: "tcp"},
 			{ProtocolType: "modbus-rtu", Variant: "rtu"},
@@ -903,86 +879,11 @@ func TestPLCService_ImportProject_Version3_RestoresServers(t *testing.T) {
 	}
 }
 
-func TestPLCService_ImportProject_Version3_RestoresMemory(t *testing.T) {
-	svc := newTestService(t)
-
-	// 書き込んでエクスポート
-	if err := svc.WriteWord("modbus-tcp", "holdingRegisters", 10, 5678); err != nil {
-		t.Fatalf("WriteWord failed: %v", err)
-	}
-	exported := svc.ExportProject()
-
-	// 値を上書きしてから
-	if err := svc.WriteWord("modbus-tcp", "holdingRegisters", 10, 0); err != nil {
-		t.Fatalf("WriteWord clear failed: %v", err)
-	}
-
-	// インポートで復元
-	if err := svc.ImportProject(exported); err != nil {
-		t.Fatalf("ImportProject failed: %v", err)
-	}
-
-	words, err := svc.ReadWords("modbus-tcp", "holdingRegisters", 10, 1)
-	if err != nil {
-		t.Fatalf("ReadWords failed after import: %v", err)
-	}
-	if words[0] != 5678 {
-		t.Errorf("expected 5678 after import, got %d", words[0])
-	}
-}
-
-func TestPLCService_ImportProject_Version2_Compat(t *testing.T) {
-	svc := newTestService(t)
-
-	// Version 2 形式
-	data := &ProjectDataDTO{
-		Version:      2,
-		ProtocolType: "modbus-tcp",
-		Variant:      "tcp",
-		Settings:     map[string]interface{}{},
-		Scripts:      []*ScriptDTO{},
-	}
-
-	if err := svc.ImportProject(data); err != nil {
-		t.Fatalf("ImportProject Version2 failed: %v", err)
-	}
-
-	instances := svc.GetServerInstances()
-	if len(instances) != 1 {
-		t.Fatalf("expected 1 server instance, got %d", len(instances))
-	}
-	if instances[0].ProtocolType != "modbus-tcp" {
-		t.Errorf("expected 'modbus', got '%s'", instances[0].ProtocolType)
-	}
-}
-
-func TestPLCService_ImportProject_Version2_EmptyProtocol_DefaultsToModbusTCP(t *testing.T) {
-	svc := newTestService(t)
-
-	// Version 2 で ProtocolType が空 → modbus/tcp がデフォルト
-	data := &ProjectDataDTO{
-		Version: 2,
-		Scripts: []*ScriptDTO{},
-	}
-
-	if err := svc.ImportProject(data); err != nil {
-		t.Fatalf("ImportProject failed: %v", err)
-	}
-
-	instances := svc.GetServerInstances()
-	if len(instances) != 1 {
-		t.Fatalf("expected 1 server, got %d", len(instances))
-	}
-	if instances[0].ProtocolType != "modbus-tcp" {
-		t.Errorf("expected default 'modbus', got '%s'", instances[0].ProtocolType)
-	}
-}
 
 func TestPLCService_ImportProject_RestoresScripts(t *testing.T) {
 	svc := newTestService(t)
 
 	data := &ProjectDataDTO{
-		Version: 3,
 		Servers: []ServerSnapshotDTO{
 			{ProtocolType: "modbus-tcp", Variant: "tcp"},
 		},
@@ -1006,7 +907,6 @@ func TestPLCService_ImportProject_RestoresMonitoringItems(t *testing.T) {
 	svc := newTestService(t)
 
 	data := &ProjectDataDTO{
-		Version: 3,
 		Servers: []ServerSnapshotDTO{
 			{ProtocolType: "modbus-tcp", Variant: "tcp"},
 		},
@@ -1036,7 +936,6 @@ func TestPLCService_ImportProject_ClearsExistingServers(t *testing.T) {
 	}
 
 	data := &ProjectDataDTO{
-		Version: 3,
 		Servers: []ServerSnapshotDTO{
 			{ProtocolType: "modbus-tcp", Variant: "tcp"},
 		},
@@ -1065,14 +964,6 @@ func TestPLCService_ExportImport_RoundTrip(t *testing.T) {
 		t.Fatalf("AddServer modbus-rtu failed: %v", err)
 	}
 
-	// 各サーバーにデータを書き込み
-	if err := svc.WriteWord("modbus-tcp", "holdingRegisters", 3, 777); err != nil {
-		t.Fatalf("WriteWord modbus-tcp failed: %v", err)
-	}
-	if err := svc.WriteWord("modbus-rtu", "holdingRegisters", 3, 888); err != nil {
-		t.Fatalf("WriteWord modbus-rtu failed: %v", err)
-	}
-
 	// スクリプトとモニタリング項目を追加
 	svc.CreateScript("rtt_script", "1+1", 100)
 	svc.AddMonitoringItem(&MonitoringItemDTO{
@@ -1094,24 +985,6 @@ func TestPLCService_ExportImport_RoundTrip(t *testing.T) {
 	instances := svc2.GetServerInstances()
 	if len(instances) != 2 {
 		t.Fatalf("expected 2 servers after round-trip, got %d", len(instances))
-	}
-
-	// Modbus のメモリ値を確認
-	modbusWords, err := svc2.ReadWords("modbus-tcp", "holdingRegisters", 3, 1)
-	if err != nil {
-		t.Fatalf("ReadWords modbus failed: %v", err)
-	}
-	if modbusWords[0] != 777 {
-		t.Errorf("expected modbus[3]=777, got %d", modbusWords[0])
-	}
-
-	// Modbus RTU のメモリ値を確認
-	rtuWords, err := svc2.ReadWords("modbus-rtu", "holdingRegisters", 3, 1)
-	if err != nil {
-		t.Fatalf("ReadWords modbus-rtu failed: %v", err)
-	}
-	if rtuWords[0] != 888 {
-		t.Errorf("expected modbus-rtu holdingRegisters[3]=888, got %d", rtuWords[0])
 	}
 
 	// スクリプト数を確認
