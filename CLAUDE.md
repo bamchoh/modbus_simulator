@@ -39,6 +39,19 @@ cd frontend && npm run build
 go build ./...
 ```
 
+### フロントエンドビルドターゲット
+
+`frontend/vite.config.ts` に `build.target` を明示的に指定している:
+
+```typescript
+build: {
+  target: ['chrome87', 'edge88', 'firefox78', 'safari14'],
+}
+```
+
+**理由**: LINT/ULINT の変数ビュー編集に JavaScript `BigInt` を使用しているため、Wails のデフォルトターゲット（safari13 を含む）ではビルドエラーになる。
+safari14 以上が BigInt リテラル（`n` サフィックス）をサポートする最低要件。
+
 ## Architecture
 
 Wails v2をベースに、フロントエンドはVite + React + TypeScript、バックエンドはGoで構成。
