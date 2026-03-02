@@ -28,7 +28,6 @@ type VariableStore struct {
 	structTypes     map[string]*StructTypeDef   // 構造体型名 -> 型定義
 	nodePublishings map[string]map[string]*NodePublishing // variableID -> protocolType -> NodePublishing
 	listeners       []ChangeListener
-	onChange        func() // 変更時コールバック（永続化用）
 }
 
 // NewVariableStore は新しいVariableStoreを作成する
@@ -62,7 +61,6 @@ func (s *VariableStore) SetNodePublishing(variableID, protocolType string, p *No
 		s.nodePublishings[variableID] = make(map[string]*NodePublishing)
 	}
 	s.nodePublishings[variableID][protocolType] = p
-	go s.triggerOnChange()
 }
 
 // GetAllNodePublishings は指定プロトコルの全変数の公開設定を返す（variableID → NodePublishing）
@@ -106,7 +104,6 @@ func (s *VariableStore) RegisterStructType(def *StructTypeDef) error {
 		return fmt.Errorf("struct type %s already exists", def.Name)
 	}
 	s.structTypes[def.Name] = def
-	go s.triggerOnChange()
 	return nil
 }
 
@@ -152,13 +149,7 @@ func (s *VariableStore) DeleteStructType(name string) error {
 	}
 
 	delete(s.structTypes, name)
-	go s.triggerOnChange()
 	return nil
-}
-
-// SetOnChange は変更時コールバックを設定する
-func (s *VariableStore) SetOnChange(fn func()) {
-	s.onChange = fn
 }
 
 // AddListener は変更リスナーを追加する
@@ -184,13 +175,6 @@ func (s *VariableStore) RemoveListener(l ChangeListener) {
 func (s *VariableStore) notifyListeners(v *Variable, mappings []ProtocolMapping) {
 	for _, l := range s.listeners {
 		l.OnVariableChanged(v, mappings)
-	}
-}
-
-// triggerOnChange は永続化コールバックを呼ぶ
-func (s *VariableStore) triggerOnChange() {
-	if s.onChange != nil {
-		s.onChange()
 	}
 }
 
@@ -272,7 +256,6 @@ func (s *VariableStore) UpdateMetadata(id string, newName string, newDataType Da
 		l.OnVariableChanged(v, mappings)
 	}
 
-	go s.triggerOnChange()
 	return v.Clone(), nil
 }
 
@@ -371,7 +354,6 @@ func (s *VariableStore) CreateVariable(name string, dataType DataType, initialVa
 	s.byName[v.Name] = v
 	s.mappings[v.ID] = nil
 
-	go s.triggerOnChange()
 	return v, nil
 }
 
@@ -469,7 +451,6 @@ func (s *VariableStore) DeleteVariable(id string) error {
 	delete(s.mappings, id)
 	delete(s.nodePublishings, id)
 
-	go s.triggerOnChange()
 	return nil
 }
 
@@ -512,7 +493,6 @@ func (s *VariableStore) SetMappings(variableID string, mappings []ProtocolMappin
 		l.OnVariableChanged(v, mappingsCopy)
 	}
 
-	go s.triggerOnChange()
 	return nil
 }
 

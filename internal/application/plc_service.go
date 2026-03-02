@@ -69,14 +69,6 @@ func NewPLCService() *PLCService {
 		monitoringItems: make(map[string]*MonitoringItemDTO),
 	}
 
-	// 変数設定を読み込み
-	_ = service.LoadVariablesConfig()
-
-	// 変数変更時に自動保存
-	varStore.SetOnChange(func() {
-		go service.saveVariablesConfigInternal()
-	})
-
 	// デフォルトでModbus TCPを追加
 	_ = service.AddServer("modbus-tcp", "tcp")
 
@@ -1622,50 +1614,3 @@ func dataTypeDescription(dt variable.DataType) string {
 	}
 }
 
-// === 変数設定の永続化 ===
-
-// LoadVariablesConfig は変数設定をファイルから読み込む
-func (s *PLCService) LoadVariablesConfig() error {
-	configPath := s.getVariablesConfigPath()
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil // ファイルがなければ無視
-	}
-
-	var snapshot map[string]interface{}
-	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return fmt.Errorf("failed to parse variables config: %w", err)
-	}
-
-	return s.variableStore.Restore(snapshot)
-}
-
-// saveVariablesConfigInternal は変数設定をファイルに保存する（内部用）
-func (s *PLCService) saveVariablesConfigInternal() {
-	configPath := s.getVariablesConfigPath()
-	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		fmt.Printf("Failed to create config directory: %v\n", err)
-		return
-	}
-
-	snapshot := s.variableStore.Snapshot()
-	data, err := json.MarshalIndent(snapshot, "", "  ")
-	if err != nil {
-		fmt.Printf("Failed to marshal variables config: %v\n", err)
-		return
-	}
-
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		fmt.Printf("Failed to write variables config: %v\n", err)
-	}
-}
-
-// getVariablesConfigPath は変数設定ファイルのパスを返す
-func (s *PLCService) getVariablesConfigPath() string {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		configDir = "."
-	}
-	return filepath.Join(configDir, "PLCSimulator", "variables_config.json")
-}
