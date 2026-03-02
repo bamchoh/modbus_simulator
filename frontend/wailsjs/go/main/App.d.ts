@@ -34,6 +34,8 @@ export function GetDataTypes():Promise<application.DataTypesDTO>;
 
 export function GetDisabledUnitIDs(arg1:string):Promise<Array<number>>;
 
+export function GetHTTPAPIPort():Promise<number>;
+
 export function GetIntervalPresets():Promise<Array<application.IntervalPresetDTO>>;
 
 export function GetMemoryAreas(arg1:string):Promise<Array<application.MemoryAreaDTO>>;
@@ -79,6 +81,8 @@ export function ReorderMonitoringItem(arg1:string,arg2:number):Promise<void>;
 export function RunScriptOnce(arg1:string):Promise<any>;
 
 export function SetDisabledUnitIDs(arg1:string,arg2:Array<number>):Promise<void>;
+
+export function SetHTTPAPIPort(arg1:number):Promise<void>;
 
 export function SetUnitIDEnabled(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 

@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"modbus_simulator/internal/application"
 	"modbus_simulator/internal/domain/protocol"
+	"modbus_simulator/internal/infrastructure/httpapi"
 
 	// プロトコル実装をレジストリに登録するためのブランクインポート
 	_ "modbus_simulator/internal/infrastructure/modbus"
@@ -17,16 +20,24 @@ import (
 	"go.bug.st/serial"
 )
 
+const defaultHTTPAPIPort = 8765
+
 // App struct
 type App struct {
-	ctx        context.Context
-	plcService *application.PLCService
+	ctx         context.Context
+	plcService  *application.PLCService
+	httpAPI     *httpapi.Server
+	httpAPIPort int
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
+	svc := application.NewPLCService()
+	port := loadHTTPAPIPort()
 	return &App{
-		plcService: application.NewPLCService(),
+		plcService:  svc,
+		httpAPI:     httpapi.NewServer(svc, port),
+		httpAPIPort: port,
 	}
 }
 
@@ -37,11 +48,87 @@ func (a *App) startup(ctx context.Context) {
 	// イベントエミッターを設定
 	emitter := protocol.NewWailsEventEmitter(ctx)
 	a.plcService.SetEventEmitter(emitter)
+
+	// REST HTTP API サーバーを起動
+	if err := a.httpAPI.Start(); err != nil {
+		fmt.Printf("HTTP API サーバーの起動に失敗しました: %v\n", err)
+	} else {
+		fmt.Printf("HTTP API サーバーを起動しました: http://localhost:%d/api\n", a.httpAPIPort)
+	}
 }
 
 // shutdown is called when the app closes
 func (a *App) shutdown(ctx context.Context) {
+	a.httpAPI.Shutdown(ctx) //nolint:errcheck
 	a.plcService.Shutdown()
+}
+
+// === HTTP API 設定 ===
+
+// GetHTTPAPIPort は現在のHTTP APIポート番号を返す
+func (a *App) GetHTTPAPIPort() int {
+	return a.httpAPIPort
+}
+
+// SetHTTPAPIPort はHTTP APIポートを変更してサーバーを再起動する
+func (a *App) SetHTTPAPIPort(port int) error {
+	if port < 1024 || port > 65535 {
+		return fmt.Errorf("ポート番号は1024〜65535の範囲で指定してください")
+	}
+	if err := saveHTTPAPIPort(port); err != nil {
+		return err
+	}
+	if err := a.httpAPI.Restart(port); err != nil {
+		return fmt.Errorf("ポート %d でHTTP APIサーバーを起動できませんでした: %w", port, err)
+	}
+	a.httpAPIPort = port
+	return nil
+}
+
+// --- HTTP API 設定ファイルヘルパー ---
+
+func httpAPIConfigPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(configDir, "PLCSimulator")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "httpapi_config.json"), nil
+}
+
+func loadHTTPAPIPort() int {
+	path, err := httpAPIConfigPath()
+	if err != nil {
+		return defaultHTTPAPIPort
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return defaultHTTPAPIPort
+	}
+	var cfg struct {
+		Port int `json:"port"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil || cfg.Port == 0 {
+		return defaultHTTPAPIPort
+	}
+	return cfg.Port
+}
+
+func saveHTTPAPIPort(port int) error {
+	path, err := httpAPIConfigPath()
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(struct {
+		Port int `json:"port"`
+	}{Port: port}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 // === サーバーインスタンス管理 ===

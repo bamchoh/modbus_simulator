@@ -66,6 +66,10 @@ export function GetDisabledUnitIDs(arg1) {
   return window['go']['main']['App']['GetDisabledUnitIDs'](arg1);
 }
 
+export function GetHTTPAPIPort() {
+  return window['go']['main']['App']['GetHTTPAPIPort']();
+}
+
 export function GetIntervalPresets() {
   return window['go']['main']['App']['GetIntervalPresets']();
 }
@@ -156,6 +160,10 @@ export function RunScriptOnce(arg1) {
 
 export function SetDisabledUnitIDs(arg1, arg2) {
   return window['go']['main']['App']['SetDisabledUnitIDs'](arg1, arg2);
+}
+
+export function SetHTTPAPIPort(arg1) {
+  return window['go']['main']['App']['SetHTTPAPIPort'](arg1);
 }
 
 export function SetUnitIDEnabled(arg1, arg2, arg3) {

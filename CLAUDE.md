@@ -19,6 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **レジスタ操作**: GUIからメモリエリアの値を直接操作可能
 - **モニタリング**: 任意のレジスタをリアルタイム監視・書き込み（ドラッグ&ドロップ並べ替え対応）
 - **プロトコルマッピング**: 変数を複数プロトコルのメモリアドレスにマッピング可能
+- **REST HTTP API**: アプリをネットワーク経由で外部から操作可能（デフォルトポート 8765）。サーバー管理・レジスタ読み書き・変数管理・プロジェクトエクスポート/インポートに対応
 
 ## Build and Development Commands
 
@@ -77,6 +78,8 @@ internal/
     │   ├── factory.go      # OpcuaServerFactory
     │   ├── server.go       # OpcuaServer + PLCNameSpace（カスタム名前空間）
     │   └── datastore.go    # OpcuaDataStore（変数ストアを DataStore として公開）
+    ├── httpapi/      # REST HTTP APIサーバー実装
+    │   └── server.go       # HTTPAPIServer（net/http ServeMux使用）
     ├── adapter/      # アダプター層
     │   ├── variable_datastore.go       # VariableBackedDataStore（変数↔DataStore双方向同期）
     │   └── variable_store_accessor.go  # VariableStoreAccessor 実装（OPC UA用）
@@ -260,6 +263,9 @@ JavaScript（goja）でPLC動作を記述。
   - `StartScript()`, `StopScript()`: スクリプト実行制御
   - `ClearScriptError()`: スクリプトエラーをクリア
   - `GetConsoleLogs()`, `ClearConsoleLogs()`: コンソールログの取得・クリア
+- **HTTP API 設定**:
+  - `GetHTTPAPIPort()`: 現在のHTTP APIポート番号を返す
+  - `SetHTTPAPIPort(port)`: ポートを変更してHTTP APIサーバーを再起動（1024〜65535、設定ファイルに永続化）
 
 ### 変数管理とデータ型システム
 
@@ -319,6 +325,8 @@ JavaScript（goja）でPLC動作を記述。
 アプリケーションの設定は以下の場所に保存されます：
 - **モニタリング設定**: `%APPDATA%\PLCSimulator\monitoring_config.json`
   - 登録したモニタリング項目（プロトコルタイプ、メモリエリア、アドレス、ビット幅、エンディアン、表示形式）
+- **HTTP API 設定**: `%APPDATA%\PLCSimulator\httpapi_config.json`
+  - `{"port": 8765}` 形式で保存。UI または `SetHTTPAPIPort()` で変更すると自動更新
 
 ## 新プロトコル追加手順
 
@@ -427,6 +435,55 @@ JavaScript（goja）でPLC動作を記述。
 
 - **gopcua v0.8.0**: `server.Start(ctx)` はノンブロッキング、`server.Close()` でシャットダウン
 - セキュリティなし・匿名認証（`ua.SecurityModeNone` / `ua.MessageSecurityModeNone`）
+
+### REST HTTP API 実装
+
+#### サーバー構成
+
+- `internal/infrastructure/httpapi/server.go` に `Server` 構造体を定義
+- `NewServer(svc *application.PLCService, port int)` で生成。`PLCService` を直接依存として持つ
+- `Start()` でバックグラウンドゴルーチンとして起動（ノンブロッキング）
+- `Shutdown(ctx)` でグレースフルシャットダウン
+- `Restart(port int)` で既存サーバーをシャットダウンして新ポートで再起動
+- Go 1.22+ の `net/http` ServeMux を使用（`GET /path/{id}` 形式のメソッド + パスパラメーター指定）
+
+#### ポート管理
+
+- デフォルトポート: `8765`（`app.go` の `defaultHTTPAPIPort` 定数）
+- 設定ファイル: `%APPDATA%\PLCSimulator\httpapi_config.json`（`{"port": 8765}` 形式）
+- `loadHTTPAPIPort()` / `saveHTTPAPIPort(port)` ヘルパー関数（`app.go` 内）
+- `App.httpAPIPort` フィールドで現在のポートを保持
+
+#### エンドポイント一覧
+
+| カテゴリ | メソッド | パス |
+|--------|---------|------|
+| サーバー管理 | GET | `/api/servers` |
+| | POST | `/api/servers` |
+| | DELETE | `/api/servers/{protocolType}` |
+| | POST | `/api/servers/{protocolType}/start` |
+| | POST | `/api/servers/{protocolType}/stop` |
+| | GET | `/api/servers/{protocolType}/status` |
+| | GET/PUT | `/api/servers/{protocolType}/config` |
+| メモリ操作 | GET | `/api/memory/{protocolType}/areas` |
+| | GET | `/api/memory/{protocolType}/{area}/words?address=N&count=N` |
+| | PUT | `/api/memory/{protocolType}/{area}/words/{address}` |
+| | GET | `/api/memory/{protocolType}/{area}/bits?address=N&count=N` |
+| | PUT | `/api/memory/{protocolType}/{area}/bits/{address}` |
+| 変数管理 | GET | `/api/variables` |
+| | POST | `/api/variables` |
+| | PUT | `/api/variables/{id}/value` |
+| | DELETE | `/api/variables/{id}` |
+| プロジェクト | GET | `/api/project/export` |
+| | POST | `/api/project/import` |
+
+#### CORS
+
+全エンドポイントに `corsMiddleware` を適用（`Access-Control-Allow-Origin: *`）。OPTIONS プリフライトリクエストに対して 204 を返す。
+
+#### UI表示
+
+`App.tsx` のヘッダーに HTTP API URL (`http://localhost:{port}/api`) を常時表示。✎ ボタンでポート編集モードに切り替え。保存時に `SetHTTPAPIPort()` を呼び出してサーバーを再起動。
 
 ## License
 
