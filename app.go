@@ -7,14 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"modbus_simulator/internal/application"
 	"modbus_simulator/internal/domain/protocol"
 	"modbus_simulator/internal/infrastructure/httpapi"
-
-	// プロトコル実装をレジストリに登録するためのブランクインポート
-	_ "modbus_simulator/internal/infrastructure/modbus"
-	_ "modbus_simulator/internal/infrastructure/opcua"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"go.bug.st/serial"
@@ -49,12 +46,57 @@ func (a *App) startup(ctx context.Context) {
 	emitter := protocol.NewWailsEventEmitter(ctx)
 	a.plcService.SetEventEmitter(emitter)
 
+	// HostGrpcServer を起動（OPC UA 等のプラグインが変数アクセスに使用）
+	if _, err := a.plcService.StartHostGrpcServer(); err != nil {
+		fmt.Printf("[WARN] HostGrpcServer の起動に失敗しました: %v\n", err)
+	}
+
+	// プラグインを検索・起動
+	pluginsDir := pluginsDirectory()
+	if err := a.plcService.InitPlugins(pluginsDir); err != nil {
+		fmt.Printf("[WARN] プラグイン初期化に失敗しました: %v\n", err)
+	}
+
 	// REST HTTP API サーバーを起動
 	if err := a.httpAPI.Start(); err != nil {
 		fmt.Printf("HTTP API サーバーの起動に失敗しました: %v\n", err)
 	} else {
 		fmt.Printf("HTTP API サーバーを起動しました: http://localhost:%d/api\n", a.httpAPIPort)
 	}
+}
+
+// pluginsDirectory はプラグインディレクトリのパスを返す。
+// 1. 実行ファイルと同じディレクトリ内の "plugins" フォルダを優先（プロダクション）
+// 2. 存在しない場合はカレントディレクトリの "plugins" を使用（wails dev 開発時）
+func pluginsDirectory() string {
+	exe, err := os.Executable()
+	if err == nil {
+		exeDir := filepath.Dir(exe)
+		// wails dev は一時ディレクトリにバイナリを生成するため、
+		// 実行ファイルパスに "Temp" が含まれる場合は CWD を優先する
+		if !isTempPath(exeDir) {
+			exePlugins := filepath.Join(exeDir, "plugins")
+			if _, statErr := os.Stat(exePlugins); statErr == nil {
+				return exePlugins
+			}
+		}
+	}
+	// フォールバック: カレントディレクトリの plugins/（wails dev 時はプロジェクトルート）
+	abs, err := filepath.Abs("plugins")
+	if err != nil {
+		return "plugins"
+	}
+	return abs
+}
+
+// isTempPath はパスが一時ディレクトリかどうかを判定する
+func isTempPath(path string) bool {
+	tmp := os.TempDir()
+	rel, err := filepath.Rel(tmp, path)
+	if err != nil {
+		return false
+	}
+	return !filepath.IsAbs(rel) && !strings.HasPrefix(rel, "..")
 }
 
 // shutdown is called when the app closes

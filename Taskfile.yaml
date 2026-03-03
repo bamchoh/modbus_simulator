@@ -1,0 +1,48 @@
+version: "3"
+
+vars:
+  PLUGINS_DIR: plugins
+
+tasks:
+  proto:
+    desc: proto ファイルから Go コードを生成する
+    cmds:
+      - >
+        protoc -I proto
+        --go_out=pb/pluginpb --go_opt=paths=source_relative
+        --go-grpc_out=pb/pluginpb --go-grpc_opt=paths=source_relative
+        proto/plugin.proto
+
+  plugins:
+    desc: プラグインバイナリをビルドする（サブフォルダ + plugin.json を生成）
+    cmds:
+      - powershell -Command "mkdir -p {{.PLUGINS_DIR}}/modbus-plugin"
+      - go build -o {{.PLUGINS_DIR}}/modbus-plugin/modbus-plugin.exe ./cmd/modbus-plugin
+      - |
+        printf '{\n  "name": "Modbus Plugin",\n  "entrypoint": "modbus-plugin.exe",\n  "version": "0.0.1"\n}\n' > {{.PLUGINS_DIR}}/modbus-plugin/plugin.json
+      - powershell -Command "mkdir -p {{.PLUGINS_DIR}}/opcua-plugin"
+      - go build -o {{.PLUGINS_DIR}}/opcua-plugin/opcua-plugin.exe ./cmd/opcua-plugin
+      - |
+        printf '{\n  "name": "OPC UA Plugin",\n  "entrypoint": "opcua-plugin.exe",\n  "version": "0.0.1"\n}\n' > {{.PLUGINS_DIR}}/opcua-plugin/plugin.json
+
+  dev:
+    desc: プラグインをビルドしてから wails dev を起動する
+    deps: [plugins]
+    cmds:
+      - wails dev
+
+  build:
+    desc: プラグインをビルドしてから wails build を実行する
+    deps: [plugins]
+    cmds:
+      - wails build
+
+  test:
+    desc: 全テストを実行する
+    cmds:
+      - go test ./...
+
+  clean:
+    desc: ビルド成果物を削除する
+    cmds:
+      - rm -rf {{.PLUGINS_DIR}}/modbus-plugin {{.PLUGINS_DIR}}/opcua-plugin

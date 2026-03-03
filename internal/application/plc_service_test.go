@@ -4,14 +4,23 @@ import (
 	"testing"
 	"time"
 
-	_ "modbus_simulator/internal/infrastructure/modbus"
+	"modbus_simulator/internal/infrastructure/modbus"
 )
 
 // newTestService はテスト用のクリーンな PLCService を作成する。
-// モニタリング設定ファイルから読み込まれた項目をクリアして返す。
+// Modbus ファクトリーをインプロセスで登録し、デフォルトで modbus-tcp を追加する。
 func newTestService(t *testing.T) *PLCService {
 	t.Helper()
 	svc := NewPLCService()
+
+	// Modbus ファクトリーをインプロセスで登録（プラグインプロセス不要）
+	svc.RegisterPluginFactory(modbus.NewModbusTCPServerFactory())
+	svc.RegisterPluginFactory(modbus.NewModbusRTUServerFactory())
+	svc.RegisterPluginFactory(modbus.NewModbusASCIIServerFactory())
+
+	// デフォルトで modbus-tcp を追加（旧 NewPLCService() の初期動作を再現）
+	_ = svc.AddServer("modbus-tcp", "tcp")
+
 	// ファイルから読み込まれた既存モニタリング項目をクリア（テスト間干渉を防止）
 	svc.ClearMonitoringItems()
 	t.Cleanup(func() {

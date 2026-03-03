@@ -7,6 +7,11 @@ import (
 	"modbus_simulator/internal/domain/protocol"
 )
 
+// DataChangeHook はデータ変更時に呼ばれるコールバック型
+// プラグインサーバーが SubscribeChanges ストリームで変更通知を送るために使用する。
+// isBit=true の場合は bitValues を、isBit=false の場合は values を参照する。
+type DataChangeHook func(area string, address uint32, values []uint16, isBit bool, bitValues []bool)
+
 // ModbusDataStore はModbusプロトコル用のデータストア
 type ModbusDataStore struct {
 	mu             sync.RWMutex
@@ -14,6 +19,9 @@ type ModbusDataStore struct {
 	discreteInputs []bool
 	holdingRegs    []uint16
 	inputRegs      []uint16
+
+	hookMu     sync.RWMutex
+	changeHook DataChangeHook
 }
 
 // エリアID定数
@@ -23,6 +31,25 @@ const (
 	AreaHoldingRegs     = "holdingRegisters"
 	AreaInputRegs       = "inputRegisters"
 )
+
+// SetChangeHook はデータ変更時に呼ばれるフックを設定する。
+// nil を渡すとフックを解除する。
+// フックは Modbus クライアントの書き込み時にのみ呼び出すこと（ホストからの書き込み時は呼び出さない）。
+func (s *ModbusDataStore) SetChangeHook(hook DataChangeHook) {
+	s.hookMu.Lock()
+	s.changeHook = hook
+	s.hookMu.Unlock()
+}
+
+// callChangeHook はフックを安全に呼び出す（ロック外で呼ぶこと）
+func (s *ModbusDataStore) callChangeHook(area string, address uint32, values []uint16, isBit bool, bitValues []bool) {
+	s.hookMu.RLock()
+	hook := s.changeHook
+	s.hookMu.RUnlock()
+	if hook != nil {
+		hook(area, address, values, isBit, bitValues)
+	}
+}
 
 // NewModbusDataStore は新しいModbusDataStoreを作成する
 func NewModbusDataStore(coilCount, discreteCount, holdingCount, inputCount int) *ModbusDataStore {
@@ -99,24 +126,26 @@ func (s *ModbusDataStore) ReadBit(area string, address uint32) (bool, error) {
 // WriteBit はビット値を書き込む
 func (s *ModbusDataStore) WriteBit(area string, address uint32, value bool) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	switch area {
 	case AreaCoils:
 		if int(address) >= len(s.coils) {
+			s.mu.Unlock()
 			return datastore.ErrAddressOutOfRange
 		}
 		s.coils[address] = value
-		return nil
 	case AreaDiscreteInputs:
 		if int(address) >= len(s.discreteInputs) {
+			s.mu.Unlock()
 			return datastore.ErrAddressOutOfRange
 		}
 		s.discreteInputs[address] = value
-		return nil
 	default:
+		s.mu.Unlock()
 		return datastore.ErrAreaNotFound
 	}
+	s.mu.Unlock()
+	s.callChangeHook(area, address, nil, true, []bool{value})
+	return nil
 }
 
 // ReadBits は複数のビット値を読み込む
@@ -147,24 +176,26 @@ func (s *ModbusDataStore) ReadBits(area string, address uint32, count uint16) ([
 // WriteBits は複数のビット値を書き込む
 func (s *ModbusDataStore) WriteBits(area string, address uint32, values []bool) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	switch area {
 	case AreaCoils:
 		if int(address)+len(values) > len(s.coils) {
+			s.mu.Unlock()
 			return datastore.ErrAddressOutOfRange
 		}
 		copy(s.coils[address:], values)
-		return nil
 	case AreaDiscreteInputs:
 		if int(address)+len(values) > len(s.discreteInputs) {
+			s.mu.Unlock()
 			return datastore.ErrAddressOutOfRange
 		}
 		copy(s.discreteInputs[address:], values)
-		return nil
 	default:
+		s.mu.Unlock()
 		return datastore.ErrAreaNotFound
 	}
+	s.mu.Unlock()
+	s.callChangeHook(area, address, nil, true, values)
+	return nil
 }
 
 // ReadWord はワード値を読み込む
@@ -191,24 +222,26 @@ func (s *ModbusDataStore) ReadWord(area string, address uint32) (uint16, error) 
 // WriteWord はワード値を書き込む
 func (s *ModbusDataStore) WriteWord(area string, address uint32, value uint16) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	switch area {
 	case AreaHoldingRegs:
 		if int(address) >= len(s.holdingRegs) {
+			s.mu.Unlock()
 			return datastore.ErrAddressOutOfRange
 		}
 		s.holdingRegs[address] = value
-		return nil
 	case AreaInputRegs:
 		if int(address) >= len(s.inputRegs) {
+			s.mu.Unlock()
 			return datastore.ErrAddressOutOfRange
 		}
 		s.inputRegs[address] = value
-		return nil
 	default:
+		s.mu.Unlock()
 		return datastore.ErrAreaNotFound
 	}
+	s.mu.Unlock()
+	s.callChangeHook(area, address, []uint16{value}, false, nil)
+	return nil
 }
 
 // ReadWords は複数のワード値を読み込む
@@ -239,24 +272,26 @@ func (s *ModbusDataStore) ReadWords(area string, address uint32, count uint16) (
 // WriteWords は複数のワード値を書き込む
 func (s *ModbusDataStore) WriteWords(area string, address uint32, values []uint16) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	switch area {
 	case AreaHoldingRegs:
 		if int(address)+len(values) > len(s.holdingRegs) {
+			s.mu.Unlock()
 			return datastore.ErrAddressOutOfRange
 		}
 		copy(s.holdingRegs[address:], values)
-		return nil
 	case AreaInputRegs:
 		if int(address)+len(values) > len(s.inputRegs) {
+			s.mu.Unlock()
 			return datastore.ErrAddressOutOfRange
 		}
 		copy(s.inputRegs[address:], values)
-		return nil
 	default:
+		s.mu.Unlock()
 		return datastore.ErrAreaNotFound
 	}
+	s.mu.Unlock()
+	s.callChangeHook(area, address, values, false, nil)
+	return nil
 }
 
 // Snapshot はデータストアのスナップショットを作成する

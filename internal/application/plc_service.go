@@ -14,6 +14,7 @@ import (
 	"modbus_simulator/internal/domain/script"
 	"modbus_simulator/internal/domain/variable"
 	"modbus_simulator/internal/infrastructure/adapter"
+	plugininfra "modbus_simulator/internal/infrastructure/plugin"
 	"modbus_simulator/internal/infrastructure/scripting"
 
 	"github.com/google/uuid"
@@ -21,18 +22,22 @@ import (
 
 // serverInstance はサーバーインスタンスの内部表現
 type serverInstance struct {
-	protocolType protocol.ProtocolType
-	variant      string
-	factory      protocol.ServerFactory
-	dataStore    protocol.DataStore
-	config       protocol.ProtocolConfig
-	server       protocol.ProtocolServer
+	protocolType   protocol.ProtocolType
+	variant        string
+	factory        protocol.ServerFactory
+	dataStore      protocol.DataStore
+	config         protocol.ProtocolConfig
+	server         protocol.ProtocolServer
+	changeListener *plugininfra.RemoteVariableChangeListener
+	cancelChange   context.CancelFunc
 }
 
 // PLCService はPLCシミュレーターのメインサービス
 type PLCService struct {
-	mu       sync.RWMutex
-	registry *protocol.Registry
+	mu sync.RWMutex
+
+	// 登録済みプロトコルファクトリー（protocolType → factory）
+	factories map[protocol.ProtocolType]protocol.ServerFactory
 
 	// 中央変数ストア
 	variableStore *variable.VariableStore
@@ -42,6 +47,12 @@ type PLCService struct {
 
 	// 複数サーバーインスタンス（protocolType → instance）
 	servers map[protocol.ProtocolType]*serverInstance
+
+	// ホスト側 gRPC サーバー（OPC UA 等のプラグインから変数アクセスに使用）
+	hostGrpcServer *plugininfra.HostGrpcServer
+
+	// プラグインプロセスマネージャー
+	pluginManager *plugininfra.PluginProcessManager
 
 	// スクリプト
 	scriptEngine *scripting.ScriptEngine
@@ -60,7 +71,7 @@ func NewPLCService() *PLCService {
 	varStore := variable.NewVariableStore()
 
 	service := &PLCService{
-		registry:        protocol.DefaultRegistry,
+		factories:       make(map[protocol.ProtocolType]protocol.ServerFactory),
 		variableStore:   varStore,
 		vsAccessor:      adapter.NewVariableStoreAccessor(varStore),
 		servers:         make(map[protocol.ProtocolType]*serverInstance),
@@ -69,13 +80,63 @@ func NewPLCService() *PLCService {
 		monitoringItems: make(map[string]*MonitoringItemDTO),
 	}
 
-	// デフォルトでModbus TCPを追加
-	_ = service.AddServer("modbus-tcp", "tcp")
-
 	// モニタリング設定を読み込み
 	_ = service.LoadMonitoringConfig()
 
 	return service
+}
+
+// RegisterPluginFactory はプラグインプロセスから取得したファクトリーを登録する
+func (s *PLCService) RegisterPluginFactory(factory protocol.ServerFactory) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.factories[factory.ProtocolType()] = factory
+}
+
+// StartHostGrpcServer はホスト側 gRPC サーバーを起動してアドレスを返す
+func (s *PLCService) StartHostGrpcServer() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	srv := plugininfra.NewHostGrpcServer(s.vsAccessor, s.variableStore)
+	port, err := srv.Start()
+	if err != nil {
+		return "", fmt.Errorf("HostGrpcServer 起動失敗: %w", err)
+	}
+	s.hostGrpcServer = srv
+	return fmt.Sprintf("127.0.0.1:%d", port), nil
+}
+
+// GetHostGrpcAddr はホスト側 gRPC サーバーのアドレスを返す
+func (s *PLCService) GetHostGrpcAddr() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.hostGrpcServer == nil {
+		return ""
+	}
+	return s.hostGrpcServer.Addr()
+}
+
+// InitPlugins はプラグインディレクトリを検索してプラグインを起動・登録する
+func (s *PLCService) InitPlugins(pluginsDir string) error {
+	hostAddr := s.GetHostGrpcAddr()
+
+	mgr := plugininfra.NewPluginProcessManager(hostAddr)
+	procs, err := mgr.Discover(pluginsDir)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.pluginManager = mgr
+	s.mu.Unlock()
+
+	for _, proc := range procs {
+		factory := plugininfra.NewRemoteServerFactory(proc.Conn(), proc.Metadata)
+		s.RegisterPluginFactory(factory)
+	}
+
+	return nil
 }
 
 // === サーバーインスタンス管理 ===
@@ -122,9 +183,9 @@ func (s *PLCService) AddServer(protocolType string, variantID string) error {
 	}
 
 	// ファクトリーを取得
-	factory, err := s.registry.Get(pt)
-	if err != nil {
-		return err
+	factory, ok := s.factories[pt]
+	if !ok {
+		return fmt.Errorf("protocol not found: %s", protocolType)
 	}
 
 	// VariableStoreAccessor を注入（NodePublishing 対応プロトコル向け）
@@ -135,20 +196,49 @@ func (s *PLCService) AddServer(protocolType string, variantID string) error {
 	// サーバーインスタンスを作成
 	config := factory.CreateConfigFromVariant(variantID)
 	innerDataStore := factory.CreateDataStore()
-	dataStore := adapter.NewVariableBackedDataStore(innerDataStore, s.variableStore, protocolType)
+
+	// DataStore の種類に応じて変数↔DataStore 双方向同期を設定
+	// - RemoteDataStore（プラグインプロセス）: RemoteVariableChangeListener を使用
+	// - インプロセス DataStore: VariableBackedDataStore でラップ
+	var dataStore protocol.DataStore
+	var changeListener *plugininfra.RemoteVariableChangeListener
+	var cancelChange context.CancelFunc
+
+	if remoteDS, isRemote := innerDataStore.(*plugininfra.RemoteDataStore); isRemote {
+		dataStore = innerDataStore
+		changeListener = plugininfra.NewRemoteVariableChangeListener(remoteDS, s.variableStore, protocolType)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancelChange = cancel
+		go changeListener.StartChangeSubscription(ctx)
+	} else {
+		// インプロセス DataStore は VariableBackedDataStore でラップして双方向同期
+		dataStore = adapter.NewVariableBackedDataStore(innerDataStore, s.variableStore, protocolType)
+	}
 
 	server, err := factory.CreateServer(config, dataStore)
 	if err != nil {
 		return err
 	}
 
+	// HostGrpcAddr をサーバーに設定（NodePublishing 対応プロトコル向け）
+	if s.hostGrpcServer != nil {
+		type hostAddrSetter interface {
+			SetHostGrpcAddr(addr string)
+		}
+		if setter, ok := server.(hostAddrSetter); ok {
+			setter.SetHostGrpcAddr(s.hostGrpcServer.Addr())
+		}
+	}
+
 	inst := &serverInstance{
-		protocolType: pt,
-		variant:      variantID,
-		factory:      factory,
-		dataStore:    dataStore,
-		config:       config,
-		server:       server,
+		protocolType:   pt,
+		variant:        variantID,
+		factory:        factory,
+		dataStore:      dataStore,
+		config:         config,
+		server:         server,
+		changeListener: changeListener,
+		cancelChange:   cancelChange,
 	}
 
 	s.servers[pt] = inst
@@ -179,7 +269,15 @@ func (s *PLCService) RemoveServer(protocolType string) error {
 		}
 	}
 
-	// アダプターを解除
+	// 変更サブスクリプションをキャンセル
+	if inst.cancelChange != nil {
+		inst.cancelChange()
+	}
+	// リスナーを解除（リモートプラグイン用）
+	if inst.changeListener != nil {
+		inst.changeListener.Detach()
+	}
+	// インプロセス DataStore アダプターを解除
 	if ds, ok := inst.dataStore.(*adapter.VariableBackedDataStore); ok {
 		ds.Detach()
 	}
@@ -249,9 +347,11 @@ func (s *PLCService) GetServerStatus(protocolType string) string {
 
 // GetAvailableProtocols は利用可能なプロトコル一覧を返す
 func (s *PLCService) GetAvailableProtocols() []ProtocolInfoDTO {
-	factories := s.registry.GetAll()
-	result := make([]ProtocolInfoDTO, len(factories))
-	for i, factory := range factories {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]ProtocolInfoDTO, 0, len(s.factories))
+	for _, factory := range s.factories {
 		variants := factory.ConfigVariants()
 		variantDTOs := make([]ConfigVariantDTO, len(variants))
 		for j, v := range variants {
@@ -260,20 +360,22 @@ func (s *PLCService) GetAvailableProtocols() []ProtocolInfoDTO {
 				DisplayName: v.DisplayName,
 			}
 		}
-		result[i] = ProtocolInfoDTO{
+		result = append(result, ProtocolInfoDTO{
 			Type:        string(factory.ProtocolType()),
 			DisplayName: factory.DisplayName(),
 			Variants:    variantDTOs,
-		}
+		})
 	}
 	return result
 }
 
 // GetProtocolSchema はプロトコルスキーマを返す
 func (s *PLCService) GetProtocolSchema(protocolType string) (*ProtocolSchemaDTO, error) {
-	factory, err := s.registry.Get(protocol.ProtocolType(protocolType))
-	if err != nil {
-		return nil, err
+	s.mu.RLock()
+	factory, ok := s.factories[protocol.ProtocolType(protocolType)]
+	s.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("protocol not found: %s", protocolType)
 	}
 
 	variants := factory.ConfigVariants()
@@ -735,12 +837,27 @@ func (s *PLCService) Shutdown() {
 		s.scriptEngine.StopAll()
 	}
 	for _, inst := range s.servers {
+		if inst.cancelChange != nil {
+			inst.cancelChange()
+		}
+		if inst.changeListener != nil {
+			inst.changeListener.Detach()
+		}
+		if ds, ok := inst.dataStore.(*adapter.VariableBackedDataStore); ok {
+			ds.Detach()
+		}
 		if inst.server != nil {
 			inst.server.Stop()
 		}
 	}
 	if s.sessionManager != nil {
 		s.sessionManager.Stop()
+	}
+	if s.hostGrpcServer != nil {
+		s.hostGrpcServer.Stop()
+	}
+	if s.pluginManager != nil {
+		s.pluginManager.Shutdown()
 	}
 }
 
@@ -905,11 +1022,17 @@ func (s *PLCService) ImportProject(data *ProjectDataDTO) error {
 
 	// 全サーバーを停止・削除
 	for _, inst := range s.servers {
-		if inst.server != nil {
-			inst.server.Stop()
+		if inst.cancelChange != nil {
+			inst.cancelChange()
+		}
+		if inst.changeListener != nil {
+			inst.changeListener.Detach()
 		}
 		if ds, ok := inst.dataStore.(*adapter.VariableBackedDataStore); ok {
 			ds.Detach()
+		}
+		if inst.server != nil {
+			inst.server.Stop()
 		}
 	}
 	s.servers = make(map[protocol.ProtocolType]*serverInstance)
