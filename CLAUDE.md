@@ -80,10 +80,21 @@ pb/pluginpb/              # protoc 生成 Go コード（コミット対象）
 cmd/
 ├── modbus-plugin/        # Modbus プラグインバイナリ
 │   ├── main.go           # gRPC サーバー起動・GRPC_PORT 出力
+│   ├── internal/
+│   │   └── modbus/       # Modbus プロトコル実装（ホストから隔離）
+│   │       ├── factory.go      # ModbusServerFactory（TCP/RTU/ASCIIの3ファクトリー）
+│   │       ├── server.go       # ModbusServer
+│   │       ├── datastore.go    # ModbusDataStore（SetChangeHook でクライアント書き込みフック）
+│   │       └── rtu/            # RTU/ASCII フレーム処理
 │   └── server/
 │       └── plugin_server.go  # PluginService + DataStoreService 実装
 └── opcua-plugin/         # OPC UA プラグインバイナリ
     ├── main.go
+    ├── internal/
+    │   └── opcua/        # OPC UA プロトコル実装（ホストから隔離）
+    │       ├── factory.go      # OpcuaServerFactory
+    │       ├── server.go       # OpcuaServer + PLCNameSpace（カスタム名前空間）
+    │       └── datastore.go    # OpcuaDataStore（変数ストアを DataStore として公開）
     └── server/
         └── plugin_server.go  # PluginService + DataStoreService（空実装）+ RemoteVariableStoreAccessor
 plugins/                  # ビルド済みプラグイン配置先（task plugins で生成）
@@ -102,21 +113,13 @@ internal/
 ├── application/      # アプリケーション層
 │   ├── plc_service.go  # メインサービス（プロトコル非依存、モニタリング管理含む）
 │   └── dto.go          # DTO定義（ProtocolSchemaDTO, MonitoringItemDTO等）
-└── infrastructure/   # インフラ層（プロトコル実装）
-    ├── modbus/       # Modbusサーバー実装
-    │   ├── factory.go      # ModbusServerFactory（TCP/RTU/ASCIIの3ファクトリー）
-    │   ├── server.go       # ModbusServer
-    │   └── datastore.go    # ModbusDataStore（SetChangeHook でクライアント書き込みフック）
-    ├── opcua/        # OPC UAサーバー実装
-    │   ├── factory.go      # OpcuaServerFactory
-    │   ├── server.go       # OpcuaServer + PLCNameSpace（カスタム名前空間）
-    │   └── datastore.go    # OpcuaDataStore（変数ストアを DataStore として公開）
+└── infrastructure/   # インフラ層（ホスト側インフラ。プロトコル固有実装は含まない）
     ├── plugin/       # プラグインインフラ（ホスト側）
-    │   ├── process_manager.go         # PluginProcessManager（plugin.json スキャン・プロセス起動）
+    │   ├── process_manager.go         # PluginProcessManager（plugin.json スキャン・オンデマンドプロセス起動）
     │   ├── process_manager_windows.go # Windows 向け: コンソールウィンドウ非表示（CREATE_NO_WINDOW）
     │   ├── process_manager_unix.go    # 非Windows 向け: スタブ
     │   ├── host_grpc_server.go        # HostGrpcServer（VariableAccessorService gRPC サーバー）
-    │   ├── remote_factory.go          # RemoteServerFactory（gRPC クライアント実装）
+    │   ├── remote_factory.go          # LazyRemoteServerFactory（マニフェストからプロトコル情報を返し gRPC はオンデマンド）
     │   ├── remote_server.go           # RemoteProtocolServer（gRPC クライアント実装）
     │   ├── remote_datastore.go        # RemoteDataStore（gRPC クライアント実装）
     │   └── remote_listener.go         # RemoteVariableChangeListener（変数→DataStore gRPC 同期）
@@ -133,12 +136,14 @@ internal/
 - **PLCService** (`internal/application/plc_service.go`): メインサービス。プロトコル非依存で、複数のサーバーインスタンスを同時管理
   - `servers map[protocol.ProtocolType]*serverInstance` で各プロトコルのサーバーを保持
   - 各プロトコルタイプは最大1インスタンス（プロトコルタイプをサーバー識別子として利用）
-  - Modbus の各バリアントは独立した ProtocolType: `"modbus-tcp"`, `"modbus-rtu"`, `"modbus-ascii"`
+  - Modbus プラグインの ProtocolType は `"modbus"`（TCP/RTU/ASCII はバリアントとして管理）
   - OPC UA の ProtocolType は `"opcua"`
   - `variableStore` と `scriptEngine` は全サーバーで共有
   - `factories map[protocol.ProtocolType]protocol.ServerFactory` でプロトコルファクトリーを管理（registry は廃止）
   - `RegisterPluginFactory()`: ファクトリーを登録する（ホスト起動時に `InitPlugins()` が呼び出す）
-  - `InitPlugins(pluginsDir)`: `PluginProcessManager.Discover()` でプラグインを起動し `RemoteServerFactory` を登録
+  - `InitPlugins(pluginsDir)`: `PluginProcessManager.DiscoverManifests()` でマニフェストを読み込み `LazyRemoteServerFactory` を登録（プロセスは起動しない）
+  - `AddServer()` 時に `LazyRemoteServerFactory.EnsureStarted()` でプラグインプロセスをオンデマンド起動
+  - `RemoveServer()` 時に `LazyRemoteServerFactory.StopProcess()` でプラグインプロセスを停止
   - `StartHostGrpcServer()`: `HostGrpcServer` を起動（OPC UA プラグインが変数にアクセスするための gRPC サーバー）
   - `AddServer()` 時に `VariableStoreInjector` を実装するファクトリーへ `VariableStoreAccessor` を注入
   - リモート DataStore: `RemoteVariableChangeListener` で変数↔プラグイン DataStore を双方向 gRPC 同期
@@ -148,30 +153,35 @@ internal/
   - `GetConfigFields()`: スキーマ駆動UIのためのフィールド定義を返す
   - `GetProtocolCapabilities()`: UnitIDサポート等の機能情報を返す
   - `ConfigToMap()` / `MapToConfig()`: 設定の変換
-- **ModbusServerFactory** (`internal/infrastructure/modbus/factory.go`): `fixedVariant` フィールドで TCP/RTU/ASCII を固定した3種のファクトリー
+- **ModbusServerFactory** (`cmd/modbus-plugin/internal/modbus/factory.go`): `fixedVariant` フィールドで TCP/RTU/ASCII を固定した3種のファクトリー
   - `NewModbusTCPServerFactory()`, `NewModbusRTUServerFactory()`, `NewModbusASCIIServerFactory()` で生成
   - それぞれ `ProtocolType()` が `"modbus-tcp"` / `"modbus-rtu"` / `"modbus-ascii"` を返す
   - ホスト本体からは直接使用しない（プラグインバイナリ `cmd/modbus-plugin/` からインポート）
-  - テストでは `svc.RegisterPluginFactory(modbus.NewModbusTCPServerFactory())` で直接登録
-- **OpcuaServerFactory** (`internal/infrastructure/opcua/factory.go`): OPC UA サーバーのファクトリー
+  - テストでは `fakeServerFactory`（`internal/application/fake_factory_test.go`）を使用（プロトコル固有実装に依存しない）
+- **OpcuaServerFactory** (`cmd/opcua-plugin/internal/opcua/factory.go`): OPC UA サーバーのファクトリー
   - `ProtocolType()` が `"opcua"` を返す
   - `VariableStoreInjector` を実装し、PLCService から `VariableStoreAccessor` を遅延注入
   - `GetProtocolCapabilities()` が `SupportsNodePublishing: true` を返す
   - ホスト本体からは直接使用しない（プラグインバイナリ `cmd/opcua-plugin/` からインポート）
 - **PluginProcessManager** (`internal/infrastructure/plugin/process_manager.go`): プラグインプロセスのライフサイクル管理
-  - `Discover(pluginsDir)`: `plugins/*/plugin.json` を走査してマニフェストを読み込み、エントリーポイントを起動
-  - `plugin.json` スキーマ: `name`, `entrypoint`, `version`, `author`(省略可), `description`(省略可)
-  - プロセス起動後、stdout から `GRPC_PORT=N` を読み取って gRPC 接続を確立
+  - `DiscoverManifests(pluginsDir)`: `plugins/*/plugin.json` を走査してマニフェストを読み込む（プロセスは起動しない）
+  - `Launch(entrypoint)`: プラグイン exe を起動し、stdout から `GRPC_PORT=N` を読み取って gRPC 接続を確立
+  - `plugin.json` スキーマ: `name`, `entrypoint`, `version`, `protocol_type`(必須), `display_name`(必須), `variants`(必須), `capabilities`(省略可), `author`(省略可), `description`(省略可)
   - クラッシュ監視 goroutine で `crashed`/`exitErr` を更新
   - `setSysProcAttr(cmd)`: Windows では `CREATE_NO_WINDOW` フラグでコンソールウィンドウを非表示にする（`process_manager_windows.go`）
+- **LazyRemoteServerFactory** (`internal/infrastructure/plugin/remote_factory.go`): オンデマンドプロセス起動のファクトリー
+  - `ProtocolType()`, `DisplayName()`, `ConfigVariants()`, `GetProtocolCapabilities()`: `plugin.json` のマニフェストから返す（gRPC 不要）
+  - `EnsureStarted()`: プロセスが未起動または停止済みの場合に `PluginProcessManager.Launch()` でプロセスを起動
+  - `StopProcess()`: プロセスを停止してリセット（次回 `EnsureStarted()` で再起動可能）
+  - `CreateServer()`, `CreateDataStore()`, `GetConfigFields()` 等 gRPC が必要なメソッドはプロセス起動後のみ呼ばれる
 - **HostGrpcServer** (`internal/infrastructure/plugin/host_grpc_server.go`): ホスト側 gRPC サーバー
   - `VariableAccessorService` を実装（OPC UA プラグインが変数を読み書きするため）
   - `SubscribeVariableChanges()` ストリームで変数変更を OPC UA プラグインに配信
-- **RemoteServerFactory** / **RemoteProtocolServer** / **RemoteDataStore** (`internal/infrastructure/plugin/`):
-  - `ServerFactory`, `ProtocolServer`, `DataStore` の各インターフェースを gRPC クライアント呼び出しで実装
-- **ModbusDataStore** (`internal/infrastructure/modbus/datastore.go`):
+- **RemoteProtocolServer** / **RemoteDataStore** (`internal/infrastructure/plugin/`):
+  - `ProtocolServer`, `DataStore` の各インターフェースを gRPC クライアント呼び出しで実装
+- **ModbusDataStore** (`cmd/modbus-plugin/internal/modbus/datastore.go`):
   - `SetChangeHook(DataChangeHook)`: Modbus クライアントが書き込んだ変更をフックで通知（循環防止のためホスト→プラグイン書き込み時は通知しない）
-- **PLCNameSpace** (`internal/infrastructure/opcua/server.go`): gopcua の NameSpace インターフェースを直接実装したカスタム名前空間
+- **PLCNameSpace** (`cmd/opcua-plugin/internal/opcua/server.go`): gopcua の NameSpace インターフェースを直接実装したカスタム名前空間
   - `VariableStore` の変数を OPC UA ノードとして公開（`loadFromAccessor()` で初期化）
   - NodeID は String 型: ルートノードは `ns=X;s={uuid}`、子ノードは `ns=X;s={uuid}.fieldName` / `ns=X;s={uuid}[index]`
   - `Browse()`: 構造体フィールドと配列インデックスを子ノードとして返す

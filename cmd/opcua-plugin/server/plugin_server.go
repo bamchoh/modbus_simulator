@@ -12,7 +12,7 @@ import (
 	pb "modbus_simulator/pb/pluginpb"
 
 	"modbus_simulator/internal/domain/protocol"
-	"modbus_simulator/internal/infrastructure/opcua"
+	"modbus_simulator/cmd/opcua-plugin/internal/opcua"
 )
 
 // PluginServer は OPC UA プラグインの gRPC サーバー実装

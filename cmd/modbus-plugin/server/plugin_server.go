@@ -11,7 +11,7 @@ import (
 	pb "modbus_simulator/pb/pluginpb"
 
 	"modbus_simulator/internal/domain/protocol"
-	"modbus_simulator/internal/infrastructure/modbus"
+	"modbus_simulator/cmd/modbus-plugin/internal/modbus"
 )
 
 // PluginServer は Modbus プラグインの gRPC サーバー実装

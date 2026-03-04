@@ -3,20 +3,18 @@ package application
 import (
 	"testing"
 	"time"
-
-	"modbus_simulator/internal/infrastructure/modbus"
 )
 
 // newTestService はテスト用のクリーンな PLCService を作成する。
-// Modbus ファクトリーをインプロセスで登録し、デフォルトで modbus-tcp を追加する。
+// フェイクファクトリーをインプロセスで登録し、デフォルトで modbus-tcp を追加する。
 func newTestService(t *testing.T) *PLCService {
 	t.Helper()
 	svc := NewPLCService()
 
-	// Modbus ファクトリーをインプロセスで登録（プラグインプロセス不要）
-	svc.RegisterPluginFactory(modbus.NewModbusTCPServerFactory())
-	svc.RegisterPluginFactory(modbus.NewModbusRTUServerFactory())
-	svc.RegisterPluginFactory(modbus.NewModbusASCIIServerFactory())
+	// Modbus 互換フェイクファクトリーを登録（プロトコル固有実装に依存しない）
+	svc.RegisterPluginFactory(newFakeModbusFactory("modbus-tcp", "tcp", "Modbus TCP"))
+	svc.RegisterPluginFactory(newFakeModbusFactory("modbus-rtu", "rtu", "Modbus RTU"))
+	svc.RegisterPluginFactory(newFakeModbusFactory("modbus-ascii", "ascii", "Modbus ASCII"))
 
 	// デフォルトで modbus-tcp を追加（旧 NewPLCService() の初期動作を再現）
 	_ = svc.AddServer("modbus-tcp", "tcp")

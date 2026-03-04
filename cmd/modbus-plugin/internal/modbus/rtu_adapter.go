@@ -1,7 +1,7 @@
 package modbus
 
 import (
-	"modbus_simulator/internal/infrastructure/modbus/rtu"
+	"modbus_simulator/cmd/modbus-plugin/internal/modbus/rtu"
 )
 
 // RTUHandlerAdapter はRegisterHandlerをrtu.RequestHandlerに適合させるアダプター

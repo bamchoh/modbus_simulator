@@ -75,6 +75,7 @@ Modbus（TCP/RTU/ASCII）と OPC UA に対応した PLC シミュレーターで
   - Go 以外の言語（C# 等）でもプラグインを実装可能
   - プラグインプロセスのクラッシュがホストアプリに影響しない
   - v0.0.18 以降: プラグインプロセスのコンソールウィンドウを非表示化（Windows）
+  - v0.0.19 以降: Modbus / OPC UA の実装を `cmd/*/internal/` に移動し、ホスト側からプロトコル固有の依存を完全排除
 
 - **プロジェクト管理**
   - 設定・レジスタ・スクリプト・変数・モニタリング項目を JSON ファイルにエクスポート/インポート（GUI またはHTTP API経由）
@@ -395,18 +396,23 @@ Invoke-WebRequest -Method Post "http://localhost:8765/api/project/import" `
 ```
 
 ```
+cmd/
+├── modbus-plugin/        # Modbus プラグインバイナリ
+│   ├── internal/modbus/  # Modbus プロトコル実装（ホスト側から Go internal/ 制約で隔離）
+│   └── server/           # gRPC サーバー実装
+└── opcua-plugin/         # OPC UA プラグインバイナリ
+    ├── internal/opcua/   # OPC UA プロトコル実装（ホスト側から Go internal/ 制約で隔離）
+    └── server/           # gRPC サーバー実装
 internal/
 ├── domain/           # ドメイン層
 │   ├── protocol/     # プロトコル共通インターフェース
 │   ├── variable/     # 変数エンティティ（IEC 61131-3データ型）
 │   ├── script/       # スクリプトエンティティ
 │   └── datastore/    # DataStore 共通定義
-├── application/      # アプリケーション層
+├── application/      # アプリケーション層（プロトコル固有実装に依存しない）
 │   ├── plc_service.go  # メインサービス（複数サーバー管理・モニタリング・変数管理含む）
 │   └── dto.go          # DTO 定義（ServerInstanceDTO, ServerConfigDTO 等）
-└── infrastructure/   # インフラ層
-    ├── modbus/       # Modbus サーバー実装（cmd/modbus-plugin からインポート）
-    ├── opcua/        # OPC UA サーバー実装（cmd/opcua-plugin からインポート）
+└── infrastructure/   # インフラ層（ホスト側のみ。プロトコル固有実装は含まない）
     ├── plugin/       # プラグインインフラ（HostGrpcServer, RemoteFactory 等）
     ├── httpapi/      # REST HTTP API サーバー（net/http、デフォルトポート 8765）
     ├── adapter/      # 変数とDataStoreのアダプタ・VariableStoreAccessor

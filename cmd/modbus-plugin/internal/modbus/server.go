@@ -7,7 +7,7 @@ import (
 	"modbus_simulator/internal/domain/protocol"
 	"modbus_simulator/internal/domain/register"
 	"modbus_simulator/internal/domain/server"
-	"modbus_simulator/internal/infrastructure/modbus/rtu"
+	"modbus_simulator/cmd/modbus-plugin/internal/modbus/rtu"
 
 	"github.com/simonvetter/modbus"
 )
