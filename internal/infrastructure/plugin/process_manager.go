@@ -135,6 +135,7 @@ func (m *PluginProcessManager) Launch(pluginPath string) (*PluginProcess, error)
 	proc := &PluginProcess{path: pluginPath}
 
 	cmd := exec.Command(pluginPath, "--host-grpc-addr="+m.hostAddr)
+	setSysProcAttr(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdout パイプ作成失敗: %w", err)

@@ -112,12 +112,14 @@ internal/
     │   ├── server.go       # OpcuaServer + PLCNameSpace（カスタム名前空間）
     │   └── datastore.go    # OpcuaDataStore（変数ストアを DataStore として公開）
     ├── plugin/       # プラグインインフラ（ホスト側）
-    │   ├── process_manager.go    # PluginProcessManager（plugin.json スキャン・プロセス起動）
-    │   ├── host_grpc_server.go   # HostGrpcServer（VariableAccessorService gRPC サーバー）
-    │   ├── remote_factory.go     # RemoteServerFactory（gRPC クライアント実装）
-    │   ├── remote_server.go      # RemoteProtocolServer（gRPC クライアント実装）
-    │   ├── remote_datastore.go   # RemoteDataStore（gRPC クライアント実装）
-    │   └── remote_listener.go    # RemoteVariableChangeListener（変数→DataStore gRPC 同期）
+    │   ├── process_manager.go         # PluginProcessManager（plugin.json スキャン・プロセス起動）
+    │   ├── process_manager_windows.go # Windows 向け: コンソールウィンドウ非表示（CREATE_NO_WINDOW）
+    │   ├── process_manager_unix.go    # 非Windows 向け: スタブ
+    │   ├── host_grpc_server.go        # HostGrpcServer（VariableAccessorService gRPC サーバー）
+    │   ├── remote_factory.go          # RemoteServerFactory（gRPC クライアント実装）
+    │   ├── remote_server.go           # RemoteProtocolServer（gRPC クライアント実装）
+    │   ├── remote_datastore.go        # RemoteDataStore（gRPC クライアント実装）
+    │   └── remote_listener.go         # RemoteVariableChangeListener（変数→DataStore gRPC 同期）
     ├── httpapi/      # REST HTTP APIサーバー実装
     │   └── server.go       # HTTPAPIServer（net/http ServeMux使用）
     ├── adapter/      # アダプター層
@@ -161,6 +163,7 @@ internal/
   - `plugin.json` スキーマ: `name`, `entrypoint`, `version`, `author`(省略可), `description`(省略可)
   - プロセス起動後、stdout から `GRPC_PORT=N` を読み取って gRPC 接続を確立
   - クラッシュ監視 goroutine で `crashed`/`exitErr` を更新
+  - `setSysProcAttr(cmd)`: Windows では `CREATE_NO_WINDOW` フラグでコンソールウィンドウを非表示にする（`process_manager_windows.go`）
 - **HostGrpcServer** (`internal/infrastructure/plugin/host_grpc_server.go`): ホスト側 gRPC サーバー
   - `VariableAccessorService` を実装（OPC UA プラグインが変数を読み書きするため）
   - `SubscribeVariableChanges()` ストリームで変数変更を OPC UA プラグインに配信
@@ -211,7 +214,7 @@ frontend/src/
 
 #### ServerPanel.tsx
 サーバーインスタンスの一覧を表示・管理します。
-- **サーバー一覧**: `GetServerInstances()` で1秒ポーリングして全サーバーのステータスを更新
+- **サーバー一覧**: `GetServerInstances()` と `GetAvailableProtocols()` を1秒ポーリングして全サーバーのステータスと利用可能プロトコルを更新（プラグイン起動タイミングのずれに対応）
 - **サーバー追加**: 「サーバーを追加」ダイアログで未追加のプロトコルから選択して追加（`AddServer(protocolType, variant)`）
 - **個別操作**: 各サーバーの開始/停止/設定変更/削除が独立して可能
 - **設定パネル**: `GetProtocolSchema(protocolType)` から取得したスキーマに基づき `DynamicField` で動的フォームを生成

@@ -16,6 +16,7 @@ tasks:
   plugins:
     desc: プラグインバイナリをビルドする（サブフォルダ + plugin.json を生成）
     cmds:
+      - powershell -Command "Remove-Item -Path {{.PLUGINS_DIR}}/* -Recurse -Force"
       - powershell -Command "mkdir -p {{.PLUGINS_DIR}}/modbus-plugin"
       - go build -o {{.PLUGINS_DIR}}/modbus-plugin/modbus-plugin.exe ./cmd/modbus-plugin
       - |

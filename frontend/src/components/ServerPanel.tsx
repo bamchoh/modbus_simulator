@@ -374,6 +374,9 @@ export function ServerPanel() {
       GetServerInstances()
         .then(instances => setServerInstances(instances || []))
         .catch(() => {});
+      GetAvailableProtocols()
+        .then(protos => setProtocols(protos || []))
+        .catch(() => {});
     }, 1000);
     return () => clearInterval(interval);
   }, []);
