@@ -20,13 +20,37 @@ import (
 	pb "modbus_simulator/pb/pluginpb"
 )
 
+// ManifestCapabilities は plugin.json のプロトコル機能情報を表す
+type ManifestCapabilities struct {
+	SupportsUnitID         bool `json:"supports_unit_id"`
+	UnitIDMin              int  `json:"unit_id_min"`
+	UnitIDMax              int  `json:"unit_id_max"`
+	SupportsNodePublishing bool `json:"supports_node_publishing"`
+}
+
+// ManifestVariant は plugin.json のバリアント情報を表す
+type ManifestVariant struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+}
+
 // PluginManifest は plugin.json のスキーマを表す
 type PluginManifest struct {
-	Name       string `json:"name"`
-	Entrypoint string `json:"entrypoint"`
-	Version    string `json:"version"`
-	Author     string `json:"author,omitempty"`
-	Description string `json:"description,omitempty"`
+	Name         string               `json:"name"`
+	Entrypoint   string               `json:"entrypoint"`
+	Version      string               `json:"version"`
+	Author       string               `json:"author,omitempty"`
+	Description  string               `json:"description,omitempty"`
+	ProtocolType string               `json:"protocol_type"`
+	DisplayName  string               `json:"display_name"`
+	Variants     []ManifestVariant    `json:"variants"`
+	Capabilities ManifestCapabilities `json:"capabilities"`
+}
+
+// PluginManifestEntry はマニフェストとそのディレクトリを保持する
+type PluginManifestEntry struct {
+	Manifest *PluginManifest
+	Dir      string // plugin.json があるディレクトリ（entrypoint の解決に使用）
 }
 
 // PluginProcess は起動中のプラグインプロセスを表す
@@ -65,16 +89,45 @@ func (p *PluginProcess) Conn() *grpc.ClientConn {
 
 // PluginProcessManager はプラグインプロセスのライフサイクルを管理する
 type PluginProcessManager struct {
-	mu       sync.RWMutex
-	plugins  []*PluginProcess
-	hostAddr string // HostGrpcServer のアドレス（プラグイン起動時に渡す）
+	mu        sync.RWMutex
+	plugins   []*PluginProcess
+	hostAddr  string  // HostGrpcServer のアドレス（プラグイン起動時に渡す）
+	jobHandle uintptr // Windows Job Object ハンドル（ホスト終了時に子プロセスを自動終了）
 }
 
 // NewPluginProcessManager は PluginProcessManager を作成する
 func NewPluginProcessManager(hostGrpcAddr string) *PluginProcessManager {
 	return &PluginProcessManager{
-		hostAddr: hostGrpcAddr,
+		hostAddr:  hostGrpcAddr,
+		jobHandle: initProcessJobObject(),
 	}
+}
+
+// DiscoverManifests はプラグインディレクトリを走査してマニフェストのみを読み込む。
+// プロセスは起動しない。protocol_type が空のエントリはスキップする（旧 plugin.json 対策）。
+func (m *PluginProcessManager) DiscoverManifests(pluginsDir string) ([]*PluginManifestEntry, error) {
+	entries, err := os.ReadDir(pluginsDir)
+	if err != nil {
+		return nil, fmt.Errorf("プラグインディレクトリの読み取り失敗: %w", err)
+	}
+
+	var result []*PluginManifestEntry
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pluginDir := filepath.Join(pluginsDir, entry.Name())
+		manifest, err := loadManifest(pluginDir)
+		if err != nil {
+			continue
+		}
+		if manifest.ProtocolType == "" {
+			fmt.Fprintf(os.Stderr, "[WARN] plugin.json に protocol_type がありません（スキップ）: %s\n", pluginDir)
+			continue
+		}
+		result = append(result, &PluginManifestEntry{Manifest: manifest, Dir: pluginDir})
+	}
+	return result, nil
 }
 
 // Discover はプラグインディレクトリ以下のサブフォルダを走査し、
@@ -146,6 +199,9 @@ func (m *PluginProcessManager) Launch(pluginPath string) (*PluginProcess, error)
 		return nil, fmt.Errorf("プラグイン起動失敗: %w", err)
 	}
 	proc.cmd = cmd
+
+	// ホストプロセス終了時に子プロセスも自動終了するよう Job Object に割り当てる
+	addProcessToJobObject(m.jobHandle, cmd.Process.Pid)
 
 	// stdout から "GRPC_PORT=N" を読み取る（タイムアウト付き）
 	port, err := readGrpcPort(stdout, 10*time.Second)
