@@ -3,6 +3,8 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"sync"
 
 	"google.golang.org/grpc"
 
@@ -11,43 +13,96 @@ import (
 	"modbus_simulator/internal/domain/protocol"
 )
 
-// RemoteServerFactory は gRPC クライアントを通じてプラグインプロセスの ServerFactory を実装する
-type RemoteServerFactory struct {
-	client   pb.PluginServiceClient
-	conn     *grpc.ClientConn
-	metadata *pb.PluginMetadata
+// LazyRemoteServerFactory は plugin.json から読み込んだマニフェストをもとに
+// プロトコル情報を返し、gRPC が必要な処理ではプラグインプロセスをオンデマンドで起動する。
+type LazyRemoteServerFactory struct {
+	manifest    *PluginManifest
+	manifestDir string
+	manager     *PluginProcessManager
+
+	mu     sync.Mutex
+	proc   *PluginProcess // nil = 未起動
+	client pb.PluginServiceClient
+	conn   *grpc.ClientConn
 }
 
-// NewRemoteServerFactory は RemoteServerFactory を作成する。
-// metadata は起動時に一度だけ取得しキャッシュする。
-func NewRemoteServerFactory(conn *grpc.ClientConn, metadata *pb.PluginMetadata) *RemoteServerFactory {
-	return &RemoteServerFactory{
-		client:   pb.NewPluginServiceClient(conn),
-		conn:     conn,
-		metadata: metadata,
+// NewLazyRemoteServerFactory は LazyRemoteServerFactory を作成する。
+func NewLazyRemoteServerFactory(entry *PluginManifestEntry, manager *PluginProcessManager) *LazyRemoteServerFactory {
+	return &LazyRemoteServerFactory{
+		manifest:    entry.Manifest,
+		manifestDir: entry.Dir,
+		manager:     manager,
 	}
 }
 
-func (f *RemoteServerFactory) ProtocolType() protocol.ProtocolType {
-	return protocol.ProtocolType(f.metadata.ProtocolType)
+// ---- マニフェストから返すメソッド（gRPC 不要） ----
+
+func (f *LazyRemoteServerFactory) ProtocolType() protocol.ProtocolType {
+	return protocol.ProtocolType(f.manifest.ProtocolType)
 }
 
-func (f *RemoteServerFactory) DisplayName() string {
-	return f.metadata.DisplayName
+func (f *LazyRemoteServerFactory) DisplayName() string {
+	return f.manifest.DisplayName
 }
 
-func (f *RemoteServerFactory) CreateServer(config protocol.ProtocolConfig, store protocol.DataStore) (protocol.ProtocolServer, error) {
-	// プラグインモデルでは CreateServer と Start を分離しない。
-	// ここではサーバーインスタンスを表す RemoteProtocolServer を返す。
-	// 実際の起動は Start() 呼び出し時に CreateAndStart RPC を送る。
-	return NewRemoteProtocolServer(f.client, f.conn, config), nil
+func (f *LazyRemoteServerFactory) ConfigVariants() []protocol.ConfigVariant {
+	variants := make([]protocol.ConfigVariant, len(f.manifest.Variants))
+	for i, v := range f.manifest.Variants {
+		variants[i] = protocol.ConfigVariant{ID: v.ID, DisplayName: v.DisplayName}
+	}
+	return variants
 }
 
-func (f *RemoteServerFactory) CreateDataStore() protocol.DataStore {
-	return NewRemoteDataStore(pb.NewDataStoreServiceClient(f.conn))
+func (f *LazyRemoteServerFactory) GetProtocolCapabilities() protocol.ProtocolCapabilities {
+	c := f.manifest.Capabilities
+	return protocol.ProtocolCapabilities{
+		SupportsUnitID:         c.SupportsUnitID,
+		UnitIDMin:              c.UnitIDMin,
+		UnitIDMax:              c.UnitIDMax,
+		SupportsNodePublishing: c.SupportsNodePublishing,
+	}
 }
 
-func (f *RemoteServerFactory) DefaultConfig() protocol.ProtocolConfig {
+// ---- プロセス管理 ----
+
+// EnsureStarted はプラグインプロセスが起動していなければ起動する。
+// 既に起動済みかつクラッシュしていなければ何もしない。
+func (f *LazyRemoteServerFactory) EnsureStarted() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.proc != nil && !f.proc.IsCrashed() {
+		return nil
+	}
+
+	entrypoint := filepath.Join(f.manifestDir, f.manifest.Entrypoint)
+	fmt.Println("Starting plugin process:", entrypoint)
+	proc, err := f.manager.Launch(entrypoint)
+	if err != nil {
+		return fmt.Errorf("プラグイン起動失敗 (%s): %w", f.manifest.Name, err)
+	}
+	f.proc = proc
+	f.conn = proc.conn
+	f.client = pb.NewPluginServiceClient(proc.conn)
+	return nil
+}
+
+// StopProcess はプラグインプロセスを停止してリセットする。
+// RemoveServer 時に呼び出す。次回 EnsureStarted() で再起動可能になる。
+func (f *LazyRemoteServerFactory) StopProcess() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.proc != nil {
+		f.manager.RemovePlugin(f.proc)
+		f.proc = nil
+		f.conn = nil
+		f.client = nil
+	}
+}
+
+// ---- gRPC を使うメソッド ----
+
+func (f *LazyRemoteServerFactory) DefaultConfig() protocol.ProtocolConfig {
 	variants := f.ConfigVariants()
 	if len(variants) == 0 {
 		return &remoteProtocolConfig{protocolType: f.ProtocolType(), variantID: ""}
@@ -55,22 +110,10 @@ func (f *RemoteServerFactory) DefaultConfig() protocol.ProtocolConfig {
 	return f.CreateConfigFromVariant(variants[0].ID)
 }
 
-func (f *RemoteServerFactory) ConfigVariants() []protocol.ConfigVariant {
-	resp, err := f.client.GetConfigVariants(backgroundCtx(), &pb.Empty{})
-	if err != nil {
-		return nil
+func (f *LazyRemoteServerFactory) CreateConfigFromVariant(variantID string) protocol.ProtocolConfig {
+	if err := f.EnsureStarted(); err != nil {
+		return &remoteProtocolConfig{protocolType: f.ProtocolType(), variantID: variantID, settingsJSON: "{}"}
 	}
-	variants := make([]protocol.ConfigVariant, len(resp.Variants))
-	for i, v := range resp.Variants {
-		variants[i] = protocol.ConfigVariant{
-			ID:          v.Id,
-			DisplayName: v.DisplayName,
-		}
-	}
-	return variants
-}
-
-func (f *RemoteServerFactory) CreateConfigFromVariant(variantID string) protocol.ProtocolConfig {
 	resp, err := f.client.GetDefaultConfig(backgroundCtx(), &pb.GetDefaultConfigRequest{VariantId: variantID})
 	if err != nil {
 		return &remoteProtocolConfig{protocolType: f.ProtocolType(), variantID: variantID, settingsJSON: "{}"}
@@ -82,7 +125,10 @@ func (f *RemoteServerFactory) CreateConfigFromVariant(variantID string) protocol
 	}
 }
 
-func (f *RemoteServerFactory) GetConfigFields(variantID string) []protocol.ConfigField {
+func (f *LazyRemoteServerFactory) GetConfigFields(variantID string) []protocol.ConfigField {
+	if err := f.EnsureStarted(); err != nil {
+		return nil
+	}
 	resp, err := f.client.GetConfigFields(backgroundCtx(), &pb.GetConfigFieldsRequest{VariantId: variantID})
 	if err != nil {
 		return nil
@@ -94,22 +140,27 @@ func (f *RemoteServerFactory) GetConfigFields(variantID string) []protocol.Confi
 	return fields
 }
 
-func (f *RemoteServerFactory) GetProtocolCapabilities() protocol.ProtocolCapabilities {
-	caps := f.metadata.Capabilities
-	if caps == nil {
-		return protocol.ProtocolCapabilities{}
-	}
-	return protocol.ProtocolCapabilities{
-		SupportsUnitID:         caps.SupportsUnitId,
-		UnitIDMin:              int(caps.UnitIdMin),
-		UnitIDMax:              int(caps.UnitIdMax),
-		SupportsNodePublishing: caps.SupportsNodePublishing,
-	}
+func (f *LazyRemoteServerFactory) CreateDataStore() protocol.DataStore {
+	f.mu.Lock()
+	conn := f.conn
+	f.mu.Unlock()
+	return NewRemoteDataStore(pb.NewDataStoreServiceClient(conn))
 }
 
-func (f *RemoteServerFactory) ConfigToMap(config protocol.ProtocolConfig) map[string]interface{} {
+func (f *LazyRemoteServerFactory) CreateServer(config protocol.ProtocolConfig, store protocol.DataStore) (protocol.ProtocolServer, error) {
+	f.mu.Lock()
+	client := f.client
+	conn := f.conn
+	f.mu.Unlock()
+	return NewRemoteProtocolServer(client, conn, config), nil
+}
+
+func (f *LazyRemoteServerFactory) ConfigToMap(config protocol.ProtocolConfig) map[string]interface{} {
 	rc, ok := config.(*remoteProtocolConfig)
 	if !ok {
+		return map[string]interface{}{}
+	}
+	if err := f.EnsureStarted(); err != nil {
 		return map[string]interface{}{}
 	}
 	resp, err := f.client.ConfigToMap(backgroundCtx(), &pb.ConfigToMapRequest{
@@ -126,7 +177,10 @@ func (f *RemoteServerFactory) ConfigToMap(config protocol.ProtocolConfig) map[st
 	return result
 }
 
-func (f *RemoteServerFactory) MapToConfig(variantID string, settings map[string]interface{}) (protocol.ProtocolConfig, error) {
+func (f *LazyRemoteServerFactory) MapToConfig(variantID string, settings map[string]interface{}) (protocol.ProtocolConfig, error) {
+	if err := f.EnsureStarted(); err != nil {
+		return nil, err
+	}
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
 		return nil, fmt.Errorf("設定の JSON 変換に失敗: %w", err)
@@ -157,18 +211,15 @@ func pbConfigFieldToProtocol(pbf *pb.ConfigField) protocol.ConfigField {
 		Required: pbf.Required,
 		Options:  make([]protocol.FieldOption, len(pbf.Options)),
 	}
-	// デフォルト値を JSON デシリアライズ
 	if pbf.DefaultJson != "" {
 		var def interface{}
 		if err := json.Unmarshal([]byte(pbf.DefaultJson), &def); err == nil {
 			field.Default = def
 		}
 	}
-	// オプション
 	for j, opt := range pbf.Options {
 		field.Options[j] = protocol.FieldOption{Value: opt.Value, Label: opt.Label}
 	}
-	// Min/Max
 	if pbf.HasMin {
 		v := int(pbf.Min)
 		field.Min = &v
@@ -177,7 +228,6 @@ func pbConfigFieldToProtocol(pbf *pb.ConfigField) protocol.ConfigField {
 		v := int(pbf.Max)
 		field.Max = &v
 	}
-	// 表示条件
 	if pbf.Condition != nil {
 		field.Condition = &protocol.FieldCondition{
 			Field: pbf.Condition.Field,

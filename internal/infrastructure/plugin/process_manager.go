@@ -193,12 +193,26 @@ func (m *PluginProcessManager) Launch(pluginPath string) (*PluginProcess, error)
 	if err != nil {
 		return nil, fmt.Errorf("stdout パイプ作成失敗: %w", err)
 	}
-	cmd.Stderr = os.Stderr
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stderr パイプ作成失敗: %w", err)
+	}
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("プラグイン起動失敗: %w", err)
 	}
 	proc.cmd = cmd
+
+	// プラグインの stderr をホストプロセスが明示的に読み取って転送する。
+	// Windows では CREATE_NO_WINDOW とハンドル継承の相性が悪いため、
+	// cmd.Stderr = os.Stderr ではなくパイプ経由で確実に転送する。
+	pluginName := filepath.Base(pluginPath)
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			fmt.Fprintf(os.Stderr, "[%s] %s\n", pluginName, scanner.Text())
+		}
+	}()
 
 	// ホストプロセス終了時に子プロセスも自動終了するよう Job Object に割り当てる
 	addProcessToJobObject(m.jobHandle, cmd.Process.Pid)
@@ -289,6 +303,7 @@ func readGrpcPort(stdout io.Reader, timeout time.Duration) (int, error) {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
+			fmt.Fprintln(os.Stderr, "[PLUGIN STDOUT]", line)
 			if strings.HasPrefix(line, "GRPC_PORT=") {
 				portStr := strings.TrimPrefix(line, "GRPC_PORT=")
 				port, err := strconv.Atoi(strings.TrimSpace(portStr))

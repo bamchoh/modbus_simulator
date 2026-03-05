@@ -117,12 +117,13 @@ func (s *PLCService) GetHostGrpcAddr() string {
 	return s.hostGrpcServer.Addr()
 }
 
-// InitPlugins はプラグインディレクトリを検索してプラグインを起動・登録する
+// InitPlugins はプラグインディレクトリを検索してマニフェストを読み込み、
+// LazyRemoteServerFactory を登録する。プロセスはこの時点では起動しない。
 func (s *PLCService) InitPlugins(pluginsDir string) error {
 	hostAddr := s.GetHostGrpcAddr()
 
 	mgr := plugininfra.NewPluginProcessManager(hostAddr)
-	procs, err := mgr.Discover(pluginsDir)
+	entries, err := mgr.DiscoverManifests(pluginsDir)
 	if err != nil {
 		return err
 	}
@@ -131,8 +132,8 @@ func (s *PLCService) InitPlugins(pluginsDir string) error {
 	s.pluginManager = mgr
 	s.mu.Unlock()
 
-	for _, proc := range procs {
-		factory := plugininfra.NewRemoteServerFactory(proc.Conn(), proc.Metadata)
+	for _, entry := range entries {
+		factory := plugininfra.NewLazyRemoteServerFactory(entry, mgr)
 		s.RegisterPluginFactory(factory)
 	}
 
@@ -186,6 +187,14 @@ func (s *PLCService) AddServer(protocolType string, variantID string) error {
 	factory, ok := s.factories[pt]
 	if !ok {
 		return fmt.Errorf("protocol not found: %s", protocolType)
+	}
+
+	// プラグインプロセスをオンデマンドで起動（LazyRemoteServerFactory の場合）
+	type pluginStarter interface{ EnsureStarted() error }
+	if starter, ok := factory.(pluginStarter); ok {
+		if err := starter.EnsureStarted(); err != nil {
+			return fmt.Errorf("プラグイン起動失敗: %w", err)
+		}
 	}
 
 	// VariableStoreAccessor を注入（NodePublishing 対応プロトコル向け）
@@ -282,6 +291,12 @@ func (s *PLCService) RemoveServer(protocolType string) error {
 		ds.Detach()
 	}
 
+	// プラグインプロセスを停止（LazyRemoteServerFactory の場合）
+	type pluginStopper interface{ StopProcess() }
+	if stopper, ok := inst.factory.(pluginStopper); ok {
+		stopper.StopProcess()
+	}
+
 	delete(s.servers, pt)
 	return nil
 }
@@ -366,6 +381,9 @@ func (s *PLCService) GetAvailableProtocols() []ProtocolInfoDTO {
 			Variants:    variantDTOs,
 		})
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Type < result[j].Type
+	})
 	return result
 }
 
@@ -379,6 +397,10 @@ func (s *PLCService) GetProtocolSchema(protocolType string) (*ProtocolSchemaDTO,
 	}
 
 	variants := factory.ConfigVariants()
+	// バリアントがない場合（OPC UA 等）は空 ID で1つ生成してフィールドを取得する
+	if len(variants) == 0 {
+		variants = []protocol.ConfigVariant{{ID: "", DisplayName: ""}}
+	}
 	variantDTOs := make([]VariantDTO, len(variants))
 	for i, v := range variants {
 		fields := factory.GetConfigFields(v.ID)

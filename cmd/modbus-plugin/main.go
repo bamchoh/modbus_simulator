@@ -13,6 +13,7 @@ import (
 )
 
 func main() {
+	fmt.Fprintln(os.Stderr, "Modbus Plugin starting...")
 	// ランダムな空きポートで gRPC サーバーを起動
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

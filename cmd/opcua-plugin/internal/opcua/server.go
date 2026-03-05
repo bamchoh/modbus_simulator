@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gopcua/opcua/id"
 	goserver "github.com/gopcua/opcua/server"
 	"github.com/gopcua/opcua/server/attrs"
 	"github.com/gopcua/opcua/ua"
-	"github.com/gopcua/opcua/id"
 
 	"modbus_simulator/internal/domain/protocol"
 )
@@ -26,7 +26,7 @@ type OpcuaConfig struct {
 }
 
 func defaultOpcuaConfig() *OpcuaConfig {
-	return &OpcuaConfig{Host: "localhost", Port: 4840}
+	return &OpcuaConfig{Host: "0.0.0.0", Port: 4840}
 }
 
 func (c *OpcuaConfig) ProtocolType() protocol.ProtocolType { return "opcua" }
@@ -62,6 +62,7 @@ type OpcuaServer struct {
 
 // NodePublishingAware インターフェース確認
 var _ protocol.NodePublishingAware = (*OpcuaServer)(nil)
+
 
 func newOpcuaServer(config *OpcuaConfig, accessor protocol.VariableStoreAccessor) *OpcuaServer {
 	return &OpcuaServer{
@@ -307,8 +308,8 @@ func (ns *PLCNameSpace) pollChanges(ctx context.Context) {
 
 // --- NameSpace インターフェース実装 ---
 
-func (ns *PLCNameSpace) Name() string  { return "urn:modbus-simulator:plc" }
-func (ns *PLCNameSpace) ID() uint16    { return ns.nsID }
+func (ns *PLCNameSpace) Name() string   { return "urn:modbus-simulator:plc" }
+func (ns *PLCNameSpace) ID() uint16     { return ns.nsID }
 func (ns *PLCNameSpace) SetID(i uint16) { ns.nsID = i }
 
 func (ns *PLCNameSpace) AddNode(n *goserver.Node) *goserver.Node { return n }

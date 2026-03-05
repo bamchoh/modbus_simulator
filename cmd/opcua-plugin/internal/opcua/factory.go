@@ -55,10 +55,10 @@ func (f *OpcuaServerFactory) GetConfigFields(variantID string) []protocol.Config
 	return []protocol.ConfigField{
 		{
 			Name:     "host",
-			Label:    "ホスト",
+			Label:    "ホスト (0.0.0.0で全インターフェース)",
 			Type:     "text",
 			Required: true,
-			Default:  "localhost",
+			Default:  "0.0.0.0",
 		},
 		{
 			Name:     "port",

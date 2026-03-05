@@ -142,7 +142,7 @@ function ServerInstanceRow({
       <div className="server-instance-header">
         <div className="server-instance-info">
           <span className="server-instance-name">{instance.displayName}</span>
-          <span className="server-instance-variant">{instance.variant}</span>
+          {instance.variant && <span className="server-instance-variant">{instance.variant}</span>}
           <span className={`server-status-badge ${statusClass}`}>{instance.status}</span>
         </div>
         <div className="server-instance-actions">
@@ -366,7 +366,6 @@ export function ServerPanel() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedProtocol, setSelectedProtocol] = useState<string>('');
   const [selectedVariant, setSelectedVariant] = useState<string>('');
-  const [addSchema, setAddSchema] = useState<application.ProtocolSchemaDTO | null>(null);
 
   useEffect(() => {
     loadInitialData();
@@ -461,30 +460,18 @@ export function ServerPanel() {
   const addedProtocolTypes = new Set(serverInstances.map(i => i.protocolType));
   const availableProtocols = protocols.filter(p => !addedProtocolTypes.has(p.type));
 
-  const handleOpenAddDialog = async () => {
+  const handleOpenAddDialog = () => {
     if (availableProtocols.length === 0) return;
     const firstProto = availableProtocols[0];
-    try {
-      const schema = await GetProtocolSchema(firstProto.type);
-      setAddSchema(schema);
-      setSelectedProtocol(firstProto.type);
-      setSelectedVariant(schema?.variants[0]?.id || '');
-    } catch (e) {
-      setError(String(e));
-      return;
-    }
+    setSelectedProtocol(firstProto.type);
+    setSelectedVariant(firstProto.variants[0]?.id || '');
     setIsAddDialogOpen(true);
   };
 
-  const handleAddProtocolChange = async (protocolType: string) => {
-    try {
-      const schema = await GetProtocolSchema(protocolType);
-      setAddSchema(schema);
-      setSelectedProtocol(protocolType);
-      setSelectedVariant(schema?.variants[0]?.id || '');
-    } catch (e) {
-      setError(String(e));
-    }
+  const handleAddProtocolChange = (protocolType: string) => {
+    const proto = availableProtocols.find(p => p.type === protocolType);
+    setSelectedProtocol(protocolType);
+    setSelectedVariant(proto?.variants[0]?.id || '');
   };
 
   const handleAddServer = async () => {
@@ -553,7 +540,9 @@ export function ServerPanel() {
       </div>
 
       {/* サーバー追加ダイアログ */}
-      {isAddDialogOpen && (
+      {isAddDialogOpen && (() => {
+        const selectedProtoVariants = availableProtocols.find(p => p.type === selectedProtocol)?.variants ?? [];
+        return (
         <div className="dialog-overlay">
           <div className="dialog">
             <h3>サーバーを追加</h3>
@@ -571,14 +560,14 @@ export function ServerPanel() {
                   ))}
                 </select>
               </div>
-              {addSchema && addSchema.variants.length > 1 && (
+              {selectedProtoVariants.length > 1 && (
                 <div className="form-group">
                   <label>バリアント</label>
                   <select
                     value={selectedVariant}
                     onChange={e => setSelectedVariant(e.target.value)}
                   >
-                    {addSchema.variants.map(v => (
+                    {selectedProtoVariants.map(v => (
                       <option key={v.id} value={v.id}>
                         {v.displayName}
                       </option>
@@ -597,7 +586,8 @@ export function ServerPanel() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -11,8 +12,8 @@ import (
 
 	pb "modbus_simulator/pb/pluginpb"
 
-	"modbus_simulator/internal/domain/protocol"
 	"modbus_simulator/cmd/opcua-plugin/internal/opcua"
+	"modbus_simulator/internal/domain/protocol"
 )
 
 // PluginServer は OPC UA プラグインの gRPC サーバー実装
@@ -148,6 +149,8 @@ func (s *PluginServer) ConfigToMap(ctx context.Context, req *pb.ConfigToMapReque
 }
 
 func (s *PluginServer) CreateAndStart(ctx context.Context, req *pb.CreateAndStartRequest) (*pb.Empty, error) {
+	fmt.Fprintln(os.Stderr, "CreateAndStart called with VariantId:", req.VariantId)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -188,7 +191,10 @@ func (s *PluginServer) CreateAndStart(ctx context.Context, req *pb.CreateAndStar
 	}
 	s.server = srv
 
-	if err := srv.Start(ctx); err != nil {
+	// gRPC リクエストの ctx はメソッドが返った時点でキャンセルされる。
+	// OPC UA サーバーの goroutine はサーバーが Stop() されるまで動き続ける必要があるため、
+	// context.Background() を渡す。キャンセルは OpcuaServer.Stop() → s.cancel() が担う。
+	if err := srv.Start(context.Background()); err != nil {
 		return nil, fmt.Errorf("サーバー起動失敗: %w", err)
 	}
 

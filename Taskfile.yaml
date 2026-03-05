@@ -20,16 +20,19 @@ tasks:
       - powershell -Command "mkdir -p {{.PLUGINS_DIR}}/modbus-plugin"
       - go build -o {{.PLUGINS_DIR}}/modbus-plugin/modbus-plugin.exe ./cmd/modbus-plugin
       - |
-        printf '{\n  "name": "Modbus Plugin",\n  "entrypoint": "modbus-plugin.exe",\n  "version": "0.0.1"\n}\n' > {{.PLUGINS_DIR}}/modbus-plugin/plugin.json
+        printf '{\n  "name": "Modbus Plugin",\n  "entrypoint": "modbus-plugin.exe",\n  "version": "0.0.1",\n  "protocol_type": "modbus",\n  "display_name": "Modbus",\n  "variants": [\n    {"id": "tcp", "display_name": "Modbus TCP"},\n    {"id": "rtu", "display_name": "Modbus RTU"},\n    {"id": "ascii", "display_name": "Modbus ASCII"}\n  ],\n  "capabilities": {\n    "supports_unit_id": true,\n    "unit_id_min": 1,\n    "unit_id_max": 247,\n    "supports_node_publishing": false\n  }\n}\n' > {{.PLUGINS_DIR}}/modbus-plugin/plugin.json
       - powershell -Command "mkdir -p {{.PLUGINS_DIR}}/opcua-plugin"
       - go build -o {{.PLUGINS_DIR}}/opcua-plugin/opcua-plugin.exe ./cmd/opcua-plugin
       - |
-        printf '{\n  "name": "OPC UA Plugin",\n  "entrypoint": "opcua-plugin.exe",\n  "version": "0.0.1"\n}\n' > {{.PLUGINS_DIR}}/opcua-plugin/plugin.json
+        printf '{\n  "name": "OPC UA Plugin",\n  "entrypoint": "opcua-plugin.exe",\n  "version": "0.0.1",\n  "protocol_type": "opcua",\n  "display_name": "OPC UA",\n  "variants": [],\n  "capabilities": {\n    "supports_node_publishing": true\n  }\n}\n' > {{.PLUGINS_DIR}}/opcua-plugin/plugin.json
 
   dev:
     desc: プラグインをビルドしてから wails dev を起動する
     deps: [plugins]
     cmds:
+      # build/bin/plugins/ が存在すると古いバイナリが優先されるため削除する
+      # - powershell -Command "Remove-Item -Path build/bin/plugins -Recurse -Force -ErrorAction SilentlyContinue"
+      - powershell -Command "Copy-Item -Path {{.PLUGINS_DIR}} -Destination build/bin/plugins -Recurse"
       - wails dev
 
   build:
