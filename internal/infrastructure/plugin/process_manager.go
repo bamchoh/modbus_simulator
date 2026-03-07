@@ -315,6 +315,8 @@ func readGrpcPort(stdout io.Reader, timeout time.Duration) (int, error) {
 				// 残りの stdout は非同期で読み続ける（プラグインのログ等）
 				go func() {
 					for scanner.Scan() {
+						line := scanner.Text()
+						fmt.Fprintln(os.Stderr, "[PLUGIN STDOUT]", line)
 						// プラグインの stdout はここで消費（ブロック防止）
 					}
 				}()
