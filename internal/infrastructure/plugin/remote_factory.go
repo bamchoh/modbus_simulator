@@ -3,6 +3,7 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -67,6 +68,8 @@ func (f *LazyRemoteServerFactory) GetProtocolCapabilities() protocol.ProtocolCap
 
 // EnsureStarted はプラグインプロセスが起動していなければ起動する。
 // 既に起動済みかつクラッシュしていなければ何もしない。
+// plugin.json に debug_port が指定されている場合は新規プロセスを起動せず、
+// その port で既に動いているプロセスに接続する（デバッグ用）。
 func (f *LazyRemoteServerFactory) EnsureStarted() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -75,12 +78,28 @@ func (f *LazyRemoteServerFactory) EnsureStarted() error {
 		return nil
 	}
 
-	entrypoint := filepath.Join(f.manifestDir, f.manifest.Entrypoint)
-	fmt.Println("Starting plugin process:", entrypoint)
-	proc, err := f.manager.Launch(entrypoint)
-	if err != nil {
-		return fmt.Errorf("プラグイン起動失敗 (%s): %w", f.manifest.Name, err)
+	var (
+		proc *PluginProcess
+		err  error
+	)
+
+	if f.manifest.DebugPort > 0 {
+		fmt.Fprintf(os.Stderr, "[DEBUG] debug_port=%d が指定されているため既存プロセスへの接続を試みます (%s)\n", f.manifest.DebugPort, f.manifest.Name)
+		proc, err = f.manager.ConnectToExisting(f.manifest.DebugPort)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[DEBUG] 既存プロセスへの接続失敗 (port=%d, err=%v)。通常起動にフォールバックします\n", f.manifest.DebugPort, err)
+		}
 	}
+
+	if proc == nil {
+		entrypoint := filepath.Join(f.manifestDir, f.manifest.Entrypoint)
+		fmt.Println("Starting plugin process:", entrypoint)
+		proc, err = f.manager.Launch(entrypoint)
+		if err != nil {
+			return fmt.Errorf("プラグイン起動失敗 (%s): %w", f.manifest.Name, err)
+		}
+	}
+
 	f.proc = proc
 	f.conn = proc.conn
 	f.client = pb.NewPluginServiceClient(proc.conn)

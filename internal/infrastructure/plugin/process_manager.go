@@ -45,6 +45,7 @@ type PluginManifest struct {
 	DisplayName  string               `json:"display_name"`
 	Variants     []ManifestVariant    `json:"variants"`
 	Capabilities ManifestCapabilities `json:"capabilities"`
+	DebugPort    int                  `json:"debug_port,omitempty"` // デバッグ用: 0以外の場合は新規プロセスを起動せずこのポートに接続
 }
 
 // PluginManifestEntry はマニフェストとそのディレクトリを保持する
@@ -257,6 +258,35 @@ func (m *PluginProcessManager) Launch(pluginPath string) (*PluginProcess, error)
 		fmt.Fprintf(os.Stderr, "[ERROR] プラグインプロセスが終了: %s (error=%v)\n", pluginPath, exitErr)
 	}()
 
+	return proc, nil
+}
+
+// ConnectToExisting は既に起動済みのプラグインプロセスに接続する。
+// プロセスの起動・管理は行わない（デバッグ用途）。
+func (m *PluginProcessManager) ConnectToExisting(port int) (*PluginProcess, error) {
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, fmt.Errorf("gRPC 接続失敗 %s: %w", addr, err)
+	}
+
+	proc := &PluginProcess{
+		conn:         conn,
+		PluginClient: pb.NewPluginServiceClient(conn),
+		DSClient:     pb.NewDataStoreServiceClient(conn),
+		Port:         port,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	meta, err := proc.PluginClient.GetMetadata(ctx, &pb.Empty{})
+	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("メタデータ取得失敗 (port=%d): %w", port, err)
+	}
+	proc.Metadata = meta
+
+	fmt.Fprintf(os.Stderr, "[DEBUG] 既存プラグインプロセスに接続: port=%d\n", port)
 	return proc, nil
 }
 
