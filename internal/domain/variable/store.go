@@ -187,20 +187,16 @@ func (s *VariableStore) generateDefaultValue(dataType DataType) (interface{}, er
 		if err != nil {
 			return nil, err
 		}
-		if !elemType.IsValid() && !elemType.IsStructType() {
+		if !elemType.IsValid() && !elemType.IsStructType() && !elemType.IsArrayType() {
 			return nil, fmt.Errorf("invalid element type: %s", elemType)
 		}
 		arr := make([]interface{}, size)
 		for i := range arr {
-			if elemType.IsStructType() {
-				elemDef, err := s.ResolveStructDef(string(elemType))
-				if err != nil {
-					return nil, fmt.Errorf("unknown struct element type: %s", elemType)
-				}
-				arr[i] = elemDef.DefaultValueWithResolver(s)
-			} else {
-				arr[i] = elemType.DefaultValue()
+			elemVal, err := s.generateDefaultValue(elemType)
+			if err != nil {
+				return nil, err
 			}
+			arr[i] = elemVal
 		}
 		return arr, nil
 	} else if dataType.IsStructType() {
@@ -283,21 +279,17 @@ func (s *VariableStore) CreateVariable(name string, dataType DataType, initialVa
 		if err != nil {
 			return nil, err
 		}
-		if !elemType.IsValid() && !elemType.IsStructType() {
+		if !elemType.IsValid() && !elemType.IsStructType() && !elemType.IsArrayType() {
 			return nil, fmt.Errorf("invalid element type: %s", elemType)
 		}
 		if initialValue == nil {
 			arr := make([]interface{}, size)
 			for i := range arr {
-				if elemType.IsStructType() {
-					elemDef, err := s.ResolveStructDef(string(elemType))
-					if err != nil {
-						return nil, fmt.Errorf("unknown struct element type: %s", elemType)
-					}
-					arr[i] = elemDef.DefaultValueWithResolver(s)
-				} else {
-					arr[i] = elemType.DefaultValue()
+				elemVal, genErr := s.generateDefaultValue(elemType)
+				if genErr != nil {
+					return nil, genErr
 				}
+				arr[i] = elemVal
 			}
 			value = arr
 		} else {
@@ -306,15 +298,11 @@ func (s *VariableStore) CreateVariable(name string, dataType DataType, initialVa
 				// デフォルト配列を生成
 				arr := make([]interface{}, size)
 				for i := range arr {
-					if elemType.IsStructType() {
-						elemDef, resolveErr := s.ResolveStructDef(string(elemType))
-						if resolveErr != nil {
-							return nil, fmt.Errorf("unknown struct element type: %s", elemType)
-						}
-						arr[i] = elemDef.DefaultValueWithResolver(s)
-					} else {
-						arr[i] = elemType.DefaultValue()
+					elemVal, genErr := s.generateDefaultValue(elemType)
+					if genErr != nil {
+						return nil, genErr
 					}
+					arr[i] = elemVal
 				}
 				value = arr
 			} else {

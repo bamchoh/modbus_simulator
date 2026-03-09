@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   GetVariables,
   GetDataTypes,
@@ -87,7 +87,17 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   const [newValue, setNewValue] = useState("");
   // 配列型追加用
   const [newArrayElemType, setNewArrayElemType] = useState("INT");
-  const [newArraySize, setNewArraySize] = useState(10);
+  const [newArrayElemCategory, setNewArrayElemCategory] = useState<
+    "scalar" | "struct"
+  >("scalar");
+  const [newDimCount, setNewDimCount] = useState(1);
+  const [newDimBounds, setNewDimBounds] = useState<
+    Array<{ lower: number; upper: number }>
+  >([
+    { lower: 0, upper: 9 },
+    { lower: 0, upper: 4 },
+    { lower: 0, upper: 2 },
+  ]);
   // STRING型のバイト長
   const [newStringLength, setNewStringLength] = useState(20);
   // 型カテゴリ: 'scalar' | 'array' | 'struct'
@@ -104,7 +114,17 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     "scalar" | "array" | "struct"
   >("scalar");
   const [metaEditArrayElemType, setMetaEditArrayElemType] = useState("INT");
-  const [metaEditArraySize, setMetaEditArraySize] = useState(10);
+  const [metaEditArrayElemCategory, setMetaEditArrayElemCategory] = useState<
+    "scalar" | "struct"
+  >("scalar");
+  const [metaEditDimCount, setMetaEditDimCount] = useState(1);
+  const [metaEditDimBounds, setMetaEditDimBounds] = useState<
+    Array<{ lower: number; upper: number }>
+  >([
+    { lower: 0, upper: 9 },
+    { lower: 0, upper: 4 },
+    { lower: 0, upper: 2 },
+  ]);
   const [metaEditStringLength, setMetaEditStringLength] = useState(20);
 
   // 構造体型定義フォーム
@@ -119,7 +139,8 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       dataType: string;
       stringLength: number;
       arrayElemType: string;
-      arrayElemCategory: "scalar" | "struct";
+      arrayElemCategory: "scalar" | "array" | "struct";
+      subArraySize: number;
       arraySize: number;
     }[]
   >([
@@ -130,6 +151,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       stringLength: 20,
       arrayElemType: "INT",
       arrayElemCategory: "scalar",
+      subArraySize: 5,
       arraySize: 10,
     },
   ]);
@@ -253,6 +275,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
             stringLength: 20,
             arrayElemType: "INT",
             arrayElemCategory: "scalar",
+            subArraySize: 5,
             arraySize: 10,
           },
         ]);
@@ -296,6 +319,84 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     }
   };
 
+  // 配列型かどうか判定（IEC 61131-3 形式および旧形式に対応）
+  const isArrayType = (dataType: string): boolean => {
+    if (!dataType.startsWith("ARRAY[")) return false;
+    return dataType.includes("] OF ") || dataType.endsWith("]");
+  };
+
+  // 配列型文字列をパースして最初の次元の { elemType, size, lower, upper } を返す
+  // IEC 61131-3 形式: "ARRAY[1..10] OF INT" → { elemType: "INT", size: 10, lower: 1, upper: 10 }
+  //   多次元:          "ARRAY[0..2, 0..4] OF INT" → { elemType: "ARRAY[0..4] OF INT", size: 3, lower: 0, upper: 2 }
+  // 旧形式（後方互換）: "ARRAY[INT;10]"  → { elemType: "INT", size: 10, lower: 0, upper: 9 }
+  const parseArrayTypeFE = (
+    dataType: string,
+  ): { elemType: string; size: number; lower: number; upper: number } | null => {
+    if (!dataType.startsWith("ARRAY[")) return null;
+    const ofIdx = dataType.indexOf("] OF ");
+    if (ofIdx >= 0) {
+      const dimsStr = dataType.slice(6, ofIdx);
+      const elemStr = dataType.slice(ofIdx + 5);
+      const dimParts = dimsStr.split(",");
+      const firstDim = dimParts[0].trim();
+      const rangeParts = firstDim.split("..");
+      if (rangeParts.length !== 2) return null;
+      const lower = parseInt(rangeParts[0].trim());
+      const upper = parseInt(rangeParts[1].trim());
+      if (isNaN(lower) || isNaN(upper) || upper < lower) return null;
+      const size = upper - lower + 1;
+      if (dimParts.length === 1) {
+        return { elemType: elemStr, size, lower, upper };
+      } else {
+        const remaining = dimParts.slice(1).map((d) => d.trim()).join(", ");
+        return { elemType: `ARRAY[${remaining}] OF ${elemStr}`, size, lower, upper };
+      }
+    }
+    // 旧形式: ARRAY[ElementType;Size]
+    if (!dataType.endsWith("]")) return null;
+    const inner = dataType.slice(6, -1);
+    const lastSemi = inner.lastIndexOf(";");
+    if (lastSemi < 0) return null;
+    const elemType = inner.slice(0, lastSemi).trim();
+    const size = parseInt(inner.slice(lastSemi + 1).trim());
+    if (isNaN(size) || size <= 0) return null;
+    return { elemType, size, lower: 0, upper: size - 1 };
+  };
+
+  // 配列型文字列から全次元の境界とベース要素型を取得する（IEC 61131-3 形式のみ）
+  // "ARRAY[1..3, 0..4] OF INT" → { dims: [{lower:1,upper:3},{lower:0,upper:4}], baseElemType:"INT" }
+  const parseAllDimsFE = (
+    dataType: string,
+  ): { dims: Array<{ lower: number; upper: number }>; baseElemType: string } | null => {
+    if (!dataType.startsWith("ARRAY[")) return null;
+    const ofIdx = dataType.indexOf("] OF ");
+    if (ofIdx < 0) return null;
+    const dimsStr = dataType.slice(6, ofIdx);
+    const baseElemType = dataType.slice(ofIdx + 5);
+    const dimParts = dimsStr.split(",").map((s) => s.trim());
+    const dims: Array<{ lower: number; upper: number }> = [];
+    for (const d of dimParts) {
+      const rangeParts = d.split("..");
+      if (rangeParts.length !== 2) return null;
+      const lower = parseInt(rangeParts[0].trim());
+      const upper = parseInt(rangeParts[1].trim());
+      if (isNaN(lower) || isNaN(upper)) return null;
+      dims.push({ lower, upper });
+    }
+    return { dims, baseElemType };
+  };
+
+  // 配列型文字列を IEC 61131-3 形式で構築する
+  // buildArrayTypeFE("INT", [{lower:0,upper:9}])              → "ARRAY[0..9] OF INT"
+  // buildArrayTypeFE("INT", [{lower:1,upper:3},{lower:0,upper:4}]) → "ARRAY[1..3, 0..4] OF INT"
+  const buildArrayTypeFE = (
+    baseElemType: string,
+    dims: Array<{ lower: number; upper: number }>,
+  ): string => {
+    const dimsStr = dims.map((d) => `${d.lower}..${d.upper}`).join(", ");
+    return `ARRAY[${dimsStr}] OF ${baseElemType}`;
+  };
+
   // 構造体型かどうか判定
   const isStructType = (dataType: string): boolean => {
     const scalarTypes = [
@@ -318,7 +419,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     ];
     return (
       !scalarTypes.includes(dataType) &&
-      !dataType.startsWith("ARRAY[") &&
+      !isArrayType(dataType) &&
       !dataType.startsWith("STRING[")
     );
   };
@@ -337,11 +438,10 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     // 構造体型
     const st = structTypes.find((s) => s.name === dataType);
     if (st) return st.wordCount;
-    // 配列型
-    const match = dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
-    if (match) {
-      const elemWc = getWordCount(match[1]);
-      return elemWc * parseInt(match[2]);
+    // 配列型（IEC 61131-3 形式 および 旧形式）
+    const arr = parseArrayTypeFE(dataType);
+    if (arr) {
+      return getWordCount(arr.elemType) * arr.size;
     }
     return 1;
   };
@@ -391,9 +491,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       wordOffset: number,
     ) => {
       // 配列型
-      if (dataType.startsWith("ARRAY[")) {
-        const match = dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
-        const elemType = match ? match[1] : "";
+      if (isArrayType(dataType)) {
+        const arr = parseArrayTypeFE(dataType);
+        const elemType = arr ? arr.elemType : "";
         const elemWordCount = getWordCount(elemType);
         // 親ヘッダー行
         rows.push({
@@ -409,11 +509,12 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         });
         // 各要素を行として展開
         if (Array.isArray(value)) {
+          const lowerBound = arr ? arr.lower : 0;
           value.forEach((elem: any, i: number) => {
             const elemPath = [...valuePath, i];
-            const elemName = `${displayName}[${i}]`;
+            const elemName = `${displayName}[${lowerBound + i}]`;
             const elemOffset = wordOffset + i * elemWordCount;
-            if (isStructType(elemType)) {
+            if (isStructType(elemType) || isArrayType(elemType)) {
               expand(elemName, elemType, elem, depth + 1, elemPath, elemOffset);
             } else {
               rows.push({
@@ -460,7 +561,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
             const fieldOffset = wordOffset + field.offset;
             if (
               isStructType(field.dataType) ||
-              field.dataType.startsWith("ARRAY[")
+              isArrayType(field.dataType)
             ) {
               expand(
                 fieldName,
@@ -726,33 +827,13 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     if (!st) return {};
     const obj: Record<string, any> = {};
     for (const f of st.fields) {
-      if (f.dataType.startsWith("ARRAY[")) {
-        // ARRAY[ElemType;Size] をパース
-        const match = f.dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
-        if (match) {
-          const elemType = match[1];
-          const size = parseInt(match[2]);
-          const isElemStruct =
-            ![
-              "BOOL",
-              "SINT",
-              "INT",
-              "DINT",
-              "USINT",
-              "UINT",
-              "UDINT",
-              "REAL",
-              "LREAL",
-              "STRING",
-            ].includes(elemType) && !elemType.startsWith("STRING[");
-          obj[f.name] = Array.from({ length: size }, () =>
-            isElemStruct
-              ? generateStructDefault(elemType)
-              : parseValue(getDefaultValue(elemType), elemType),
-          );
-        } else {
-          obj[f.name] = [];
-        }
+      const arr = parseArrayTypeFE(f.dataType);
+      if (arr) {
+        obj[f.name] = Array.from({ length: arr.size }, () =>
+          isStructType(arr.elemType)
+            ? generateStructDefault(arr.elemType)
+            : parseValue(getDefaultValue(arr.elemType), arr.elemType),
+        );
       } else if (isStructType(f.dataType)) {
         obj[f.name] = generateStructDefault(f.dataType);
       } else {
@@ -770,22 +851,13 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       let value: any;
 
       if (newTypeCategory === "array") {
-        const elemType =
-          newArrayElemType === "STRING"
-            ? `STRING[${newStringLength}]`
-            : newArrayElemType;
-        dataType = `ARRAY[${elemType};${newArraySize}]`;
-        // デフォルト配列を生成（構造体要素にも対応）
-        if (isStructType(newArrayElemType)) {
-          value = Array.from({ length: newArraySize }, () =>
-            generateStructDefault(newArrayElemType),
-          );
-        } else {
-          const defaultVal = getDefaultValue(elemType);
-          value = Array.from({ length: newArraySize }, () =>
-            parseValue(defaultVal, elemType),
-          );
-        }
+        const baseElemType = resolveBaseElemType(
+          newArrayElemCategory,
+          newArrayElemType,
+          newStringLength,
+        );
+        dataType = buildArrayTypeFE(baseElemType, newDimBounds.slice(0, newDimCount));
+        value = generateDefaultForType(dataType);
       } else if (newTypeCategory === "struct") {
         // 構造体のデフォルト値を再帰的に生成
         value = generateStructDefault(newDataType);
@@ -806,7 +878,9 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       setNewValue("");
       setNewTypeCategory("scalar");
       setNewArrayElemType("INT");
-      setNewArraySize(10);
+      setNewArrayElemCategory("scalar");
+      setNewDimCount(1);
+      setNewDimBounds([{ lower: 0, upper: 9 }, { lower: 0, upper: 4 }, { lower: 0, upper: 2 }]);
     } catch (e) {
       console.error("Failed to create variable:", e);
       alert("変数の作成に失敗しました: " + e);
@@ -819,19 +893,28 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     setMetaEditName(v.name);
 
     const dt = v.dataType;
-    if (dt.startsWith("ARRAY[")) {
-      const arrMatch = dt.match(/^ARRAY\[(.+);(\d+)\]$/);
-      if (arrMatch) {
-        const elemPart = arrMatch[1];
-        const sizeVal = parseInt(arrMatch[2]);
+    if (isArrayType(dt)) {
+      const allDims = parseAllDimsFE(dt);
+      if (allDims) {
         setMetaEditTypeCategory("array");
-        setMetaEditArraySize(sizeVal);
-        if (elemPart.startsWith("STRING[")) {
-          const sLen = elemPart.match(/^STRING\[(\d+)\]$/);
+        setMetaEditDimCount(allDims.dims.length);
+        setMetaEditDimBounds([
+          allDims.dims[0] ?? { lower: 0, upper: 9 },
+          allDims.dims[1] ?? { lower: 0, upper: 4 },
+          allDims.dims[2] ?? { lower: 0, upper: 2 },
+        ]);
+        const base = allDims.baseElemType;
+        if (base.startsWith("STRING[")) {
+          const sLen = base.match(/^STRING\[(\d+)\]$/);
+          setMetaEditArrayElemCategory("scalar");
           setMetaEditArrayElemType("STRING");
           setMetaEditStringLength(sLen ? parseInt(sLen[1]) : 20);
+        } else if (isStructType(base)) {
+          setMetaEditArrayElemCategory("struct");
+          setMetaEditArrayElemType(base);
         } else {
-          setMetaEditArrayElemType(elemPart);
+          setMetaEditArrayElemCategory("scalar");
+          setMetaEditArrayElemType(base);
         }
       }
     } else if (dt.startsWith("STRING[")) {
@@ -856,11 +939,12 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     try {
       let dataType = metaEditDataType;
       if (metaEditTypeCategory === "array") {
-        const elemType =
-          metaEditArrayElemType === "STRING"
-            ? `STRING[${metaEditStringLength}]`
-            : metaEditArrayElemType;
-        dataType = `ARRAY[${elemType};${metaEditArraySize}]`;
+        const baseElemType = resolveBaseElemType(
+          metaEditArrayElemCategory,
+          metaEditArrayElemType,
+          metaEditStringLength,
+        );
+        dataType = buildArrayTypeFE(baseElemType, metaEditDimBounds.slice(0, metaEditDimCount));
       } else if (
         metaEditTypeCategory === "scalar" &&
         metaEditDataType === "STRING"
@@ -877,6 +961,28 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   };
 
   // フィールドの実際のデータ型文字列を取得
+  // カテゴリ・要素型・STRING長からベース要素型文字列を解決するヘルパー
+  const resolveBaseElemType = (
+    category: "scalar" | "struct",
+    elemType: string,
+    stringLength: number,
+  ): string => {
+    if (category === "struct") return elemType;
+    return elemType === "STRING" ? `STRING[${stringLength}]` : elemType;
+  };
+
+  // 任意データ型のデフォルト値を再帰生成するヘルパー
+  const generateDefaultForType = (dataType: string): any => {
+    const arr = parseArrayTypeFE(dataType);
+    if (arr) {
+      return Array.from({ length: arr.size }, () =>
+        generateDefaultForType(arr.elemType),
+      );
+    }
+    if (isStructType(dataType)) return generateStructDefault(dataType);
+    return parseValue(getDefaultValue(dataType), dataType);
+  };
+
   const resolveFieldDataType = (
     field: (typeof structTypeFields)[0],
   ): string => {
@@ -885,12 +991,24 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       return field.dataType;
     }
     if (field.category === "struct") return field.dataType;
-    // array
-    let elemType = field.arrayElemType;
-    if (field.arrayElemCategory === "scalar" && elemType === "STRING") {
-      elemType = `STRING[${field.stringLength}]`;
+    // array: IEC 61131-3 形式で生成（構造体フィールドは0ベース）
+    let innerElem: string;
+    if (field.arrayElemCategory === "array") {
+      const subElem =
+        field.arrayElemType === "STRING"
+          ? `STRING[${field.stringLength}]`
+          : field.arrayElemType;
+      innerElem = buildArrayTypeFE(subElem, [
+        { lower: 0, upper: field.subArraySize - 1 },
+      ]);
+    } else {
+      innerElem = resolveBaseElemType(
+        field.arrayElemCategory,
+        field.arrayElemType,
+        field.stringLength,
+      );
     }
-    return `ARRAY[${elemType};${field.arraySize}]`;
+    return buildArrayTypeFE(innerElem, [{ lower: 0, upper: field.arraySize - 1 }]);
   };
 
   // 構造体型を登録または更新
@@ -926,6 +1044,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
           stringLength: 20,
           arrayElemType: "INT",
           arrayElemCategory: "scalar",
+          subArraySize: 5,
           arraySize: 10,
         },
       ]);
@@ -949,18 +1068,31 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         stringLength: 20,
         arrayElemType: "INT",
         arrayElemCategory: "scalar",
+        subArraySize: 5,
         arraySize: 10,
       };
 
       // データ型を解析してカテゴリを判定
-      if (f.dataType.startsWith("ARRAY[")) {
+      if (isArrayType(f.dataType)) {
         field.category = "array";
-        const match = f.dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
-        if (match) {
-          let elemType = match[1];
-          field.arraySize = parseInt(match[2]);
-
-          if (elemType.startsWith("STRING[")) {
+        const outer = parseArrayTypeFE(f.dataType);
+        if (outer) {
+          field.arraySize = outer.size;
+          const elemType = outer.elemType;
+          if (isArrayType(elemType)) {
+            // 多次元配列
+            const inner = parseArrayTypeFE(elemType);
+            field.arrayElemCategory = "array";
+            field.subArraySize = inner ? inner.size : 5;
+            const subElemType = inner ? inner.elemType : "INT";
+            if (subElemType.startsWith("STRING[")) {
+              const lenMatch = subElemType.match(/^STRING\[(\d+)\]$/);
+              field.arrayElemType = "STRING";
+              if (lenMatch) field.stringLength = parseInt(lenMatch[1]);
+            } else {
+              field.arrayElemType = subElemType;
+            }
+          } else if (elemType.startsWith("STRING[")) {
             field.arrayElemCategory = "scalar";
             field.arrayElemType = "STRING";
             const lenMatch = elemType.match(/^STRING\[(\d+)\]$/);
@@ -1011,7 +1143,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   const handleEditClick = (v: application.VariableDTO) => {
     setEditingVariable(v);
     // 構造体・配列はディープコピーして編集用データを作る
-    if (v.dataType.startsWith("ARRAY[") || isStructType(v.dataType)) {
+    if (isArrayType(v.dataType) || isStructType(v.dataType)) {
       setEditData(JSON.parse(JSON.stringify(v.value ?? null)));
     } else {
       setEditData(v.value);
@@ -1237,13 +1369,13 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     const indent = depth * 16;
 
     // 配列型
-    if (dataType.startsWith("ARRAY[")) {
-      const match = dataType.match(/^ARRAY\[(.+);(\d+)\]$/);
-      if (!match || !Array.isArray(value)) {
+    if (isArrayType(dataType)) {
+      const arr = parseArrayTypeFE(dataType);
+      if (!arr || !Array.isArray(value)) {
         return <span>-</span>;
       }
-      const elemType = match[1];
-      const elemIsStruct = isStructType(elemType);
+      const elemType = arr.elemType;
+      const elemIsStruct = isStructType(elemType) || isArrayType(elemType);
 
       return (
         <div style={{ marginLeft: indent }}>
@@ -1675,7 +1807,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               >
                 {row.isHeader ? (
                   <span style={{ color: "#888", fontSize: "0.85em" }}>
-                    {row.dataType.startsWith("ARRAY[") &&
+                    {isArrayType(row.dataType) &&
                     Array.isArray(row.value)
                       ? `(${row.value.length} 要素)`
                       : `{${row.dataType}}`}
@@ -1860,7 +1992,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                     <label>要素型:</label>
                     <select
                       value={newArrayElemType}
-                      onChange={(e) => setNewArrayElemType(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNewArrayElemType(val);
+                        setNewArrayElemCategory(
+                          structTypes.some((st) => st.name === val)
+                            ? "struct"
+                            : "scalar",
+                        );
+                      }}
                     >
                       <optgroup label="スカラー型">
                         {dataTypes.map((t) => (
@@ -1881,32 +2021,70 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       )}
                     </select>
                   </div>
-                  {newArrayElemType === "STRING" && (
-                    <div className="dialog-row">
-                      <label>バイト長:</label>
-                      <input
-                        type="number"
-                        value={newStringLength}
-                        onChange={(e) =>
-                          setNewStringLength(parseInt(e.target.value) || 1)
-                        }
-                        min={1}
-                        max={256}
-                      />
-                    </div>
-                  )}
+                  {newArrayElemCategory === "scalar" &&
+                    newArrayElemType === "STRING" && (
+                      <div className="dialog-row">
+                        <label>バイト長:</label>
+                        <input
+                          type="number"
+                          value={newStringLength}
+                          onChange={(e) =>
+                            setNewStringLength(parseInt(e.target.value) || 1)
+                          }
+                          min={1}
+                          max={256}
+                        />
+                      </div>
+                    )}
                   <div className="dialog-row">
-                    <label>要素数:</label>
-                    <input
-                      type="number"
-                      value={newArraySize}
+                    <label>次元数:</label>
+                    <select
+                      value={newDimCount}
                       onChange={(e) =>
-                        setNewArraySize(parseInt(e.target.value) || 1)
+                        setNewDimCount(parseInt(e.target.value))
                       }
-                      min={1}
-                      max={1000}
-                    />
+                    >
+                      <option value={1}>1</option>
+                      <option value={2}>2</option>
+                      <option value={3}>3</option>
+                    </select>
                   </div>
+                  {[0, 1, 2].slice(0, newDimCount).map((i) => (
+                    <React.Fragment key={i}>
+                      <div className="dialog-row">
+                        <label>開始インデックス({i + 1}次元目):</label>
+                        <input
+                          type="number"
+                          value={newDimBounds[i].lower}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (isNaN(val)) return;
+                            setNewDimBounds((prev) => {
+                              const next = [...prev];
+                              next[i] = { ...next[i], lower: val };
+                              return next;
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="dialog-row">
+                        <label>終了インデックス({i + 1}次元目):</label>
+                        <input
+                          type="number"
+                          value={newDimBounds[i].upper}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (isNaN(val)) return;
+                            setNewDimBounds((prev) => {
+                              const next = [...prev];
+                              next[i] = { ...next[i], upper: val };
+                              return next;
+                            });
+                          }}
+                        />
+                      </div>
+                    </React.Fragment>
+                  ))}
                 </>
               )}
 
@@ -2023,9 +2201,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                     <label>要素型:</label>
                     <select
                       value={metaEditArrayElemType}
-                      onChange={(e) =>
-                        setMetaEditArrayElemType(e.target.value)
-                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setMetaEditArrayElemType(val);
+                        setMetaEditArrayElemCategory(
+                          structTypes.some((st) => st.name === val)
+                            ? "struct"
+                            : "scalar",
+                        );
+                      }}
                     >
                       <optgroup label="スカラー型">
                         {dataTypes.map((t) => (
@@ -2046,34 +2230,72 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       )}
                     </select>
                   </div>
-                  {metaEditArrayElemType === "STRING" && (
-                    <div className="dialog-row">
-                      <label>バイト長:</label>
-                      <input
-                        type="number"
-                        value={metaEditStringLength}
-                        onChange={(e) =>
-                          setMetaEditStringLength(
-                            parseInt(e.target.value) || 1,
-                          )
-                        }
-                        min={1}
-                        max={256}
-                      />
-                    </div>
-                  )}
+                  {metaEditArrayElemCategory === "scalar" &&
+                    metaEditArrayElemType === "STRING" && (
+                      <div className="dialog-row">
+                        <label>バイト長:</label>
+                        <input
+                          type="number"
+                          value={metaEditStringLength}
+                          onChange={(e) =>
+                            setMetaEditStringLength(
+                              parseInt(e.target.value) || 1,
+                            )
+                          }
+                          min={1}
+                          max={256}
+                        />
+                      </div>
+                    )}
                   <div className="dialog-row">
-                    <label>要素数:</label>
-                    <input
-                      type="number"
-                      value={metaEditArraySize}
+                    <label>次元数:</label>
+                    <select
+                      value={metaEditDimCount}
                       onChange={(e) =>
-                        setMetaEditArraySize(parseInt(e.target.value) || 1)
+                        setMetaEditDimCount(parseInt(e.target.value))
                       }
-                      min={1}
-                      max={1000}
-                    />
+                    >
+                      <option value={1}>1</option>
+                      <option value={2}>2</option>
+                      <option value={3}>3</option>
+                    </select>
                   </div>
+                  {[0, 1, 2].slice(0, metaEditDimCount).map((i) => (
+                    <React.Fragment key={i}>
+                      <div className="dialog-row">
+                        <label>開始インデックス({i + 1}次元目):</label>
+                        <input
+                          type="number"
+                          value={metaEditDimBounds[i].lower}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (isNaN(val)) return;
+                            setMetaEditDimBounds((prev) => {
+                              const next = [...prev];
+                              next[i] = { ...next[i], lower: val };
+                              return next;
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="dialog-row">
+                        <label>終了インデックス({i + 1}次元目):</label>
+                        <input
+                          type="number"
+                          value={metaEditDimBounds[i].upper}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (isNaN(val)) return;
+                            setMetaEditDimBounds((prev) => {
+                              const next = [...prev];
+                              next[i] = { ...next[i], upper: val };
+                              return next;
+                            });
+                          }}
+                        />
+                      </div>
+                    </React.Fragment>
+                  ))}
                 </>
               )}
 
@@ -2937,6 +3159,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                               const updated = [...structTypeFields];
                               const elemCat = e.target.value as
                                 | "scalar"
+                                | "array"
                                 | "struct";
                               updated[index] = {
                                 ...updated[index],
@@ -2952,36 +3175,115 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                             }}
                           >
                             <option value="scalar">スカラー</option>
+                            <option value="array">配列（多次元）</option>
                             {structTypes.length > 0 && (
                               <option value="struct">構造体</option>
                             )}
                           </select>
                         </div>
 
-                        <div className="dialog-row">
-                          <label>要素型:</label>
-                          <select
-                            value={field.arrayElemType}
-                            onChange={(e) => {
-                              const updated = [...structTypeFields];
-                              updated[index] = {
-                                ...updated[index],
-                                arrayElemType: e.target.value,
-                              };
-                              setStructTypeFields(updated);
-                            }}
-                          >
-                            {field.arrayElemCategory === "scalar" ? (
-                              <>
-                                {dataTypes.map((t) => (
-                                  <option key={t.id} value={t.id}>
-                                    {t.displayName}
-                                  </option>
-                                ))}
-                                <option value="STRING">STRING</option>
-                              </>
-                            ) : (
-                              structTypes
+                        {field.arrayElemCategory === "scalar" && (
+                          <div className="dialog-row">
+                            <label>要素型:</label>
+                            <select
+                              value={field.arrayElemType}
+                              onChange={(e) => {
+                                const updated = [...structTypeFields];
+                                updated[index] = {
+                                  ...updated[index],
+                                  arrayElemType: e.target.value,
+                                };
+                                setStructTypeFields(updated);
+                              }}
+                            >
+                              {dataTypes.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.displayName}
+                                </option>
+                              ))}
+                              <option value="STRING">STRING</option>
+                            </select>
+                          </div>
+                        )}
+                        {field.arrayElemCategory === "array" && (
+                          <>
+                            <div className="dialog-row">
+                              <label>内側要素型:</label>
+                              <select
+                                value={field.arrayElemType}
+                                onChange={(e) => {
+                                  const updated = [...structTypeFields];
+                                  updated[index] = {
+                                    ...updated[index],
+                                    arrayElemType: e.target.value,
+                                  };
+                                  setStructTypeFields(updated);
+                                }}
+                              >
+                                <optgroup label="スカラー型">
+                                  {dataTypes.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                      {t.displayName}
+                                    </option>
+                                  ))}
+                                  <option value="STRING">STRING</option>
+                                </optgroup>
+                                {structTypes
+                                  .filter(
+                                    (st) =>
+                                      st.name !== structTypeName.trim(),
+                                  )
+                                  .length > 0 && (
+                                  <optgroup label="構造体型">
+                                    {structTypes
+                                      .filter(
+                                        (st) =>
+                                          st.name !== structTypeName.trim(),
+                                      )
+                                      .map((st) => (
+                                        <option key={st.name} value={st.name}>
+                                          {st.name} ({st.wordCount}W)
+                                        </option>
+                                      ))}
+                                  </optgroup>
+                                )}
+                              </select>
+                            </div>
+                            <div className="dialog-row">
+                              <label>内側要素数:</label>
+                              <input
+                                type="number"
+                                value={field.subArraySize}
+                                onChange={(e) => {
+                                  const updated = [...structTypeFields];
+                                  updated[index] = {
+                                    ...updated[index],
+                                    subArraySize:
+                                      parseInt(e.target.value) || 1,
+                                  };
+                                  setStructTypeFields(updated);
+                                }}
+                                min={1}
+                                max={1000}
+                              />
+                            </div>
+                          </>
+                        )}
+                        {field.arrayElemCategory === "struct" && (
+                          <div className="dialog-row">
+                            <label>要素型:</label>
+                            <select
+                              value={field.arrayElemType}
+                              onChange={(e) => {
+                                const updated = [...structTypeFields];
+                                updated[index] = {
+                                  ...updated[index],
+                                  arrayElemType: e.target.value,
+                                };
+                                setStructTypeFields(updated);
+                              }}
+                            >
+                              {structTypes
                                 .filter(
                                   (st) => st.name !== structTypeName.trim(),
                                 )
@@ -2989,31 +3291,32 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                                   <option key={st.name} value={st.name}>
                                     {st.name} ({st.wordCount}W)
                                   </option>
-                                ))
-                            )}
-                          </select>
-                          {field.arrayElemCategory === "scalar" &&
-                            field.arrayElemType === "STRING" && (
-                              <>
-                                <label>バイト長:</label>
-                                <input
-                                  type="number"
-                                  value={field.stringLength}
-                                  onChange={(e) => {
-                                    const updated = [...structTypeFields];
-                                    updated[index] = {
-                                      ...updated[index],
-                                      stringLength:
-                                        parseInt(e.target.value) || 1,
-                                    };
-                                    setStructTypeFields(updated);
-                                  }}
-                                  min={1}
-                                  max={256}
-                                />
-                              </>
-                            )}
-                        </div>
+                                ))}
+                            </select>
+                          </div>
+                        )}
+                        {(field.arrayElemCategory === "scalar" ||
+                          field.arrayElemCategory === "array") &&
+                          field.arrayElemType === "STRING" && (
+                            <div className="dialog-row">
+                              <label>バイト長:</label>
+                              <input
+                                type="number"
+                                value={field.stringLength}
+                                onChange={(e) => {
+                                  const updated = [...structTypeFields];
+                                  updated[index] = {
+                                    ...updated[index],
+                                    stringLength:
+                                      parseInt(e.target.value) || 1,
+                                  };
+                                  setStructTypeFields(updated);
+                                }}
+                                min={1}
+                                max={256}
+                              />
+                            </div>
+                          )}
 
                         <div className="dialog-row">
                           <label>配列サイズ:</label>
@@ -3047,6 +3350,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                         stringLength: 20,
                         arrayElemType: "INT",
                         arrayElemCategory: "scalar",
+                        subArraySize: 5,
                         arraySize: 10,
                       },
                     ])
@@ -3072,6 +3376,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                       stringLength: 20,
                       arrayElemType: "INT",
                       arrayElemCategory: "scalar",
+                      subArraySize: 5,
                       arraySize: 10,
                     },
                   ]);

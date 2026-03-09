@@ -290,12 +290,15 @@ func TestParseArrayType_Valid(t *testing.T) {
 
 func TestParseArrayType_Invalid(t *testing.T) {
 	invalid := []DataType{
-		TypeINT,          // 配列でない
-		"ARRAY[]",        // 中身なし
-		"ARRAY[INT]",     // セミコロンなし
-		"ARRAY[INT;abc]", // サイズが数値でない
-		"ARRAY[INT;-1]",  // 負のサイズ
-		"ARRAY[INT;0]",   // ゼロサイズ
+		TypeINT,                   // 配列でない
+		"ARRAY[]",                 // 中身なし
+		"ARRAY[0..9]",             // " OF " なし
+		"ARRAY[0..abc] OF INT",    // 上限が数値でない
+		"ARRAY[0..-1] OF INT",     // 上限 < 下限
+		// 旧形式の無効ケース
+		"ARRAY[INT;abc]",          // サイズが数値でない
+		"ARRAY[INT;-1]",           // 負のサイズ
+		"ARRAY[INT;0]",            // ゼロサイズ
 	}
 	for _, dt := range invalid {
 		_, _, err := ParseArrayType(dt)
@@ -315,9 +318,11 @@ func TestNewArrayType(t *testing.T) {
 		size int
 		want string
 	}{
-		{TypeINT, 5, "ARRAY[INT;5]"},
-		{TypeDINT, 10, "ARRAY[DINT;10]"},
-		{DataType("MyStruct"), 3, "ARRAY[MyStruct;3]"},
+		{TypeINT, 5, "ARRAY[0..4] OF INT"},
+		{TypeDINT, 10, "ARRAY[0..9] OF DINT"},
+		{DataType("MyStruct"), 3, "ARRAY[0..2] OF MyStruct"},
+		// 多次元: 内側配列をフラット化
+		{NewArrayType(TypeINT, 5), 3, "ARRAY[0..2, 0..4] OF INT"},
 	}
 	for _, tc := range tests {
 		dt := NewArrayType(tc.elem, tc.size)
@@ -350,18 +355,18 @@ func TestDataType_WordCountWithResolver_Scalar(t *testing.T) {
 }
 
 func TestDataType_WordCountWithResolver_Array(t *testing.T) {
-	// ARRAY[DINT;3] = 2 * 3 = 6ワード
+	// ARRAY[0..2] OF DINT = 2 * 3 = 6ワード
 	arrType := NewArrayType(TypeDINT, 3)
 	got := arrType.WordCountWithResolver(nil)
 	if got != 6 {
-		t.Errorf("ARRAY[DINT;3].WordCountWithResolver = %d, want 6", got)
+		t.Errorf("%q.WordCountWithResolver = %d, want 6", arrType, got)
 	}
 
-	// ARRAY[LREAL;2] = 4 * 2 = 8ワード
+	// ARRAY[0..1] OF LREAL = 4 * 2 = 8ワード
 	arrType2 := NewArrayType(TypeLREAL, 2)
 	got2 := arrType2.WordCountWithResolver(nil)
 	if got2 != 8 {
-		t.Errorf("ARRAY[LREAL;2].WordCountWithResolver = %d, want 8", got2)
+		t.Errorf("%q.WordCountWithResolver = %d, want 8", arrType2, got2)
 	}
 }
 
@@ -402,10 +407,10 @@ func TestDataType_WordCountWithResolver_StructArray(t *testing.T) {
 	}, store)
 	_ = store.RegisterStructType(def)
 
-	// ARRAY[Vec3;4] = 6 * 4 = 24ワード
+	// ARRAY[0..3] OF Vec3 = 6 * 4 = 24ワード
 	arrType := NewArrayType(DataType("Vec3"), 4)
 	got := arrType.WordCountWithResolver(store)
 	if got != 24 {
-		t.Errorf("ARRAY[Vec3;4].WordCountWithResolver = %d, want 24", got)
+		t.Errorf("%q.WordCountWithResolver = %d, want 24", arrType, got)
 	}
 }

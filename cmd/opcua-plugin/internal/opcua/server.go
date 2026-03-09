@@ -261,10 +261,10 @@ func (ns *PLCNameSpace) loadFromAccessor() {
 // collectAllNodeIDs は指定ノード（nodeStr）とその子ノード全ての NodeID 文字列を返す
 func (ns *PLCNameSpace) collectAllNodeIDs(varID, dataType, nodeStr string) []string {
 	result := []string{nodeStr}
-	elemType, size, isArr := parseArrayType(dataType)
+	elemType, lower, size, isArr := parseArrayTypeFull(dataType)
 	if isArr {
 		for i := 0; i < int(size); i++ {
-			child := fmt.Sprintf("%s[%d]", nodeStr, i)
+			child := fmt.Sprintf("%s[%d]", nodeStr, int(lower)+i)
 			result = append(result, ns.collectAllNodeIDs(varID, elemType, child)...)
 		}
 		return result
@@ -458,12 +458,13 @@ func (ns *PLCNameSpace) Browse(bd *ua.BrowseDescription) *ua.BrowseResult {
 func (ns *PLCNameSpace) browseChildRefs(parentNodeStr, parentType string) []*ua.ReferenceDescription {
 	varTypedef := ua.NewNumericExpandedNodeID(0, uint32(id.BaseDataVariableType))
 
-	_, size, isArr := parseArrayType(parentType)
+	_, lower, size, isArr := parseArrayTypeFull(parentType)
 	if isArr {
 		refs := make([]*ua.ReferenceDescription, int(size))
 		for i := 0; i < int(size); i++ {
-			childStr := fmt.Sprintf("%s[%d]", parentNodeStr, i)
-			name := fmt.Sprintf("[%d]", i)
+			idx := int(lower) + i
+			childStr := fmt.Sprintf("%s[%d]", parentNodeStr, idx)
+			name := fmt.Sprintf("[%d]", idx)
 			refs[i] = &ua.ReferenceDescription{
 				ReferenceTypeID: ua.NewNumericNodeID(0, uint32(id.HasComponent)),
 				IsForward:       true,
@@ -591,7 +592,8 @@ func (ns *PLCNameSpace) Attribute(n *ua.NodeID, a ua.AttributeID) *ua.DataValue 
 			return errDV(ua.StatusBadInternalError)
 		}
 		if len(path) > 0 {
-			child, ok := navigateValue(val, path)
+			resolved := ns.resolvePathIndices(info.dataType, path)
+			child, ok := navigateValue(val, resolved)
 			if !ok {
 				return errDV(ua.StatusBadInternalError)
 			}
@@ -723,7 +725,8 @@ func (ns *PLCNameSpace) SetAttribute(node *ua.NodeID, attr ua.AttributeID, val *
 		if err != nil {
 			return ua.StatusBadInternalError
 		}
-		updated, ok := updateValue(rootVal, path, goVal)
+		resolvedPath := ns.resolvePathIndices(info.dataType, path)
+		updated, ok := updateValue(rootVal, resolvedPath, goVal)
 		if !ok {
 			return ua.StatusBadInternalError
 		}
@@ -968,6 +971,35 @@ func (ns *PLCNameSpace) followTypeForPath(rootType string, path []pathSegment) s
 	return current
 }
 
+// resolvePathIndices は NodeID に含まれる外部インデックス（下限オフセット付き）を
+// 0ベースの内部インデックスに変換した新しいパスを返す。
+// 例: ARRAY[2..9] の場合、path の index=2 → 0、index=3 → 1 に変換する。
+func (ns *PLCNameSpace) resolvePathIndices(rootType string, path []pathSegment) []pathSegment {
+	resolved := make([]pathSegment, len(path))
+	copy(resolved, path)
+	current := rootType
+	for i, seg := range path {
+		switch seg.kind {
+		case "field":
+			if ns.accessor != nil {
+				for _, f := range ns.accessor.GetStructFields(current) {
+					if f.Name == seg.field {
+						current = f.DataType
+						break
+					}
+				}
+			}
+		case "index":
+			elemType, lower, _, isArr := parseArrayTypeFull(current)
+			if isArr {
+				resolved[i].index = seg.index - int(lower)
+				current = elemType
+			}
+		}
+	}
+	return resolved
+}
+
 // navigateValue は値ツリーをパスにしたがってたどり末端値を返す
 func navigateValue(value interface{}, path []pathSegment) (interface{}, bool) {
 	for _, seg := range path {
@@ -1051,24 +1083,68 @@ func pathDisplayName(path []pathSegment) string {
 	return fmt.Sprintf("[%d]", seg.index)
 }
 
-// parseArrayType は "ARRAY[T;n]" を解析して要素型・サイズ・配列フラグを返す
-func parseArrayType(dataType string) (elemType string, size int32, isArray bool) {
-	if !strings.HasPrefix(dataType, "ARRAY[") || !strings.HasSuffix(dataType, "]") {
-		return "", 0, false
+// parseArrayTypeFull は配列型文字列を解析して要素型・下限・サイズ・配列フラグを返す
+//
+// IEC 61131-3 形式:
+//   - "ARRAY[2..9] OF INT"       → ("INT", 2, 8, true)
+//   - "ARRAY[0..2, 0..4] OF INT" → ("ARRAY[0..4] OF INT", 0, 3, true)
+//
+// 後方互換（旧形式）:
+//   - "ARRAY[INT;10]"            → ("INT", 0, 10, true)
+func parseArrayTypeFull(dataType string) (elemType string, lower, size int32, isArray bool) {
+	if !strings.HasPrefix(dataType, "ARRAY[") {
+		return "", 0, 0, false
+	}
+	// IEC 61131-3 形式: "] OF " を含む
+	if ofIdx := strings.Index(dataType, "] OF "); ofIdx >= 0 {
+		dimsStr := dataType[6:ofIdx]
+		elemStr := dataType[ofIdx+5:]
+		dimParts := strings.Split(dimsStr, ",")
+		firstDim := strings.TrimSpace(dimParts[0])
+		parts := strings.SplitN(firstDim, "..", 2)
+		if len(parts) != 2 {
+			return "", 0, 0, false
+		}
+		lo, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+		up, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err1 != nil || err2 != nil {
+			return "", 0, 0, false
+		}
+		n := up - lo + 1
+		if n <= 0 {
+			return "", 0, 0, false
+		}
+		if len(dimParts) > 1 {
+			trimmed := make([]string, len(dimParts)-1)
+			for i, d := range dimParts[1:] {
+				trimmed[i] = strings.TrimSpace(d)
+			}
+			elemStr = fmt.Sprintf("ARRAY[%s] OF %s", strings.Join(trimmed, ", "), elemStr)
+		}
+		return elemStr, int32(lo), int32(n), true
+	}
+	// 旧形式（後方互換）: "ARRAY[ElementType;Size]"
+	if !strings.HasSuffix(dataType, "]") {
+		return "", 0, 0, false
 	}
 	inner := dataType[len("ARRAY[") : len(dataType)-1]
-	// 最後の ";" でスプリット（ネスト配列 "ARRAY[ARRAY[INT;5];3]" に対応）
 	idx := strings.LastIndex(inner, ";")
 	if idx < 0 {
-		return "", 0, false
+		return "", 0, 0, false
 	}
 	et := strings.TrimSpace(inner[:idx])
 	sizeStr := strings.TrimSpace(inner[idx+1:])
 	n, err := strconv.Atoi(sizeStr)
 	if err != nil || n <= 0 {
-		return "", 0, false
+		return "", 0, 0, false
 	}
-	return et, int32(n), true
+	return et, 0, int32(n), true
+}
+
+// parseArrayType は配列型文字列を解析して要素型・サイズ・配列フラグを返す（下限は無視）
+func parseArrayType(dataType string) (elemType string, size int32, isArray bool) {
+	et, _, n, ok := parseArrayTypeFull(dataType)
+	return et, n, ok
 }
 
 // fromOpcuaValue は OPC UA から受け取った値を Go の値に変換する

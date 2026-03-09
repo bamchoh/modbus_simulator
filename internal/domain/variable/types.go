@@ -154,9 +154,19 @@ func (dt DataType) IsValid() bool {
 }
 
 // IsArrayType は配列型かどうかを判定する
-// 例: "ARRAY[INT;10]"
+// 例: "ARRAY[0..9] OF INT", "ARRAY[0..2, 0..4] OF INT"
+// 後方互換: "ARRAY[INT;10]" 形式も認識する
 func (dt DataType) IsArrayType() bool {
-	return strings.HasPrefix(string(dt), "ARRAY[") && strings.HasSuffix(string(dt), "]")
+	s := string(dt)
+	if !strings.HasPrefix(s, "ARRAY[") {
+		return false
+	}
+	// IEC 61131-3 形式: "] OF " を含む
+	if strings.Contains(s, "] OF ") {
+		return true
+	}
+	// 旧形式 (後方互換): "ARRAY[" で始まり "]" で終わる
+	return strings.HasSuffix(s, "]")
 }
 
 // IsStructType は構造体型かどうかを判定する（スカラーでも配列でもない場合）
@@ -164,32 +174,103 @@ func (dt DataType) IsStructType() bool {
 	return !dt.IsValid() && !dt.IsArrayType() && string(dt) != ""
 }
 
+// parseArrayDimension は "lower..upper" 形式の次元文字列からサイズを返す
+// 例: "0..9" → 10
+func parseArrayDimension(s string) (int, error) {
+	parts := strings.SplitN(strings.TrimSpace(s), "..", 2)
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid dimension format %q (expected 'lower..upper')", s)
+	}
+	lower, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return 0, fmt.Errorf("invalid lower bound %q: %w", parts[0], err)
+	}
+	upper, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil {
+		return 0, fmt.Errorf("invalid upper bound %q: %w", parts[1], err)
+	}
+	if upper < lower {
+		return 0, fmt.Errorf("upper bound %d must be >= lower bound %d", upper, lower)
+	}
+	return upper - lower + 1, nil
+}
+
 // ParseArrayType は配列型から要素型とサイズを取得する
-// 例: "ARRAY[INT;10]" → (TypeINT, 10, nil)
+//
+// IEC 61131-3 形式:
+//   - "ARRAY[0..9] OF INT"        → (TypeINT, 10, nil)
+//   - "ARRAY[0..2, 0..4] OF INT"  → ("ARRAY[0..4] OF INT", 3, nil)
+//
+// 後方互換（旧形式）:
+//   - "ARRAY[INT;10]"             → (TypeINT, 10, nil)
 func ParseArrayType(dt DataType) (elementType DataType, size int, err error) {
 	s := string(dt)
-	if !strings.HasPrefix(s, "ARRAY[") || !strings.HasSuffix(s, "]") {
+	if !strings.HasPrefix(s, "ARRAY[") {
 		return "", 0, fmt.Errorf("not an array type: %s", dt)
 	}
+
+	// IEC 61131-3 形式: "ARRAY[dims] OF elemType"
+	ofIdx := strings.Index(s, "] OF ")
+	if ofIdx >= 0 {
+		dimsStr := s[6:ofIdx]  // "0..9" or "0..2, 0..4"
+		elemStr := s[ofIdx+5:] // "INT" or "ARRAY[0..4] OF INT"
+
+		dimParts := strings.Split(dimsStr, ",")
+		size, err = parseArrayDimension(dimParts[0])
+		if err != nil {
+			return "", 0, fmt.Errorf("invalid array type %q: %w", dt, err)
+		}
+
+		if len(dimParts) == 1 {
+			// 1次元: 要素型はそのまま
+			elementType = DataType(elemStr)
+		} else {
+			// 多次元: 残りの次元で内側の配列型を再構築
+			trimmed := make([]string, len(dimParts)-1)
+			for i, d := range dimParts[1:] {
+				trimmed[i] = strings.TrimSpace(d)
+			}
+			elementType = DataType(fmt.Sprintf("ARRAY[%s] OF %s", strings.Join(trimmed, ", "), elemStr))
+		}
+		if !elementType.IsValid() && !elementType.IsStructType() && !elementType.IsArrayType() {
+			return "", 0, fmt.Errorf("invalid element type: %s", elemStr)
+		}
+		return elementType, size, nil
+	}
+
+	// 旧形式（後方互換）: "ARRAY[ElementType;Size]"
+	if !strings.HasSuffix(s, "]") {
+		return "", 0, fmt.Errorf("invalid array type: %s", dt)
+	}
 	inner := s[6 : len(s)-1] // "INT;10"
-	parts := strings.Split(inner, ";")
-	if len(parts) != 2 {
+	lastSemi := strings.LastIndex(inner, ";")
+	if lastSemi < 0 {
 		return "", 0, fmt.Errorf("invalid array type format: %s", dt)
 	}
-	elementType = DataType(strings.TrimSpace(parts[0]))
-	if !elementType.IsValid() && !elementType.IsStructType() {
+	elementType = DataType(strings.TrimSpace(inner[:lastSemi]))
+	if !elementType.IsValid() && !elementType.IsStructType() && !elementType.IsArrayType() {
 		return "", 0, fmt.Errorf("invalid element type: %s", elementType)
 	}
-	size, err = strconv.Atoi(strings.TrimSpace(parts[1]))
+	size, err = strconv.Atoi(strings.TrimSpace(inner[lastSemi+1:]))
 	if err != nil || size <= 0 {
-		return "", 0, fmt.Errorf("invalid array size: %s", parts[1])
+		return "", 0, fmt.Errorf("invalid array size: %s", inner[lastSemi+1:])
 	}
 	return elementType, size, nil
 }
 
-// NewArrayType は配列型のDataType文字列を生成する
+// NewArrayType は配列型の DataType 文字列を IEC 61131-3 形式で生成する
+// 例: NewArrayType("INT", 10)              → "ARRAY[0..9] OF INT"
+//
+//	NewArrayType("ARRAY[0..4] OF INT", 3) → "ARRAY[0..2, 0..4] OF INT" (フラット化)
 func NewArrayType(elementType DataType, size int) DataType {
-	return DataType(fmt.Sprintf("ARRAY[%s;%d]", elementType, size))
+	s := string(elementType)
+	// 要素型が IEC 61131-3 形式の配列の場合はフラット化（多次元表記に統合）
+	if ofIdx := strings.Index(s, "] OF "); strings.HasPrefix(s, "ARRAY[") && ofIdx >= 0 {
+		innerDims := s[6:ofIdx]  // 内側の次元部分
+		innerElem := s[ofIdx+5:] // 内側の要素型
+		return DataType(fmt.Sprintf("ARRAY[0..%d, %s] OF %s", size-1, innerDims, innerElem))
+	}
+	return DataType(fmt.Sprintf("ARRAY[0..%d] OF %s", size-1, elementType))
 }
 
 // TypeResolver は複合型のワード数を解決するためのインターフェース
