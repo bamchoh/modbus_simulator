@@ -744,6 +744,99 @@ func (ns *PLCNameSpace) SetAttribute(node *ua.NodeID, attr ua.AttributeID, val *
 
 // ===== 型変換ヘルパー =====
 
+// anyToInt64 はどの数値型からも int64 に変換する（msgpack と JSON の両方に対応）
+func anyToInt64(e interface{}) int64 {
+	switch v := e.(type) {
+	case int64:
+		return v
+	case uint64:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case uint32:
+		return int64(v)
+	case int16:
+		return int64(v)
+	case uint16:
+		return int64(v)
+	case int8:
+		return int64(v)
+	case uint8:
+		return int64(v)
+	case int:
+		return int64(v)
+	case uint:
+		return int64(v)
+	case float64:
+		return int64(v)
+	case float32:
+		return int64(v)
+	}
+	return 0
+}
+
+// anyToUint64 はどの数値型からも uint64 に変換する（msgpack と JSON の両方に対応）
+func anyToUint64(e interface{}) uint64 {
+	switch v := e.(type) {
+	case uint64:
+		return v
+	case int64:
+		return uint64(v)
+	case uint32:
+		return uint64(v)
+	case int32:
+		return uint64(v)
+	case uint16:
+		return uint64(v)
+	case int16:
+		return uint64(v)
+	case uint8:
+		return uint64(v)
+	case int8:
+		return uint64(v)
+	case uint:
+		return uint64(v)
+	case int:
+		return uint64(v)
+	case float64:
+		return uint64(v)
+	case float32:
+		return uint64(v)
+	}
+	return 0
+}
+
+// anyToFloat64 はどの数値型からも float64 に変換する（msgpack と JSON の両方に対応）
+func anyToFloat64(e interface{}) float64 {
+	switch v := e.(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case uint64:
+		return float64(v)
+	case int32:
+		return float64(v)
+	case uint32:
+		return float64(v)
+	case int16:
+		return float64(v)
+	case uint16:
+		return float64(v)
+	case int8:
+		return float64(v)
+	case uint8:
+		return float64(v)
+	case int:
+		return float64(v)
+	case uint:
+		return float64(v)
+	}
+	return 0
+}
+
 // toOpcuaValue は Go の PLC 値を OPC UA が扱える型に変換する
 func toOpcuaValue(val interface{}, dataType string) interface{} {
 	// 配列型の場合は型付きスライスに変換
@@ -752,13 +845,21 @@ func toOpcuaValue(val interface{}, dataType string) interface{} {
 		return convertToOpcuaArray(val, elemType, int(arraySize))
 	}
 
+	// ULINT/LINT は dataType を優先して判定（msgpack デコード後の型多様性に対応）
+	switch dataType {
+	case "ULINT":
+		return anyToUint64(val) // OPC UA UInt64 として返す
+	case "LINT":
+		return anyToInt64(val) // OPC UA Int64 として返す
+	}
+
 	switch v := val.(type) {
 	case bool, int8, int16, int32, uint8, uint16, uint32, float32, float64, string:
 		return v
 	case int64:
 		return v
 	case uint64:
-		return int64(v) // OPC UA Int64 として返す
+		return v
 	default:
 		// 構造体等は JSON 文字列として返す
 		b, err := json.Marshal(v)
@@ -771,29 +872,17 @@ func toOpcuaValue(val interface{}, dataType string) interface{} {
 
 // convertToOpcuaArray は PLC 配列値を OPC UA の型付きスライスに変換する
 func convertToOpcuaArray(val interface{}, elemType string, size int) interface{} {
-	// JSON 経由で []interface{}（数値は float64）に正規化
-	b, err := json.Marshal(val)
-	if err != nil {
-		b = []byte("[]")
-	}
+	// []interface{} に正規化（msgpack デコード後は既に []interface{}）
 	var elems []interface{}
-	if err := json.Unmarshal(b, &elems); err != nil {
-		elems = nil
+	if s, ok := val.([]interface{}); ok {
+		elems = s
 	}
 	// サイズが足りない場合はゼロ値で補填
 	for len(elems) < size {
 		elems = append(elems, nil)
 	}
 
-	toF64 := func(e interface{}) float64 {
-		if e == nil {
-			return 0
-		}
-		if f, ok := e.(float64); ok {
-			return f
-		}
-		return 0
-	}
+	toF64 := anyToFloat64
 	toBool := func(e interface{}) bool {
 		if e == nil {
 			return false
@@ -801,10 +890,7 @@ func convertToOpcuaArray(val interface{}, elemType string, size int) interface{}
 		if b, ok := e.(bool); ok {
 			return b
 		}
-		if f, ok := e.(float64); ok {
-			return f != 0
-		}
-		return false
+		return anyToFloat64(e) != 0
 	}
 
 	switch elemType {
@@ -835,7 +921,7 @@ func convertToOpcuaArray(val interface{}, elemType string, size int) interface{}
 	case "LINT":
 		arr := make([]int64, size)
 		for i := 0; i < size; i++ {
-			arr[i] = int64(toF64(elems[i]))
+			arr[i] = anyToInt64(elems[i])
 		}
 		return arr
 	case "USINT":
@@ -859,7 +945,7 @@ func convertToOpcuaArray(val interface{}, elemType string, size int) interface{}
 	case "ULINT":
 		arr := make([]uint64, size)
 		for i := 0; i < size; i++ {
-			arr[i] = uint64(toF64(elems[i]))
+			arr[i] = anyToUint64(elems[i])
 		}
 		return arr
 	case "REAL":

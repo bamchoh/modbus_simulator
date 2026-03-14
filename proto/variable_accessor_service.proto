@@ -13,7 +13,7 @@ import "common.proto";
 // VariableAccessorService: ホストの VariableStore への変数アクセス
 service VariableAccessorService {
   rpc GetEnabledNodePublishings(GetNodePublishingsRequest) returns (GetNodePublishingsResponse);
-  // value_json には変数値を JSON シリアライズした文字列を使用する
+  // value_msgpack には変数値を MessagePack シリアライズしたバイト列を使用する（uint64 精度を保持）
   rpc ReadVariableValue(ReadVariableValueRequest) returns (ReadVariableValueResponse);
   rpc WriteVariableValue(WriteVariableValueRequest) returns (Empty);
   rpc GetStructFields(GetStructFieldsRequest) returns (GetStructFieldsResponse);
@@ -46,14 +46,14 @@ message ReadVariableValueRequest {
 }
 
 message ReadVariableValueResponse {
-  // 変数値を JSON シリアライズした文字列
-  string value_json = 1;
+  // 変数値を MessagePack シリアライズしたバイト列
+  bytes value_msgpack = 1;
   string error = 2; // 空文字列ならエラーなし
 }
 
 message WriteVariableValueRequest {
   string variable_id = 1;
-  string value_json = 2;
+  bytes value_msgpack = 2;
 }
 
 message GetStructFieldsRequest {
@@ -72,5 +72,5 @@ message GetStructFieldsResponse {
 // VariableChange: ホストの VariableStore 変更通知
 message VariableChange {
   string variable_id = 1;
-  string value_json = 2;
+  bytes value_msgpack = 2;
 }

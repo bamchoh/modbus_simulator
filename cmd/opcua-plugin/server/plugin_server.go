@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/ugorji/go/codec"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -15,6 +16,26 @@ import (
 	"modbus_simulator/cmd/opcua-plugin/internal/opcua"
 	"modbus_simulator/internal/domain/protocol"
 )
+
+var msgpackHandle = func() *codec.MsgpackHandle {
+	h := new(codec.MsgpackHandle)
+	h.TypeInfos = codec.NewTypeInfos([]string{"msgpack"})
+	return h
+}()
+
+func marshalMsgpack(v interface{}) ([]byte, error) {
+	var b []byte
+	enc := codec.NewEncoderBytes(&b, msgpackHandle)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func unmarshalMsgpack(b []byte, v interface{}) error {
+	dec := codec.NewDecoderBytes(b, msgpackHandle)
+	return dec.Decode(v)
+}
 
 // PluginServer は OPC UA プラグインの gRPC サーバー実装
 type PluginServer struct {
@@ -325,20 +346,20 @@ func (a *remoteVariableStoreAccessor) ReadVariableValue(variableID string) (inte
 		return nil, err
 	}
 	var value interface{}
-	if err := json.Unmarshal([]byte(resp.ValueJson), &value); err != nil {
+	if err := unmarshalMsgpack(resp.ValueMsgpack, &value); err != nil {
 		return nil, err
 	}
 	return value, nil
 }
 
 func (a *remoteVariableStoreAccessor) WriteVariableValue(variableID string, value interface{}) error {
-	valueJSON, err := json.Marshal(value)
+	b, err := marshalMsgpack(value)
 	if err != nil {
 		return err
 	}
 	_, err = a.client.WriteVariableValue(context.Background(), &pb.WriteVariableValueRequest{
-		VariableId: variableID,
-		ValueJson:  string(valueJSON),
+		VariableId:   variableID,
+		ValueMsgpack: b,
 	})
 	return err
 }

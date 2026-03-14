@@ -23,7 +23,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type VariableAccessorServiceClient interface {
 	GetEnabledNodePublishings(ctx context.Context, in *GetNodePublishingsRequest, opts ...grpc.CallOption) (*GetNodePublishingsResponse, error)
-	// value_json には変数値を JSON シリアライズした文字列を使用する
+	// value_msgpack には変数値を MessagePack シリアライズしたバイト列を使用する（uint64 精度を保持）
 	ReadVariableValue(ctx context.Context, in *ReadVariableValueRequest, opts ...grpc.CallOption) (*ReadVariableValueResponse, error)
 	WriteVariableValue(ctx context.Context, in *WriteVariableValueRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetStructFields(ctx context.Context, in *GetStructFieldsRequest, opts ...grpc.CallOption) (*GetStructFieldsResponse, error)
@@ -113,7 +113,7 @@ func (x *variableAccessorServiceSubscribeVariableChangesClient) Recv() (*Variabl
 // for forward compatibility
 type VariableAccessorServiceServer interface {
 	GetEnabledNodePublishings(context.Context, *GetNodePublishingsRequest) (*GetNodePublishingsResponse, error)
-	// value_json には変数値を JSON シリアライズした文字列を使用する
+	// value_msgpack には変数値を MessagePack シリアライズしたバイト列を使用する（uint64 精度を保持）
 	ReadVariableValue(context.Context, *ReadVariableValueRequest) (*ReadVariableValueResponse, error)
 	WriteVariableValue(context.Context, *WriteVariableValueRequest) (*Empty, error)
 	GetStructFields(context.Context, *GetStructFieldsRequest) (*GetStructFieldsResponse, error)

@@ -2,11 +2,11 @@ package plugin
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
 
+	"github.com/ugorji/go/codec"
 	"google.golang.org/grpc"
 
 	pb "modbus_simulator/pb/pluginpb"
@@ -14,6 +14,26 @@ import (
 	"modbus_simulator/internal/domain/protocol"
 	"modbus_simulator/internal/domain/variable"
 )
+
+var msgpackHandle = func() *codec.MsgpackHandle {
+	h := new(codec.MsgpackHandle)
+	h.TypeInfos = codec.NewTypeInfos([]string{"msgpack"})
+	return h
+}()
+
+func marshalMsgpack(v interface{}) ([]byte, error) {
+	var b []byte
+	enc := codec.NewEncoderBytes(&b, msgpackHandle)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func unmarshalMsgpack(b []byte, v interface{}) error {
+	dec := codec.NewDecoderBytes(b, msgpackHandle)
+	return dec.Decode(v)
+}
 
 // HostGrpcServer はホスト側で動作する gRPC サーバー。
 // OPC UA 等の SupportsNodePublishing=true プラグインが VariableAccessorService を呼び出すために使用する。
@@ -96,17 +116,17 @@ func (s *HostGrpcServer) ReadVariableValue(ctx context.Context, req *pb.ReadVari
 	if err != nil {
 		return &pb.ReadVariableValueResponse{Error: err.Error()}, nil
 	}
-	valueJSON, err := json.Marshal(val)
+	b, err := marshalMsgpack(val)
 	if err != nil {
-		return &pb.ReadVariableValueResponse{Error: fmt.Sprintf("JSON 変換失敗: %v", err)}, nil
+		return &pb.ReadVariableValueResponse{Error: fmt.Sprintf("MessagePack 変換失敗: %v", err)}, nil
 	}
-	return &pb.ReadVariableValueResponse{ValueJson: string(valueJSON)}, nil
+	return &pb.ReadVariableValueResponse{ValueMsgpack: b}, nil
 }
 
 func (s *HostGrpcServer) WriteVariableValue(ctx context.Context, req *pb.WriteVariableValueRequest) (*pb.Empty, error) {
 	var val interface{}
-	if err := json.Unmarshal([]byte(req.ValueJson), &val); err != nil {
-		return nil, fmt.Errorf("JSON デコード失敗: %w", err)
+	if err := unmarshalMsgpack(req.ValueMsgpack, &val); err != nil {
+		return nil, fmt.Errorf("MessagePack デコード失敗: %w", err)
 	}
 	if err := s.accessor.WriteVariableValue(req.VariableId, val); err != nil {
 		return nil, err
@@ -163,13 +183,13 @@ func (s *HostGrpcServer) SubscribeVariableChanges(_ *pb.Empty, stream pb.Variabl
 // 変数が変更されたとき、購読中の全プラグインに通知する
 
 func (s *HostGrpcServer) OnVariableChanged(v *variable.Variable, _ []variable.ProtocolMapping) {
-	valueJSON, err := json.Marshal(v.Value)
+	b, err := marshalMsgpack(v.Value)
 	if err != nil {
 		return
 	}
 	change := &pb.VariableChange{
-		VariableId: v.ID,
-		ValueJson:  string(valueJSON),
+		VariableId:   v.ID,
+		ValueMsgpack: b,
 	}
 	s.mu.RLock()
 	subs := make([]chan *pb.VariableChange, len(s.subscribers))

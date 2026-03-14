@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gopcua/opcua v0.8.0
 	github.com/simonvetter/modbus v1.6.4
+	github.com/ugorji/go/codec v1.3.1
 	github.com/wailsapp/wails/v2 v2.11.0
 	go.bug.st/serial v1.6.4
 	golang.org/x/sys v0.39.0
