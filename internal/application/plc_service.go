@@ -325,7 +325,86 @@ func (s *PLCService) StartServer(protocolType string) error {
 	if inst.server == nil {
 		return fmt.Errorf("server not initialized")
 	}
+
+	startErr := inst.server.Start(context.Background())
+	if startErr == nil {
+		return nil
+	}
+
+	// Start 失敗時: 再接続をサポートするファクトリー（debug_port 等）の場合は
+	// 接続をリセットしてサーバーインスタンスを再構築してからリトライする
+	type pluginReconnector interface{ ForceReconnect() error }
+	reconnector, ok := inst.factory.(pluginReconnector)
+	if !ok {
+		return fmt.Errorf("サーバーの起動に失敗しました: %w", startErr)
+	}
+
+	fmt.Fprintf(os.Stderr, "[INFO] StartServer 失敗。再接続を試みます (protocol=%s)\n", protocolType)
+	if rerr := reconnector.ForceReconnect(); rerr != nil {
+		return fmt.Errorf("再接続失敗 (start=%v, reconnect=%w)", startErr, rerr)
+	}
+
+	if rerr := s.rebuildServerInstance(inst); rerr != nil {
+		return fmt.Errorf("サーバー再構築失敗: %w", rerr)
+	}
+
 	return inst.server.Start(context.Background())
+}
+
+// rebuildServerInstance は既存の serverInstance の DataStore・Server を再作成する。
+// プラグイン再接続後に呼び出す（ロック済み前提）。
+func (s *PLCService) rebuildServerInstance(inst *serverInstance) error {
+	// 古いリスナーをクリーンアップ
+	if inst.cancelChange != nil {
+		inst.cancelChange()
+		inst.cancelChange = nil
+	}
+	if inst.changeListener != nil {
+		inst.changeListener.Detach()
+		inst.changeListener = nil
+	}
+
+	factory := inst.factory
+	protocolType := string(inst.protocolType)
+
+	innerDataStore := factory.CreateDataStore()
+
+	var dataStore protocol.DataStore
+	var changeListener *plugininfra.RemoteVariableChangeListener
+	var cancelChange context.CancelFunc
+
+	if remoteDS, isRemote := innerDataStore.(*plugininfra.RemoteDataStore); isRemote {
+		dataStore = innerDataStore
+		changeListener = plugininfra.NewRemoteVariableChangeListener(remoteDS, s.variableStore, protocolType)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancelChange = cancel
+		go changeListener.StartChangeSubscription(ctx)
+	} else {
+		dataStore = adapter.NewVariableBackedDataStore(innerDataStore, s.variableStore, protocolType)
+	}
+
+	server, err := factory.CreateServer(inst.config, dataStore)
+	if err != nil {
+		return err
+	}
+
+	if s.hostGrpcServer != nil {
+		type hostAddrSetter interface{ SetHostGrpcAddr(addr string) }
+		if setter, ok := server.(hostAddrSetter); ok {
+			setter.SetHostGrpcAddr(s.hostGrpcServer.Addr())
+		}
+	}
+
+	inst.dataStore = dataStore
+	inst.server = server
+	inst.changeListener = changeListener
+	inst.cancelChange = cancelChange
+
+	if s.eventEmitter != nil {
+		s.setEmitterToServerInstance(inst)
+	}
+
+	return nil
 }
 
 // StopServer はサーバーを停止する

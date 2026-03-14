@@ -119,6 +119,23 @@ func (f *LazyRemoteServerFactory) StopProcess() {
 	}
 }
 
+// ForceReconnect は現在の接続をリセットして再接続する。
+// debug_port が設定されている場合は既存プロセスへの再接続を試みる。
+// debug_port が設定されていない場合は通常のプロセス起動にフォールバックする。
+// プラグインプロセスが再起動した後に StartServer が失敗した場合に使用する。
+func (f *LazyRemoteServerFactory) ForceReconnect() error {
+	f.mu.Lock()
+	if f.conn != nil {
+		_ = f.conn.Close()
+	}
+	f.proc = nil
+	f.conn = nil
+	f.client = nil
+	f.mu.Unlock()
+
+	return f.EnsureStarted()
+}
+
 // ---- gRPC を使うメソッド ----
 
 func (f *LazyRemoteServerFactory) DefaultConfig() protocol.ProtocolConfig {
