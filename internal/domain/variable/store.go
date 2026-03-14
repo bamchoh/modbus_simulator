@@ -2,6 +2,8 @@ package variable
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -714,6 +716,147 @@ func (s *VariableStore) Restore(data map[string]interface{}) error {
 				}
 			}
 		}
+	}
+
+	return nil
+}
+
+// ---- フィールドパス操作 ----
+
+// fieldPathSegment はフィールドパスの1要素
+type fieldPathSegment struct {
+	isIndex bool
+	field   string
+	index   int
+}
+
+// parseFieldPath はフィールドパス文字列を fieldPathSegment のスライスに分解する。
+// インデックスは 0ベース。
+// 例:
+//
+//	"speed"         → [{field:"speed"}]
+//	"motor.speed"   → [{field:"motor"}, {field:"speed"}]
+//	"items[2]"      → [{field:"items"}, {index:2}]
+//	"items[2].name" → [{field:"items"}, {index:2}, {field:"name"}]
+//	"[0]"           → [{index:0}]
+func parseFieldPath(s string) []fieldPathSegment {
+	var segs []fieldPathSegment
+	for len(s) > 0 {
+		switch s[0] {
+		case '.':
+			s = s[1:]
+			end := strings.IndexAny(s, ".[")
+			var name string
+			if end < 0 {
+				name, s = s, ""
+			} else {
+				name, s = s[:end], s[end:]
+			}
+			if name != "" {
+				segs = append(segs, fieldPathSegment{field: name})
+			}
+		case '[':
+			end := strings.Index(s, "]")
+			if end < 0 {
+				s = ""
+				break
+			}
+			idx, _ := strconv.Atoi(s[1:end])
+			segs = append(segs, fieldPathSegment{isIndex: true, index: idx})
+			s = s[end+1:]
+		default:
+			// 先頭がフィールド名
+			end := strings.IndexAny(s, ".[")
+			var name string
+			if end < 0 {
+				name, s = s, ""
+			} else {
+				name, s = s[:end], s[end:]
+			}
+			if name != "" {
+				segs = append(segs, fieldPathSegment{field: name})
+			}
+		}
+	}
+	return segs
+}
+
+// updateAtPath はルート値をパスに沿ってディープコピーしながら末端を newVal で置き換えた値を返す
+func updateAtPath(root interface{}, path []fieldPathSegment, newVal interface{}) (interface{}, bool) {
+	if len(path) == 0 {
+		return newVal, true
+	}
+	seg := path[0]
+	rest := path[1:]
+	if seg.isIndex {
+		arr, ok := root.([]interface{})
+		if !ok {
+			return nil, false
+		}
+		if seg.index < 0 || seg.index >= len(arr) {
+			return nil, false
+		}
+		newArr := make([]interface{}, len(arr))
+		copy(newArr, arr)
+		updated, ok := updateAtPath(newArr[seg.index], rest, newVal)
+		if !ok {
+			return nil, false
+		}
+		newArr[seg.index] = updated
+		return newArr, true
+	}
+	m, ok := root.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	newMap := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		newMap[k] = v
+	}
+	updated, ok := updateAtPath(newMap[seg.field], rest, newVal)
+	if !ok {
+		return nil, false
+	}
+	newMap[seg.field] = updated
+	return newMap, true
+}
+
+// UpdateFieldValue は変数の特定フィールド/要素のみをアトミックに更新する。
+// fieldPath は 0ベースのパス文字列 (例: "motor.speed", "items[0]", "items[2].name")
+func (s *VariableStore) UpdateFieldValue(id, fieldPath string, value interface{}) error {
+	s.mu.Lock()
+	v, exists := s.variables[id]
+	if !exists {
+		s.mu.Unlock()
+		return fmt.Errorf("variable %s not found", id)
+	}
+
+	path := parseFieldPath(fieldPath)
+	if len(path) == 0 {
+		s.mu.Unlock()
+		return fmt.Errorf("field path is empty")
+	}
+
+	updated, ok := updateAtPath(v.Value, path, value)
+	if !ok {
+		s.mu.Unlock()
+		return fmt.Errorf("failed to navigate path %q in variable %s", fieldPath, id)
+	}
+
+	converted, err := ConvertValueWithResolver(updated, v.DataType, s)
+	if err != nil {
+		s.mu.Unlock()
+		return fmt.Errorf("failed to convert updated value: %w", err)
+	}
+
+	v.Value = converted
+	mappings := s.getMappingsCopy(id)
+	listeners := make([]ChangeListener, len(s.listeners))
+	copy(listeners, s.listeners)
+	s.mu.Unlock()
+
+	for _, l := range listeners {
+		l.OnVariableChanged(v, mappings)
 	}
 
 	return nil

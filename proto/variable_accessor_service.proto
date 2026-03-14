@@ -16,6 +16,9 @@ service VariableAccessorService {
   // value_msgpack には変数値を MessagePack シリアライズしたバイト列を使用する（uint64 精度を保持）
   rpc ReadVariableValue(ReadVariableValueRequest) returns (ReadVariableValueResponse);
   rpc WriteVariableValue(WriteVariableValueRequest) returns (Empty);
+  // WriteVariableField は変数の特定フィールド/要素のみをアトミックに更新する。
+  // field_path は 0ベースのパス文字列 (例: "motor.speed", "items[0]", "items[2].name")
+  rpc WriteVariableField(WriteVariableFieldRequest) returns (Empty);
   rpc GetStructFields(GetStructFieldsRequest) returns (GetStructFieldsResponse);
   // SubscribeVariableChanges: ホストの VariableStore 変更をプラグインに通知する
   // OPC UA サブスクリプション更新等に使用する
@@ -54,6 +57,12 @@ message ReadVariableValueResponse {
 message WriteVariableValueRequest {
   string variable_id = 1;
   bytes value_msgpack = 2;
+}
+
+message WriteVariableFieldRequest {
+  string variable_id = 1;
+  string field_path = 2;
+  bytes value_msgpack = 3;
 }
 
 message GetStructFieldsRequest {

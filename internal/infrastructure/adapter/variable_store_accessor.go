@@ -47,6 +47,10 @@ func (a *variableStoreAccessorImpl) WriteVariableValue(variableID string, value 
 	return a.vs.UpdateValue(variableID, value)
 }
 
+func (a *variableStoreAccessorImpl) WriteVariableFieldValue(variableID, fieldPath string, value interface{}) error {
+	return a.vs.UpdateFieldValue(variableID, fieldPath, value)
+}
+
 func (a *variableStoreAccessorImpl) GetStructFields(typeName string) []protocol.StructFieldInfo {
 	st, err := a.vs.GetStructType(typeName)
 	if err != nil {

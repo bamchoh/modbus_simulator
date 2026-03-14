@@ -707,7 +707,7 @@ func (ns *PLCNameSpace) SetAttribute(node *ua.NodeID, attr ua.AttributeID, val *
 			}
 		}
 	} else {
-		// 子ノードへの書き込み: 現在のルート値を読み、パスの位置を更新して書き戻す
+		// 子ノードへの書き込み: ホスト側でアトミックに field を更新
 		currentType := ns.followTypeForPath(info.dataType, path)
 		if currentType == "" {
 			return ua.StatusBadNodeIDUnknown
@@ -721,16 +721,15 @@ func (ns *PLCNameSpace) SetAttribute(node *ua.NodeID, attr ua.AttributeID, val *
 				}
 			}
 		}
-		rootVal, err := ns.accessor.ReadVariableValue(rootVarID)
-		if err != nil {
-			return ua.StatusBadInternalError
-		}
 		resolvedPath := ns.resolvePathIndices(info.dataType, path)
-		updated, ok := updateValue(rootVal, resolvedPath, goVal)
-		if !ok {
-			return ua.StatusBadInternalError
+		fieldPath := pathSegmentsToString(resolvedPath)
+		if err := ns.accessor.WriteVariableFieldValue(rootVarID, fieldPath, goVal); err != nil {
+			return ua.StatusBadTypeMismatch
 		}
-		goVal = updated
+		// 書き込み後にサブスクライバーへ即時通知（親ノードも通知）
+		ns.srv.ChangeNotification(ua.NewStringNodeID(ns.nsID, rootVarID))
+		ns.srv.ChangeNotification(node)
+		return ua.StatusOK
 	}
 
 	if err := ns.accessor.WriteVariableValue(rootVarID, goVal); err != nil {
@@ -1155,6 +1154,23 @@ func updateValue(root interface{}, path []pathSegment, newVal interface{}) (inte
 		return newArr, true
 	}
 	return nil, false
+}
+
+// pathSegmentsToString は pathSegment スライスを 0ベースのパス文字列に変換する
+// 例: [{field:"motor"}, {index:0}, {field:"speed"}] → "motor[0].speed"
+func pathSegmentsToString(path []pathSegment) string {
+	var sb strings.Builder
+	for _, seg := range path {
+		if seg.kind == "field" {
+			if sb.Len() > 0 {
+				sb.WriteByte('.')
+			}
+			sb.WriteString(seg.field)
+		} else {
+			sb.WriteString(fmt.Sprintf("[%d]", seg.index))
+		}
+	}
+	return sb.String()
 }
 
 // pathDisplayName はパスの末端セグメントの表示名を返す

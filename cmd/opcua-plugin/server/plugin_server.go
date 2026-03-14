@@ -364,6 +364,19 @@ func (a *remoteVariableStoreAccessor) WriteVariableValue(variableID string, valu
 	return err
 }
 
+func (a *remoteVariableStoreAccessor) WriteVariableFieldValue(variableID, fieldPath string, value interface{}) error {
+	b, err := marshalMsgpack(value)
+	if err != nil {
+		return err
+	}
+	_, err = a.client.WriteVariableField(context.Background(), &pb.WriteVariableFieldRequest{
+		VariableId:   variableID,
+		FieldPath:    fieldPath,
+		ValueMsgpack: b,
+	})
+	return err
+}
+
 func (a *remoteVariableStoreAccessor) GetStructFields(typeName string) []protocol.StructFieldInfo {
 	resp, err := a.client.GetStructFields(context.Background(), &pb.GetStructFieldsRequest{
 		TypeName: typeName,

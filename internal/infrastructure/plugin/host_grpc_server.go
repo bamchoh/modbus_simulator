@@ -134,6 +134,17 @@ func (s *HostGrpcServer) WriteVariableValue(ctx context.Context, req *pb.WriteVa
 	return &pb.Empty{}, nil
 }
 
+func (s *HostGrpcServer) WriteVariableField(ctx context.Context, req *pb.WriteVariableFieldRequest) (*pb.Empty, error) {
+	var val interface{}
+	if err := unmarshalMsgpack(req.ValueMsgpack, &val); err != nil {
+		return nil, fmt.Errorf("MessagePack デコード失敗: %w", err)
+	}
+	if err := s.accessor.WriteVariableFieldValue(req.VariableId, req.FieldPath, val); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, nil
+}
+
 func (s *HostGrpcServer) GetStructFields(ctx context.Context, req *pb.GetStructFieldsRequest) (*pb.GetStructFieldsResponse, error) {
 	fields := s.accessor.GetStructFields(req.TypeName)
 	pbFields := make([]*pb.StructFieldInfo, len(fields))

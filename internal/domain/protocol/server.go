@@ -176,6 +176,9 @@ type VariableStoreAccessor interface {
 	GetEnabledNodePublishings(protocolType string) []NodePublishingInfo
 	ReadVariableValue(variableID string) (interface{}, error)
 	WriteVariableValue(variableID string, value interface{}) error
+	// WriteVariableFieldValue は変数の特定フィールド/要素のみをアトミックに更新する。
+	// fieldPath は 0ベースのパス文字列 (例: "motor.speed", "items[0]", "items[2].name")
+	WriteVariableFieldValue(variableID string, fieldPath string, value interface{}) error
 	// GetStructFields は指定した構造体型のフィールド一覧を返す（子ノードブラウズ・サブスクリプション用）
 	GetStructFields(typeName string) []StructFieldInfo
 }
