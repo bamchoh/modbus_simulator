@@ -7,7 +7,7 @@ import { ScriptPanel } from "./components/ScriptPanel";
 import { CommunicationIndicator } from "./components/CommunicationIndicator";
 import { GetHTTPAPIPort, SetHTTPAPIPort } from "../wailsjs/go/main/App";
 
-const APP_VERSION = "v0.0.22";
+const APP_VERSION = "v0.0.23";
 
 type Tab = "server" | "variables" | "registers" | "scripts";
 

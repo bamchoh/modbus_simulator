@@ -164,10 +164,15 @@ export function VariableView() {
   // 展開/縮小状態（keyはFlatRowのヘッダーキー）
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
+  // キーボードナビゲーション用フォーカス状態
+  const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
+
   // 編集フォーム
   const [editData, setEditData] = useState<any>(null);
   const [editValue, setEditValue] = useState("");
   const editDialogRef = useRef<HTMLDivElement>(null);
+  // 行DOM要素のref map
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   // マッピング編集
   const [mappingVariable, setMappingVariable] =
@@ -316,6 +321,29 @@ export function VariableView() {
       );
       first?.focus();
     }
+  }, [isEditDialogOpen]);
+
+  // キーボードナビゲーション: focusedRowKey が変わったらその行にフォーカスを移す
+  useEffect(() => {
+    if (focusedRowKey) {
+      const el = rowRefs.current.get(focusedRowKey);
+      if (el && document.activeElement !== el) {
+        el.focus({ preventScroll: false });
+        el.scrollIntoView({ block: "nearest" });
+      }
+    }
+  }, [focusedRowKey]);
+
+
+  // キーボードナビゲーション: 値編集ダイアログが閉じたら行にフォーカスを戻す
+  useEffect(() => {
+    if (!isEditDialogOpen && focusedRowKey) {
+      requestAnimationFrame(() => {
+        rowRefs.current.get(focusedRowKey)?.focus({ preventScroll: false });
+      });
+    }
+  // isEditDialogOpen の変化にのみ反応（focusedRowKey は最新値を参照したいため除外）
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditDialogOpen]);
 
   // スカラー値のフォーマット
@@ -674,6 +702,86 @@ export function VariableView() {
       }
       return next;
     });
+  };
+
+  // キーボードナビゲーション: 行のキー押下ハンドラ
+  const handleRowKeyDown = (
+    e: React.KeyboardEvent<HTMLTableRowElement>,
+    row: FlatRow,
+    idx: number,
+  ) => {
+    const anyDialogOpen =
+      isEditDialogOpen ||
+      isAddDialogOpen ||
+      isMappingDialogOpen ||
+      isMetaEditDialogOpen ||
+      isStructTypeDialogOpen ||
+      isBulkMappingOpen;
+    if (anyDialogOpen) return;
+
+    switch (e.key) {
+      case "ArrowDown": {
+        e.preventDefault();
+        if (idx < flatRows.length - 1) {
+          setFocusedRowKey(flatRows[idx + 1].key);
+        }
+        break;
+      }
+      case "ArrowUp": {
+        e.preventDefault();
+        if (idx > 0) {
+          setFocusedRowKey(flatRows[idx - 1].key);
+        }
+        break;
+      }
+      case "ArrowRight": {
+        e.preventDefault();
+        if (row.isHeader) {
+          if (!expandedRows.has(row.key)) {
+            // 折りたたみ中 → 展開（フォーカスは移動しない）
+            toggleExpand(row.key);
+          } else if (idx < flatRows.length - 1) {
+            // 展開済み → 最初の子にフォーカス
+            setFocusedRowKey(flatRows[idx + 1].key);
+          }
+        }
+        break;
+      }
+      case "ArrowLeft": {
+        e.preventDefault();
+        if (row.isHeader && expandedRows.has(row.key)) {
+          // 展開中のヘッダー → 折りたたむ
+          toggleExpand(row.key);
+        } else {
+          // 親ヘッダーを探してフォーカス
+          for (let i = idx - 1; i >= 0; i--) {
+            const candidate = flatRows[i];
+            if (candidate.variable.id !== row.variable.id) break;
+            if (candidate.isHeader && candidate.depth < row.depth) {
+              setFocusedRowKey(candidate.key);
+              break;
+            }
+          }
+        }
+        break;
+      }
+      case "Enter": {
+        e.preventDefault();
+        if (row.isHeader) {
+          toggleExpand(row.key);
+        } else {
+          handleRowEditClick(row);
+        }
+        break;
+      }
+      case " ": {
+        e.preventDefault();
+        if (row.isHeader) {
+          toggleExpand(row.key);
+        }
+        break;
+      }
+    }
   };
 
   // デフォルト値を取得
@@ -1775,13 +1883,24 @@ export function VariableView() {
           </tr>
         </thead>
         <tbody>
-          {flatRows.map((row) => (
+          {flatRows.map((row, idx) => (
             <tr
               key={row.key}
+              ref={(el) => {
+                if (el) rowRefs.current.set(row.key, el);
+                else rowRefs.current.delete(row.key);
+              }}
+              tabIndex={0}
+              onFocus={() => setFocusedRowKey(row.key)}
+              onKeyDown={(e) => handleRowKeyDown(e, row, idx)}
               style={{
-                backgroundColor: row.isHeader
-                  ? "rgba(255,255,255,0.03)"
-                  : undefined,
+                backgroundColor:
+                  focusedRowKey === row.key
+                    ? "rgba(100, 160, 255, 0.12)"
+                    : row.isHeader
+                      ? "rgba(255,255,255,0.03)"
+                      : undefined,
+                outline: focusedRowKey === row.key ? "1px solid rgba(100,160,255,0.4)" : undefined,
                 fontWeight:
                   row.depth === 0 && row.isHeader ? "bold" : undefined,
               }}
