@@ -35,7 +35,9 @@ type PluginServer struct {
 
 // NewPluginServer は PluginServer を作成する
 func NewPluginServer() *PluginServer {
-	return &PluginServer{}
+	return &PluginServer{
+		store: modbus.NewModbusDataStore(65536, 65536, 65536, 65536),
+	}
 }
 
 // Register は gRPC サーバーにサービスを登録する
