@@ -197,6 +197,13 @@ export function VariableView() {
   const [bulkRows, setBulkRows] = useState<BulkEditRow[]>([]);
   const [bulkIsSaving, setBulkIsSaving] = useState(false);
 
+  // コンテキストメニュー
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    variable: application.VariableDTO;
+  } | null>(null);
+
   // 変数一覧を取得
   const loadVariables = useCallback(async () => {
     try {
@@ -1881,6 +1888,15 @@ export function VariableView() {
     setEditMappings(editMappings.filter((_, i) => i !== index));
   };
 
+  // コンテキストメニューを開く
+  const handleContextMenu = (
+    e: React.MouseEvent,
+    variable: application.VariableDTO,
+  ) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, variable });
+  };
+
   // マッピングを保存
   const handleSaveMappings = async () => {
     if (!mappingVariable) return;
@@ -1927,9 +1943,6 @@ export function VariableView() {
         >
           一括マッピング編集
         </button>
-        <button onClick={loadVariables} className="btn-secondary">
-          更新
-        </button>
       </div>
 
       <table className="variable-table">
@@ -1939,7 +1952,6 @@ export function VariableView() {
             <th>データ型</th>
             <th>値</th>
             <th>マッピング</th>
-            <th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -1953,6 +1965,7 @@ export function VariableView() {
               tabIndex={0}
               onFocus={() => setFocusedRowKey(row.key)}
               onKeyDown={(e) => handleRowKeyDown(e, row, idx)}
+              onContextMenu={row.depth === 0 ? (e) => handleContextMenu(e, row.variable) : undefined}
               style={{
                 backgroundColor:
                   focusedRowKey === row.key
@@ -2066,43 +2079,59 @@ export function VariableView() {
                   </span>
                 )}
               </td>
-              <td className="var-actions">
-                {row.depth === 0 && (
-                  <div>
-                    <button
-                      onClick={() => handleOpenMetaEditDialog(row.variable)}
-                      className="btn-small btn-secondary"
-                    >
-                      編集
-                    </button>
-                    <button
-                      onClick={() => handleMappingClick(row.variable)}
-                      className="btn-small btn-secondary"
-                    >
-                      マッピング
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleDeleteVariable(row.variable.id, row.variable.name)
-                      }
-                      className="btn-small btn-danger"
-                    >
-                      削除
-                    </button>
-                  </div>
-                )}
-              </td>
             </tr>
           ))}
           {variables.length === 0 && (
             <tr>
-              <td colSpan={5} className="empty-message">
+              <td colSpan={4} className="empty-message">
                 変数がありません。「変数を追加」ボタンで変数を作成してください。
               </td>
             </tr>
           )}
         </tbody>
       </table>
+
+      {/* コンテキストメニュー */}
+      {contextMenu && (
+        <div
+          className="context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            onClick={() => {
+              handleOpenMetaEditDialog(contextMenu.variable);
+              setContextMenu(null);
+            }}
+          >
+            編集
+          </button>
+          <button
+            onClick={() => {
+              handleMappingClick(contextMenu.variable);
+              setContextMenu(null);
+            }}
+          >
+            マッピング
+          </button>
+          <button
+            className="context-menu-danger"
+            onClick={() => {
+              handleDeleteVariable(contextMenu.variable.id, contextMenu.variable.name);
+              setContextMenu(null);
+            }}
+          >
+            削除
+          </button>
+        </div>
+      )}
+      {contextMenu && (
+        <div
+          className="context-menu-backdrop"
+          onClick={() => setContextMenu(null)}
+          onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+        />
+      )}
 
       {/* 変数追加ダイアログ */}
       {isAddDialogOpen && (
