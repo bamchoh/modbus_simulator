@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { FocusTrap } from "./FocusTrap";
 import {
   GetVariables,
   GetDataTypes,
@@ -356,7 +357,7 @@ export function VariableView() {
         return `"${value}"`;
       case "REAL":
       case "LREAL":
-        return typeof value === "number" ? value.toFixed(2) : String(value);
+        return typeof value === "number" ? String(value) : String(value);
       default:
         if (dataType.startsWith("STRING[")) return `"${value}"`;
         return String(value);
@@ -766,6 +767,8 @@ export function VariableView() {
         break;
       }
       case "Enter": {
+        // ボタンにフォーカスがある場合はネイティブのクリック動作に任せる
+        if ((e.target as HTMLElement).tagName === "BUTTON") break;
         e.preventDefault();
         if (row.isHeader) {
           toggleExpand(row.key);
@@ -779,6 +782,27 @@ export function VariableView() {
         if (row.isHeader) {
           toggleExpand(row.key);
         }
+        break;
+      }
+      case "Insert": {
+        e.preventDefault();
+        setIsAddDialogOpen(true);
+        break;
+      }
+      case "F2": {
+        e.preventDefault();
+        handleOpenMetaEditDialog(row.variable);
+        break;
+      }
+      case "Delete": {
+        e.preventDefault();
+        handleDeleteVariable(row.variable.id, row.variable.name);
+        break;
+      }
+      case "m":
+      case "M": {
+        e.preventDefault();
+        handleMappingClick(row.variable);
         break;
       }
     }
@@ -1296,6 +1320,18 @@ export function VariableView() {
     setIsEditDialogOpen(true);
   };
 
+  // 文字列として保持されているREAL/LREAL値を数値に変換
+  const coerceFloatIfNeeded = (value: any, dataType: string): any => {
+    if (
+      (dataType === "REAL" || dataType === "LREAL") &&
+      typeof value === "string"
+    ) {
+      const f = parseFloat(value);
+      return isNaN(f) ? 0 : f;
+    }
+    return value;
+  };
+
   // 行単位の値更新
   const handleUpdateRow = async () => {
     if (!editingVariable) return;
@@ -1308,10 +1344,14 @@ export function VariableView() {
           target = target[editingRow.valuePath[i]];
         }
         target[editingRow.valuePath[editingRow.valuePath.length - 1]] =
-          editData;
+          coerceFloatIfNeeded(editData, editingRow.dataType);
         await UpdateVariableValue(editingVariable.id, fullValue);
       } else {
-        await UpdateVariableValue(editingVariable.id, editData);
+        const dataType = editingVariable.dataType;
+        await UpdateVariableValue(
+          editingVariable.id,
+          coerceFloatIfNeeded(editData, dataType),
+        );
       }
       await loadVariables();
       setIsEditDialogOpen(false);
@@ -1439,6 +1479,26 @@ export function VariableView() {
           }}
           style={{ flex: 1 }}
           placeholder={placeholder}
+        />
+      );
+    }
+    // 浮動小数点型（REAL/LREAL）- 入力中は文字列のまま保持してドット入力を可能にする
+    if (dataType === "REAL" || dataType === "LREAL") {
+      return (
+        <input
+          type="text"
+          value={String(value ?? "0")}
+          onChange={(e) => {
+            // 入力中は文字列のまま保持（"1." のようなドット末尾も維持）
+            onChange(e.target.value);
+          }}
+          onFocus={(e) => e.target.select()}
+          onBlur={(e) => {
+            const parsed = parseFloat(e.target.value);
+            onChange(isNaN(parsed) ? 0 : parsed);
+          }}
+          style={{ flex: 1 }}
+          placeholder="例: 3.14"
         />
       );
     }
@@ -2046,7 +2106,7 @@ export function VariableView() {
 
       {/* 変数追加ダイアログ */}
       {isAddDialogOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleAddVariable}>
           <div className="dialog">
             <h3>変数を追加</h3>
             <div className="dialog-content">
@@ -2057,9 +2117,6 @@ export function VariableView() {
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="例: Motor_Speed"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleAddVariable();
-                  }}
                   autoFocus
                 />
               </div>
@@ -2258,12 +2315,12 @@ export function VariableView() {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
 
       {/* 変数メタデータ編集ダイアログ（名前・データタイプ変更） */}
       {isMetaEditDialogOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleSaveMetaEdit}>
           <div className="dialog">
             <h3>変数を編集</h3>
             <div className="dialog-content">
@@ -2274,9 +2331,6 @@ export function VariableView() {
                   value={metaEditName}
                   onChange={(e) => setMetaEditName(e.target.value)}
                   autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSaveMetaEdit();
-                  }}
                 />
               </div>
               <div className="dialog-row">
@@ -2473,12 +2527,12 @@ export function VariableView() {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
 
       {/* 変数編集ダイアログ */}
       {isEditDialogOpen && editingVariable && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleUpdateRow}>
           <div
             ref={editDialogRef}
             className="dialog"
@@ -2487,12 +2541,6 @@ export function VariableView() {
               maxHeight: "80vh",
               display: "flex",
               flexDirection: "column",
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleUpdateRow();
-              }
             }}
           >
             <h3>値を編集</h3>
@@ -2548,12 +2596,12 @@ export function VariableView() {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
 
       {/* マッピング編集ダイアログ */}
       {isMappingDialogOpen && mappingVariable && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleSaveMappings}>
           <div className="dialog" style={{ minWidth: "500px" }}>
             <h3>マッピング設定: {mappingVariable.name}</h3>
             <div className="dialog-content">
@@ -2775,11 +2823,11 @@ export function VariableView() {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
       {/* 一括マッピング編集ダイアログ */}
       {isBulkMappingOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap>
           <div
             className="dialog"
             style={{
@@ -3079,11 +3127,11 @@ export function VariableView() {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
       {/* 構造体型管理ダイアログ */}
       {isStructTypeDialogOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleRegisterStructType}>
           <div
             className="dialog"
             style={{
@@ -3511,7 +3559,7 @@ export function VariableView() {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
     </div>
   );

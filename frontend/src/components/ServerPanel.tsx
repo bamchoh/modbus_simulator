@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { FocusTrap } from './FocusTrap';
 import {
   GetServerInstances,
   AddServer,
@@ -545,7 +546,7 @@ export function ServerPanel() {
       {isAddDialogOpen && (() => {
         const selectedProtoVariants = availableProtocols.find(p => p.type === selectedProtocol)?.variants ?? [];
         return (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleAddServer}>
           <div className="dialog">
             <h3>サーバーを追加</h3>
             <div className="dialog-content">
@@ -587,7 +588,7 @@ export function ServerPanel() {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
         );
       })()}
     </div>

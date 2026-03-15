@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { FocusTrap } from './FocusTrap';
 import {
   GetServerInstances,
   GetMemoryAreas,
@@ -402,9 +403,7 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
 
   // ダイアログ内のキーハンドラ
   const handleDialogKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSave();
-    } else if (e.key === 'Escape') {
+    if (e.key === 'Escape') {
       handleDialogClose();
     }
   };
@@ -687,7 +686,7 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
 
       {/* 書き込みダイアログ */}
       {isDialogOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleSave}>
           <div className="dialog">
             <h3>レジスタ書き込み</h3>
 
@@ -739,7 +738,7 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
       </>
       )}
