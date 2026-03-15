@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   GetVariables,
   GetDataTypes,
@@ -167,6 +167,7 @@ export function VariableView() {
   // 編集フォーム
   const [editData, setEditData] = useState<any>(null);
   const [editValue, setEditValue] = useState("");
+  const editDialogRef = useRef<HTMLDivElement>(null);
 
   // マッピング編集
   const [mappingVariable, setMappingVariable] =
@@ -306,6 +307,16 @@ export function VariableView() {
     isStructTypeDialogOpen,
     isBulkMappingOpen,
   ]);
+
+  // 値編集ダイアログが開いたら最初の入力にフォーカス
+  useEffect(() => {
+    if (isEditDialogOpen && editDialogRef.current) {
+      const first = editDialogRef.current.querySelector<HTMLElement>(
+        "input, select",
+      );
+      first?.focus();
+    }
+  }, [isEditDialogOpen]);
 
   // スカラー値のフォーマット
   const formatScalarValue = (value: any, dataType: string): string => {
@@ -1290,6 +1301,7 @@ export function VariableView() {
               maxLen > 0 ? e.target.value.slice(0, maxLen) : e.target.value,
             )
           }
+          onFocus={(e) => e.target.select()}
           style={{ flex: 1 }}
           maxLength={maxLen > 0 ? maxLen : undefined}
           placeholder={maxLen > 0 ? `最大${maxLen}バイト` : undefined}
@@ -1310,6 +1322,7 @@ export function VariableView() {
             // 入力中は文字列のまま保持（確定時に正規化）
             onChange(e.target.value);
           }}
+          onFocus={(e) => e.target.select()}
           onBlur={(e) => {
             const normalized = parseBigIntInput(e.target.value, dataType);
             if (normalized !== null) {
@@ -1339,6 +1352,7 @@ export function VariableView() {
           type="text"
           value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={(e) => e.target.select()}
           style={{ flex: 1 }}
           placeholder={placeholders[dataType] || ""}
         />
@@ -1355,6 +1369,7 @@ export function VariableView() {
             onChange(parsed);
           }
         }}
+        onFocus={(e) => e.target.select()}
         onBlur={(e) => {
           const parsed = parseNumericInput(e.target.value);
           if (!isNaN(parsed)) {
@@ -2346,12 +2361,19 @@ export function VariableView() {
       {isEditDialogOpen && editingVariable && (
         <div className="dialog-overlay">
           <div
+            ref={editDialogRef}
             className="dialog"
             style={{
               minWidth: "450px",
               maxHeight: "80vh",
               display: "flex",
               flexDirection: "column",
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleUpdateRow();
+              }
             }}
           >
             <h3>値を編集</h3>
