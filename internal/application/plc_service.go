@@ -30,6 +30,7 @@ type serverInstance struct {
 	server         protocol.ProtocolServer
 	changeListener *plugininfra.RemoteVariableChangeListener
 	cancelChange   context.CancelFunc
+	addedOrder     int // サーバー登録順（表示順の固定化に使用）
 }
 
 // PLCService はPLCシミュレーターのメインサービス
@@ -46,7 +47,8 @@ type PLCService struct {
 	vsAccessor protocol.VariableStoreAccessor
 
 	// 複数サーバーインスタンス（protocolType → instance）
-	servers map[protocol.ProtocolType]*serverInstance
+	servers      map[protocol.ProtocolType]*serverInstance
+	serverSeq    int // AddServer 呼び出しごとに増加する登録順カウンター
 
 	// ホスト側 gRPC サーバー（OPC UA 等のプラグインから変数アクセスに使用）
 	hostGrpcServer *plugininfra.HostGrpcServer
@@ -243,6 +245,7 @@ func (s *PLCService) AddServer(protocolType string, variantID string) error {
 		}
 	}
 
+	s.serverSeq++
 	inst := &serverInstance{
 		protocolType:   pt,
 		variant:        variantID,
@@ -252,6 +255,7 @@ func (s *PLCService) AddServer(protocolType string, variantID string) error {
 		server:         server,
 		changeListener: changeListener,
 		cancelChange:   cancelChange,
+		addedOrder:     s.serverSeq,
 	}
 
 	s.servers[pt] = inst
@@ -1219,7 +1223,7 @@ func (s *PLCService) ExportProject() *ProjectDataDTO {
 			}
 		}
 		var npDTOs []NodePublishingDTO
-		for _, inst := range s.servers {
+		for _, inst := range s.sortedServerInstances() {
 			caps := inst.factory.GetProtocolCapabilities()
 			if !caps.SupportsNodePublishing {
 				continue
@@ -1930,10 +1934,11 @@ func (s *PLCService) variableToDTO(v *variable.Variable) *VariableDTO {
 		}
 	}
 
-	// NodePublishings: 全プロトコルの公開設定を収集
+	// NodePublishings: 全プロトコルの公開設定を収集（登録順で固定）
 	var npDTOs []NodePublishingDTO
 	s.mu.RLock()
-	for _, inst := range s.servers {
+	sortedInsts := s.sortedServerInstances()
+	for _, inst := range sortedInsts {
 		caps := inst.factory.GetProtocolCapabilities()
 		if !caps.SupportsNodePublishing {
 			continue
@@ -1962,6 +1967,20 @@ func (s *PLCService) variableToDTO(v *variable.Variable) *VariableDTO {
 		Mappings:        mappingDTOs,
 		NodePublishings: npDTOs,
 	}
+}
+
+// sortedServerInstances は s.servers を addedOrder 順に並べたスライスを返す。
+// Go の map 反復が非決定的なため、表示順を安定させるために使用する。
+// 呼び出し側は必要に応じて s.mu を保持すること。
+func (s *PLCService) sortedServerInstances() []*serverInstance {
+	insts := make([]*serverInstance, 0, len(s.servers))
+	for _, inst := range s.servers {
+		insts = append(insts, inst)
+	}
+	sort.Slice(insts, func(i, j int) bool {
+		return insts[i].addedOrder < insts[j].addedOrder
+	})
+	return insts
 }
 
 // normalizeVariableValueForJSON はJSONシリアライズ時の精度損失を防ぐため

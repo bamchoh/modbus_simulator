@@ -857,6 +857,69 @@ func (s *VariableStore) resolveExternalPathToInternal(dataType DataType, path []
 	return resolved
 }
 
+// getAtPath はパスに沿って値を辿り、末端の値を返す（内部インデックスを使用）
+func getAtPath(root interface{}, path []fieldPathSegment) (interface{}, bool) {
+	if len(path) == 0 {
+		return root, true
+	}
+	seg := path[0]
+	rest := path[1:]
+	if seg.isIndex {
+		arr, ok := root.([]interface{})
+		if !ok {
+			return nil, false
+		}
+		if seg.index < 0 || seg.index >= len(arr) {
+			return nil, false
+		}
+		return getAtPath(arr[seg.index], rest)
+	}
+	m, ok := root.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	val, exists := m[seg.field]
+	if !exists {
+		return nil, false
+	}
+	return getAtPath(val, rest)
+}
+
+// ReadFieldValue は変数のフィールド/要素を外部パス（表示ベース）で読む。
+// fieldPath は "motor.speed", "[2]", "[1].name" などの形式
+func (s *VariableStore) ReadFieldValue(name, fieldPath string) (interface{}, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	v, exists := s.byName[name]
+	if !exists {
+		return nil, fmt.Errorf("variable %s not found", name)
+	}
+
+	path := parseFieldPath(fieldPath)
+	if len(path) == 0 {
+		return nil, fmt.Errorf("field path is empty")
+	}
+
+	internalPath := s.resolveExternalPathToInternal(v.DataType, path)
+
+	val, ok := getAtPath(v.Value, internalPath)
+	if !ok {
+		return nil, fmt.Errorf("failed to navigate path %q in variable %s", fieldPath, name)
+	}
+	return val, nil
+}
+
+// WriteFieldValueByName は名前で変数を検索してフィールド/要素を外部パス（表示ベース）で書く。
+// fieldPath は "motor.speed", "[2]", "[1].name" などの形式
+func (s *VariableStore) WriteFieldValueByName(name, fieldPath string, value interface{}) error {
+	v, err := s.GetVariableByName(name)
+	if err != nil {
+		return err
+	}
+	return s.UpdateFieldValue(v.ID, fieldPath, value)
+}
+
 // UpdateFieldValue は変数の特定フィールド/要素のみをアトミックに更新する。
 // fieldPath は外部インデックス（表示ベース）のパス文字列
 // 例: "motor.speed", "items[1]"（ARRAY[1..10] の場合）, "items[2].name"
