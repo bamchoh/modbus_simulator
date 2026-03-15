@@ -15,6 +15,7 @@ import {
   GetUnitIDSettings,
   SetUnitIDEnabled,
 } from '../../wailsjs/go/main/App';
+import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { application } from '../../wailsjs/go/models';
 
 // ServerInstanceRow はコンポーネント外で定義（再レンダリング時の状態リセットを防ぐため）
@@ -369,15 +370,16 @@ export function ServerPanel() {
 
   useEffect(() => {
     loadInitialData();
-    const interval = setInterval(() => {
-      GetServerInstances()
-        .then(instances => setServerInstances(instances || []))
-        .catch(() => {});
-      GetAvailableProtocols()
-        .then(protos => setProtocols(protos || []))
-        .catch(() => {});
-    }, 1000);
-    return () => clearInterval(interval);
+    const offServer = EventsOn('plc:server-changed', (instances: application.ServerInstanceDTO[]) => {
+      setServerInstances(instances || []);
+    });
+    const offProtocols = EventsOn('plc:protocols-changed', (protos: application.ProtocolInfoDTO[]) => {
+      setProtocols(protos || []);
+    });
+    return () => {
+      offServer();
+      offProtocols();
+    };
   }, []);
 
   const loadInitialData = async () => {

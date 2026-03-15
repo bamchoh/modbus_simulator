@@ -64,6 +64,10 @@ type PLCService struct {
 	// 通信イベント
 	eventEmitter   protocol.CommunicationEventEmitter
 	sessionManager *protocol.SessionManager
+
+	// アプリケーション状態イベント
+	appEmitter        AppStateEmitter
+	varChangeListener *variableChangeListener
 }
 
 // NewPLCService は新しいPLCServiceを作成する
@@ -257,6 +261,8 @@ func (s *PLCService) AddServer(protocolType string, variantID string) error {
 		s.setEmitterToServerInstance(inst)
 	}
 
+	go s.emitServerChanged()
+
 	return nil
 }
 
@@ -298,6 +304,9 @@ func (s *PLCService) RemoveServer(protocolType string) error {
 	}
 
 	delete(s.servers, pt)
+
+	go s.emitServerChanged()
+
 	return nil
 }
 
@@ -328,6 +337,7 @@ func (s *PLCService) StartServer(protocolType string) error {
 
 	startErr := inst.server.Start(context.Background())
 	if startErr == nil {
+		go s.emitServerChanged()
 		return nil
 	}
 
@@ -348,7 +358,11 @@ func (s *PLCService) StartServer(protocolType string) error {
 		return fmt.Errorf("サーバー再構築失敗: %w", rerr)
 	}
 
-	return inst.server.Start(context.Background())
+	if err := inst.server.Start(context.Background()); err != nil {
+		return err
+	}
+	go s.emitServerChanged()
+	return nil
 }
 
 // rebuildServerInstance は既存の serverInstance の DataStore・Server を再作成する。
@@ -417,7 +431,11 @@ func (s *PLCService) StopServer(protocolType string) error {
 		return err
 	}
 	if inst.server != nil {
-		return inst.server.Stop()
+		if err := inst.server.Stop(); err != nil {
+			return err
+		}
+		go s.emitServerChanged()
+		return nil
 	}
 	return nil
 }
@@ -582,6 +600,7 @@ func (s *PLCService) UpdateServerConfig(dto *ServerConfigDTO) error {
 	}
 
 	inst.config = newConfig
+	go s.emitServerChanged()
 	return nil
 }
 
@@ -791,6 +810,8 @@ func (s *PLCService) CreateScript(name, code string, intervalMs int) (*ScriptDTO
 	sc := script.NewScript(id, name, code, time.Duration(intervalMs)*time.Millisecond)
 	s.scripts[id] = sc
 
+	go s.emitScriptsChanged()
+
 	return scriptToDTO(sc, false, "", 0), nil
 }
 
@@ -819,6 +840,8 @@ func (s *PLCService) UpdateScript(id, name, code string, intervalMs int) error {
 		s.scriptEngine.StartScript(sc)
 	}
 
+	go s.emitScriptsChanged()
+
 	return nil
 }
 
@@ -833,6 +856,7 @@ func (s *PLCService) DeleteScript(id string) error {
 
 	s.scriptEngine.StopScript(id)
 	delete(s.scripts, id)
+	go s.emitScriptsChanged()
 	return nil
 }
 
@@ -891,12 +915,20 @@ func (s *PLCService) StartScript(id string) error {
 		return fmt.Errorf("script not found: %s", id)
 	}
 
-	return s.scriptEngine.StartScript(sc)
+	if err := s.scriptEngine.StartScript(sc); err != nil {
+		return err
+	}
+	go s.emitScriptsChanged()
+	return nil
 }
 
 // StopScript はスクリプトを停止する
 func (s *PLCService) StopScript(id string) error {
-	return s.scriptEngine.StopScript(id)
+	if err := s.scriptEngine.StopScript(id); err != nil {
+		return err
+	}
+	go s.emitScriptsChanged()
+	return nil
 }
 
 // RunScriptOnce はスクリプトを1回だけ実行する
@@ -907,6 +939,7 @@ func (s *PLCService) RunScriptOnce(code string) (interface{}, error) {
 // ClearScriptError はスクリプトのエラー情報をクリアする
 func (s *PLCService) ClearScriptError(id string) {
 	s.scriptEngine.ClearError(id)
+	go s.emitScriptsChanged()
 }
 
 // GetConsoleLogs はコンソールログの一覧を返す
@@ -927,6 +960,18 @@ func (s *PLCService) GetConsoleLogs() []ConsoleLogDTO {
 // ClearConsoleLogs はコンソールログをクリアする
 func (s *PLCService) ClearConsoleLogs() {
 	s.scriptEngine.ClearConsoleLogs()
+}
+
+// SetConsoleLogCallback はコンソールログ追加時のコールバックを設定する
+func (s *PLCService) SetConsoleLogCallback(cb func(ConsoleLogDTO)) {
+	s.scriptEngine.SetOnLogAdded(func(entry scripting.ConsoleLogEntry) {
+		cb(ConsoleLogDTO{
+			ScriptID:   entry.ScriptID,
+			ScriptName: entry.ScriptName,
+			Message:    entry.Message,
+			At:         entry.At.UnixMilli(),
+		})
+	})
 }
 
 // Shutdown はサービスをシャットダウンする
@@ -977,6 +1022,62 @@ func (s *PLCService) SetEventEmitter(emitter protocol.CommunicationEventEmitter)
 	for _, inst := range s.servers {
 		s.setEmitterToServerInstance(inst)
 	}
+}
+
+// SetAppStateEmitter はアプリケーション状態イベントエミッターを設定する
+func (s *PLCService) SetAppStateEmitter(emitter AppStateEmitter) {
+	s.mu.Lock()
+
+	// 既存のリスナーを解除
+	if s.varChangeListener != nil {
+		s.variableStore.RemoveListener(s.varChangeListener)
+	}
+
+	s.appEmitter = emitter
+
+	// 変数ストアの変更をデバウンスしてUIへプッシュするリスナーを登録（300ms デバウンス）
+	listener := newVariableChangeListener(s.emitVariablesChanged, 300*time.Millisecond)
+	s.varChangeListener = listener
+	s.variableStore.AddListener(listener)
+
+	s.mu.Unlock()
+}
+
+// emitServerChanged はサーバー状態変化イベントを発行する（ロック不要・内部で取得）
+func (s *PLCService) emitServerChanged() {
+	s.mu.RLock()
+	emitter := s.appEmitter
+	s.mu.RUnlock()
+	if emitter == nil {
+		return
+	}
+	instances := s.GetServerInstances()
+	protocols := s.GetAvailableProtocols()
+	emitter.EmitServerChanged(instances, protocols)
+}
+
+// emitVariablesChanged は変数一覧変化イベントを発行する（ロック不要・内部で取得）
+func (s *PLCService) emitVariablesChanged() {
+	s.mu.RLock()
+	emitter := s.appEmitter
+	s.mu.RUnlock()
+	if emitter == nil {
+		return
+	}
+	variables := s.GetVariables()
+	emitter.EmitVariablesChanged(variables)
+}
+
+// emitScriptsChanged はスクリプト一覧変化イベントを発行する（ロック不要・内部で取得）
+func (s *PLCService) emitScriptsChanged() {
+	s.mu.RLock()
+	emitter := s.appEmitter
+	s.mu.RUnlock()
+	if emitter == nil {
+		return
+	}
+	scripts := s.GetScripts()
+	emitter.EmitScriptsChanged(scripts)
 }
 
 // GetEventEmitter はイベントエミッターを返す
@@ -1288,6 +1389,10 @@ func (s *PLCService) ImportProject(data *ProjectDataDTO) error {
 			s.monitoringItems[item.ID] = item
 		}
 	}
+
+	go s.emitServerChanged()
+	go s.emitVariablesChanged()
+	go s.emitScriptsChanged()
 
 	return nil
 }
@@ -1623,17 +1728,26 @@ func (s *PLCService) CreateVariable(name, dataType string, initialValue interfac
 	if err != nil {
 		return nil, err
 	}
+	go s.emitVariablesChanged()
 	return s.variableToDTO(v), nil
 }
 
 // UpdateVariableValue は変数の値を更新する
 func (s *PLCService) UpdateVariableValue(id string, value interface{}) error {
-	return s.variableStore.UpdateValue(id, value)
+	if err := s.variableStore.UpdateValue(id, value); err != nil {
+		return err
+	}
+	go s.emitVariablesChanged()
+	return nil
 }
 
 // DeleteVariable は変数を削除する
 func (s *PLCService) DeleteVariable(id string) error {
-	return s.variableStore.DeleteVariable(id)
+	if err := s.variableStore.DeleteVariable(id); err != nil {
+		return err
+	}
+	go s.emitVariablesChanged()
+	return nil
 }
 
 // UpdateVariable は変数の名前とデータタイプを更新する
@@ -1654,6 +1768,8 @@ func (s *PLCService) UpdateVariable(id, name, dataType string) (*VariableDTO, er
 		}
 	}
 	s.mu.RUnlock()
+
+	go s.emitVariablesChanged()
 
 	return s.variableToDTO(v), nil
 }
@@ -1689,6 +1805,7 @@ func (s *PLCService) UpdateVariableNodePublishing(variableID, protocolType strin
 			aware.OnNodePublishingUpdated()
 		}
 	}
+	go s.emitVariablesChanged()
 	return nil
 }
 
@@ -1703,7 +1820,11 @@ func (s *PLCService) UpdateVariableMappings(id string, mappingDTOs []ProtocolMap
 			Endianness:   dto.Endianness,
 		}
 	}
-	return s.variableStore.SetMappings(id, mappings)
+	if err := s.variableStore.SetMappings(id, mappings); err != nil {
+		return err
+	}
+	go s.emitVariablesChanged()
+	return nil
 }
 
 // GetDataTypes はデータ型一覧を返す
@@ -1754,6 +1875,8 @@ func (s *PLCService) RegisterStructType(dto StructTypeDTO) (*StructTypeDTO, erro
 		return nil, err
 	}
 
+	go s.emitVariablesChanged()
+
 	result := structTypeToDTO(st)
 	return &result, nil
 }
@@ -1770,7 +1893,11 @@ func (s *PLCService) GetStructTypes() []StructTypeDTO {
 
 // DeleteStructType は構造体型を削除する
 func (s *PLCService) DeleteStructType(name string) error {
-	return s.variableStore.DeleteStructType(name)
+	if err := s.variableStore.DeleteStructType(name); err != nil {
+		return err
+	}
+	go s.emitVariablesChanged()
+	return nil
 }
 
 // structTypeToDTO は構造体型をDTOに変換する

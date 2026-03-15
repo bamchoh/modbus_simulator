@@ -33,6 +33,7 @@ type ScriptEngine struct {
 	variableStore *variable.VariableStore
 	scripts       map[string]*runningScript
 	consoleLogs   []ConsoleLogEntry
+	onLogAdded    func(ConsoleLogEntry)
 }
 
 type runningScript struct {
@@ -49,6 +50,13 @@ func NewScriptEngine(varStore *variable.VariableStore) *ScriptEngine {
 		variableStore: varStore,
 		scripts:       make(map[string]*runningScript),
 	}
+}
+
+// SetOnLogAdded はコンソールログ追加時のコールバックを設定する
+func (e *ScriptEngine) SetOnLogAdded(cb func(ConsoleLogEntry)) {
+	e.mu.Lock()
+	e.onLogAdded = cb
+	e.mu.Unlock()
 }
 
 // createVM は新しいJavaScript VMを作成し、変数アクセス関数を登録する
@@ -75,7 +83,11 @@ func (e *ScriptEngine) createVM(scriptID, scriptName string) *goja.Runtime {
 		if len(e.consoleLogs) > maxConsoleLogs {
 			e.consoleLogs = e.consoleLogs[len(e.consoleLogs)-maxConsoleLogs:]
 		}
+		cb := e.onLogAdded
 		e.mu.Unlock()
+		if cb != nil {
+			go cb(entry)
+		}
 		return goja.Undefined()
 	})
 	vm.Set("console", console)

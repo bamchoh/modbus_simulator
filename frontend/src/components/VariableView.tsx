@@ -14,11 +14,8 @@ import {
   RegisterStructType,
   DeleteStructType,
 } from "../../wailsjs/go/main/App";
+import { EventsOn } from "../../wailsjs/runtime/runtime";
 import { application } from "../../wailsjs/go/models";
-
-interface VariableViewProps {
-  autoRefresh?: boolean;
-}
 
 // 構造体型配列の要素エディタ（ローカルで展開/折りたたみ状態を管理）
 const StructArrayElementEditor = ({
@@ -68,7 +65,7 @@ const StructArrayElementEditor = ({
   );
 };
 
-export function VariableView({ autoRefresh = true }: VariableViewProps) {
+export function VariableView() {
   const [variables, setVariables] = useState<application.VariableDTO[]>([]);
   const [dataTypes, setDataTypes] = useState<application.DataTypeInfoDTO[]>([]);
   const [structTypes, setStructTypes] = useState<application.StructTypeDTO[]>(
@@ -252,18 +249,14 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     loadServerInstancesAndAreas();
   }, [loadStructTypes, loadServerInstancesAndAreas]);
 
-  // 変数一覧の初回読み込み
+  // 変数一覧の初回読み込みとイベント購読
   useEffect(() => {
     loadVariables();
+    const off = EventsOn('plc:variables-changed', (variables: application.VariableDTO[]) => {
+      setVariables(variables || []);
+    });
+    return off;
   }, [loadVariables]);
-
-  // 自動更新
-  useEffect(() => {
-    if (autoRefresh) {
-      const interval = setInterval(loadVariables, 500);
-      return () => clearInterval(interval);
-    }
-  }, [autoRefresh, loadVariables]);
 
   // ESCキーでダイアログを閉じる
   useEffect(() => {

@@ -42,9 +42,18 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
-	// イベントエミッターを設定
+	// 通信イベントエミッターを設定
 	emitter := protocol.NewWailsEventEmitter(ctx)
 	a.plcService.SetEventEmitter(emitter)
+
+	// アプリケーション状態イベントエミッターを設定
+	appEmitter := application.NewWailsAppStateEmitter(ctx)
+	a.plcService.SetAppStateEmitter(appEmitter)
+
+	// コンソールログプッシュ通知を設定
+	a.plcService.SetConsoleLogCallback(func(entry application.ConsoleLogDTO) {
+		appEmitter.EmitConsoleLogAdded(entry)
+	})
 
 	// HostGrpcServer を起動（OPC UA 等のプラグインが変数アクセスに使用）
 	if _, err := a.plcService.StartHostGrpcServer(); err != nil {
