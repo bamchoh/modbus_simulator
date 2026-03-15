@@ -592,8 +592,7 @@ func (ns *PLCNameSpace) Attribute(n *ua.NodeID, a ua.AttributeID) *ua.DataValue 
 			return errDV(ua.StatusBadInternalError)
 		}
 		if len(path) > 0 {
-			resolved := ns.resolvePathIndices(info.dataType, path)
-			child, ok := navigateValue(val, resolved)
+			child, ok := ns.navigateValueExternal(val, path, info.dataType)
 			if !ok {
 				return errDV(ua.StatusBadInternalError)
 			}
@@ -721,8 +720,7 @@ func (ns *PLCNameSpace) SetAttribute(node *ua.NodeID, attr ua.AttributeID, val *
 				}
 			}
 		}
-		resolvedPath := ns.resolvePathIndices(info.dataType, path)
-		fieldPath := pathSegmentsToString(resolvedPath)
+		fieldPath := pathSegmentsToString(path)
 		if err := ns.accessor.WriteVariableFieldValue(rootVarID, fieldPath, goVal); err != nil {
 			return ua.StatusBadTypeMismatch
 		}
@@ -1056,37 +1054,10 @@ func (ns *PLCNameSpace) followTypeForPath(rootType string, path []pathSegment) s
 	return current
 }
 
-// resolvePathIndices は NodeID に含まれる外部インデックス（下限オフセット付き）を
-// 0ベースの内部インデックスに変換した新しいパスを返す。
-// 例: ARRAY[2..9] の場合、path の index=2 → 0、index=3 → 1 に変換する。
-func (ns *PLCNameSpace) resolvePathIndices(rootType string, path []pathSegment) []pathSegment {
-	resolved := make([]pathSegment, len(path))
-	copy(resolved, path)
-	current := rootType
-	for i, seg := range path {
-		switch seg.kind {
-		case "field":
-			if ns.accessor != nil {
-				for _, f := range ns.accessor.GetStructFields(current) {
-					if f.Name == seg.field {
-						current = f.DataType
-						break
-					}
-				}
-			}
-		case "index":
-			elemType, lower, _, isArr := parseArrayTypeFull(current)
-			if isArr {
-				resolved[i].index = seg.index - int(lower)
-				current = elemType
-			}
-		}
-	}
-	return resolved
-}
-
-// navigateValue は値ツリーをパスにしたがってたどり末端値を返す
-func navigateValue(value interface{}, path []pathSegment) (interface{}, bool) {
+// navigateValueExternal は外部インデックス（下限ベース）のパスで値ツリーをたどり末端値を返す。
+// 配列インデックスを型情報から取得した下限で補正して内部スライスにアクセスする。
+func (ns *PLCNameSpace) navigateValueExternal(value interface{}, path []pathSegment, dataType string) (interface{}, bool) {
+	current := dataType
 	for _, seg := range path {
 		switch seg.kind {
 		case "field":
@@ -1098,62 +1069,35 @@ func navigateValue(value interface{}, path []pathSegment) (interface{}, bool) {
 			if !ok {
 				return nil, false
 			}
+			// 構造体フィールドの型を追跡
+			if ns.accessor != nil {
+				for _, f := range ns.accessor.GetStructFields(current) {
+					if f.Name == seg.field {
+						current = f.DataType
+						break
+					}
+				}
+			}
 			value = v
 		case "index":
 			arr, ok := value.([]interface{})
 			if !ok {
 				return nil, false
 			}
-			if seg.index < 0 || seg.index >= len(arr) {
+			_, lower, _, isArr := parseArrayTypeFull(current)
+			internalIdx := seg.index
+			if isArr {
+				elemType, _, _, _ := parseArrayTypeFull(current)
+				internalIdx = seg.index - int(lower)
+				current = elemType
+			}
+			if internalIdx < 0 || internalIdx >= len(arr) {
 				return nil, false
 			}
-			value = arr[seg.index]
+			value = arr[internalIdx]
 		}
 	}
 	return value, true
-}
-
-// updateValue はルート値をディープコピーしながらパスの位置を newVal で置き換えた値を返す
-func updateValue(root interface{}, path []pathSegment, newVal interface{}) (interface{}, bool) {
-	if len(path) == 0 {
-		return newVal, true
-	}
-	seg := path[0]
-	rest := path[1:]
-	switch seg.kind {
-	case "field":
-		m, ok := root.(map[string]interface{})
-		if !ok {
-			return nil, false
-		}
-		newMap := make(map[string]interface{}, len(m))
-		for k, v := range m {
-			newMap[k] = v
-		}
-		updated, ok := updateValue(newMap[seg.field], rest, newVal)
-		if !ok {
-			return nil, false
-		}
-		newMap[seg.field] = updated
-		return newMap, true
-	case "index":
-		arr, ok := root.([]interface{})
-		if !ok {
-			return nil, false
-		}
-		if seg.index < 0 || seg.index >= len(arr) {
-			return nil, false
-		}
-		newArr := make([]interface{}, len(arr))
-		copy(newArr, arr)
-		updated, ok := updateValue(newArr[seg.index], rest, newVal)
-		if !ok {
-			return nil, false
-		}
-		newArr[seg.index] = updated
-		return newArr, true
-	}
-	return nil, false
 }
 
 // pathSegmentsToString は pathSegment スライスを 0ベースのパス文字列に変換する

@@ -24,10 +24,10 @@ type NodePublishing struct {
 // VariableStore は中央変数ストア
 type VariableStore struct {
 	mu              sync.RWMutex
-	variables       map[string]*Variable        // id -> variable
-	byName          map[string]*Variable        // name -> variable
-	mappings        map[string][]ProtocolMapping // variableID -> mappings
-	structTypes     map[string]*StructTypeDef   // 構造体型名 -> 型定義
+	variables       map[string]*Variable                  // id -> variable
+	byName          map[string]*Variable                  // name -> variable
+	mappings        map[string][]ProtocolMapping          // variableID -> mappings
+	structTypes     map[string]*StructTypeDef             // 構造体型名 -> 型定義
 	nodePublishings map[string]map[string]*NodePublishing // variableID -> protocolType -> NodePublishing
 	listeners       []ChangeListener
 }
@@ -731,14 +731,14 @@ type fieldPathSegment struct {
 }
 
 // parseFieldPath はフィールドパス文字列を fieldPathSegment のスライスに分解する。
-// インデックスは 0ベース。
+// インデックスは外部インデックス（表示ベース）。
 // 例:
 //
 //	"speed"         → [{field:"speed"}]
 //	"motor.speed"   → [{field:"motor"}, {field:"speed"}]
 //	"items[2]"      → [{field:"items"}, {index:2}]
 //	"items[2].name" → [{field:"items"}, {index:2}, {field:"name"}]
-//	"[0]"           → [{index:0}]
+//	"[1]"           → [{index:1}]
 func parseFieldPath(s string) []fieldPathSegment {
 	var segs []fieldPathSegment
 	for len(s) > 0 {
@@ -821,8 +821,45 @@ func updateAtPath(root interface{}, path []fieldPathSegment, newVal interface{})
 	return newMap, true
 }
 
+// resolveExternalPathToInternal は外部インデックス（表示ベース）のパスを
+// 内部インデックス（0ベース）のパスに変換する。
+// 例: "ARRAY[2..9] OF INT" の場合、index=3 → index=1 (3-2=1)
+// ロック済みの状態で呼ぶこと（structTypes を参照するため）
+func (s *VariableStore) resolveExternalPathToInternal(dataType DataType, path []fieldPathSegment) []fieldPathSegment {
+	resolved := make([]fieldPathSegment, len(path))
+	copy(resolved, path)
+	current := dataType
+	for i, seg := range path {
+		if seg.isIndex {
+			lower, isArray := ParseArrayLower(current)
+			if isArray {
+				resolved[i].index = seg.index - lower
+			}
+			// 配列要素型を追跡
+			elemType, _, err := ParseArrayType(current)
+			if err == nil {
+				current = elemType
+			}
+		} else {
+			// 構造体フィールドの型を追跡
+			if current.IsStructType() {
+				if st, ok := s.structTypes[string(current)]; ok {
+					for _, f := range st.Fields {
+						if f.Name == seg.field {
+							current = f.DataType
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	return resolved
+}
+
 // UpdateFieldValue は変数の特定フィールド/要素のみをアトミックに更新する。
-// fieldPath は 0ベースのパス文字列 (例: "motor.speed", "items[0]", "items[2].name")
+// fieldPath は外部インデックス（表示ベース）のパス文字列
+// 例: "motor.speed", "items[1]"（ARRAY[1..10] の場合）, "items[2].name"
 func (s *VariableStore) UpdateFieldValue(id, fieldPath string, value interface{}) error {
 	s.mu.Lock()
 	v, exists := s.variables[id]
@@ -837,7 +874,10 @@ func (s *VariableStore) UpdateFieldValue(id, fieldPath string, value interface{}
 		return fmt.Errorf("field path is empty")
 	}
 
-	updated, ok := updateAtPath(v.Value, path, value)
+	// 外部インデックス（表示ベース）を内部インデックス（0ベース）に変換
+	internalPath := s.resolveExternalPathToInternal(v.DataType, path)
+
+	updated, ok := updateAtPath(v.Value, internalPath, value)
 	if !ok {
 		s.mu.Unlock()
 		return fmt.Errorf("failed to navigate path %q in variable %s", fieldPath, id)
@@ -860,6 +900,37 @@ func (s *VariableStore) UpdateFieldValue(id, fieldPath string, value interface{}
 	}
 
 	return nil
+}
+
+// ReadArrayElement は配列変数の要素を外部インデックス（表示ベース）で読む。
+// 例: ARRAY[1..10] の場合、externalIndex=1 が最初の要素
+func (s *VariableStore) ReadArrayElement(name string, externalIndex int) (interface{}, error) {
+	s.mu.RLock()
+	v, exists := s.byName[name]
+	s.mu.RUnlock()
+	if !exists {
+		return nil, fmt.Errorf("variable %s not found", name)
+	}
+	arr, ok := v.Value.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("variable %s is not an array", name)
+	}
+	lower, _ := ParseArrayLower(v.DataType)
+	internalIdx := externalIndex - lower
+	if internalIdx < 0 || internalIdx >= len(arr) {
+		return nil, fmt.Errorf("index %d out of range for array %s", externalIndex, name)
+	}
+	return arr[internalIdx], nil
+}
+
+// WriteArrayElement は配列変数の要素を外部インデックス（表示ベース）で書く。
+// 例: ARRAY[1..10] の場合、externalIndex=1 が最初の要素
+func (s *VariableStore) WriteArrayElement(name string, externalIndex int, value interface{}) error {
+	v, err := s.GetVariableByName(name)
+	if err != nil {
+		return err
+	}
+	return s.UpdateFieldValue(v.ID, fmt.Sprintf("[%d]", externalIndex), value)
 }
 
 // ClearAll はすべての変数をクリアする

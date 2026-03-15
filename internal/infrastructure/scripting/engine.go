@@ -131,33 +131,20 @@ func (e *ScriptEngine) createVM(scriptID, scriptName string) *goja.Runtime {
 			e.variableStore.UpdateValueByName(name, value)
 		})
 
-		// readArrayElement(name, index) - 配列要素読み込み
+		// readArrayElement(name, index) - 配列要素読み込み（外部インデックス：表示ベース）
+		// 例: ARRAY[1..10] の場合、index=1 が最初の要素
 		plc.Set("readArrayElement", func(name string, index int) any {
-			v, err := e.variableStore.GetVariableByName(name)
+			val, err := e.variableStore.ReadArrayElement(name, index)
 			if err != nil {
 				return nil
 			}
-			arr, ok := v.Value.([]any)
-			if !ok || index < 0 || index >= len(arr) {
-				return nil
-			}
-			return toJSCompatibleValue(arr[index])
+			return toJSCompatibleValue(val)
 		})
 
-		// writeArrayElement(name, index, value) - 配列要素書き込み
+		// writeArrayElement(name, index, value) - 配列要素書き込み（外部インデックス：表示ベース）
+		// 例: ARRAY[1..10] の場合、index=1 が最初の要素
 		plc.Set("writeArrayElement", func(name string, index int, value any) {
-			v, err := e.variableStore.GetVariableByName(name)
-			if err != nil {
-				return
-			}
-			arr, ok := v.Value.([]any)
-			if !ok || index < 0 || index >= len(arr) {
-				return
-			}
-			newArr := make([]any, len(arr))
-			copy(newArr, arr)
-			newArr[index] = value
-			e.variableStore.UpdateValueByName(name, newArr)
+			e.variableStore.WriteArrayElement(name, index, value)
 		})
 
 		// readStructField(name, fieldName) - 構造体フィールド読み込み
