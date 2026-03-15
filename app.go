@@ -481,6 +481,12 @@ func (a *App) UpdateVariableValue(id string, value interface{}) error {
 	return a.plcService.UpdateVariableValue(id, value)
 }
 
+// UpdateVariableFieldValue は変数の特定フィールド/要素のみを更新する。
+// fieldPath は外部インデックス（表示ベース）のパス文字列（例: "motor.speed", "items[1]"）
+func (a *App) UpdateVariableFieldValue(id, fieldPath string, value interface{}) error {
+	return a.plcService.UpdateVariableFieldValue(id, fieldPath, value)
+}
+
 // DeleteVariable は変数を削除する
 func (a *App) DeleteVariable(id string) error {
 	return a.plcService.DeleteVariable(id)

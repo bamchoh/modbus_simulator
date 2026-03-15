@@ -17,7 +17,7 @@ type mockChangeListener struct {
 	lastMappings []ProtocolMapping
 }
 
-func (m *mockChangeListener) OnVariableChanged(v *Variable, mappings []ProtocolMapping) {
+func (m *mockChangeListener) OnVariableChanged(v *Variable, mappings []ProtocolMapping, _ string, _ interface{}) {
 	m.calls++
 	m.lastVar = v
 	m.lastMappings = mappings

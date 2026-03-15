@@ -80,7 +80,11 @@ message GetStructFieldsResponse {
 }
 
 // VariableChange: ホストの VariableStore 変更通知
+// field_path が空でない場合: value_msgpack はそのフィールド/要素の部分値（差分更新）
+//   field_path は外部インデックス（表示ベース）のパス文字列（例: "motor.speed", "items[1]"）
+// field_path が空の場合: value_msgpack は変数全体の値
 message VariableChange {
   string variable_id = 1;
   bytes value_msgpack = 2;
+  string field_path = 3;
 }

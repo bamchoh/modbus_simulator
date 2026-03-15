@@ -48,7 +48,7 @@ func (l *RemoteVariableChangeListener) Detach() {
 }
 
 // OnVariableChanged は VariableStore からの変更通知を処理する（Variable → Plugin DataStore）
-func (l *RemoteVariableChangeListener) OnVariableChanged(v *variable.Variable, mappings []variable.ProtocolMapping) {
+func (l *RemoteVariableChangeListener) OnVariableChanged(v *variable.Variable, mappings []variable.ProtocolMapping, _ string, _ interface{}) {
 	l.mu.Lock()
 	if l.syncing {
 		l.mu.Unlock()

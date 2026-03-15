@@ -6,6 +6,7 @@ import {
   CreateVariable,
   UpdateVariable,
   UpdateVariableValue,
+  UpdateVariableFieldValue,
   DeleteVariable,
   UpdateVariableMappings,
   UpdateVariableNodePublishing,
@@ -1339,20 +1340,35 @@ export function VariableView() {
     return value;
   };
 
+  // valuePath (string | number)[] をバックエンドのフィールドパス文字列に変換する
+  // 文字列セグメントは常に "." プレフィックスを付ける
+  // 例: ["motor", "speed"] → ".motor.speed"
+  //     ["items", 1]       → ".items[1]"
+  //     [0, "name"]        → "[0].name"
+  const valuePathToFieldPath = (valuePath: (string | number)[]): string => {
+    let result = "";
+    for (const seg of valuePath) {
+      if (typeof seg === "number") {
+        result += `[${seg}]`;
+      } else {
+        result += `.${seg}`;
+      }
+    }
+    return result;
+  };
+
   // 行単位の値更新
   const handleUpdateRow = async () => {
     if (!editingVariable) return;
     try {
       if (editingRow && editingRow.valuePath.length > 0) {
-        // パスをたどって変数全体の値のコピー内の該当箇所を更新
-        const fullValue = JSON.parse(JSON.stringify(editingVariable.value));
-        let target = fullValue;
-        for (let i = 0; i < editingRow.valuePath.length - 1; i++) {
-          target = target[editingRow.valuePath[i]];
-        }
-        target[editingRow.valuePath[editingRow.valuePath.length - 1]] =
-          coerceFloatIfNeeded(editData, editingRow.dataType);
-        await UpdateVariableValue(editingVariable.id, fullValue);
+        // フィールドパスを使って部分更新
+        const fieldPath = valuePathToFieldPath(editingRow.valuePath);
+        await UpdateVariableFieldValue(
+          editingVariable.id,
+          fieldPath,
+          coerceFloatIfNeeded(editData, editingRow.dataType),
+        );
       } else {
         const dataType = editingVariable.dataType;
         await UpdateVariableValue(

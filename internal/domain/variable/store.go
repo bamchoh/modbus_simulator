@@ -11,8 +11,11 @@ import (
 
 // ChangeListener は変数変更通知のリスナー
 type ChangeListener interface {
-	// OnVariableChanged は変数の値が変更されたときに呼ばれる
-	OnVariableChanged(v *Variable, mappings []ProtocolMapping)
+	// OnVariableChanged は変数の値が変更されたときに呼ばれる。
+	// changedPath が空でない場合はフィールド/要素の部分更新を示し、
+	// changedValue にその変換済み部分値が入る（nil の場合は v.Value 全体を使うこと）。
+	// changedPath が空の場合は変数全体の更新（v.Value を使うこと）。
+	OnVariableChanged(v *Variable, mappings []ProtocolMapping, changedPath string, changedValue interface{})
 }
 
 // NodePublishing はノードベースプロトコルへの変数公開設定
@@ -176,7 +179,7 @@ func (s *VariableStore) RemoveListener(l ChangeListener) {
 // notifyListeners はリスナーに変数変更を通知する（ロック外で呼ぶこと）
 func (s *VariableStore) notifyListeners(v *Variable, mappings []ProtocolMapping) {
 	for _, l := range s.listeners {
-		l.OnVariableChanged(v, mappings)
+		l.OnVariableChanged(v, mappings, "", nil)
 	}
 }
 
@@ -251,7 +254,7 @@ func (s *VariableStore) UpdateMetadata(id string, newName string, newDataType Da
 
 	// ロック外でリスナーに通知
 	for _, l := range listeners {
-		l.OnVariableChanged(v, mappings)
+		l.OnVariableChanged(v, mappings, "", nil)
 	}
 
 	return v.Clone(), nil
@@ -406,7 +409,7 @@ func (s *VariableStore) UpdateValue(id string, value interface{}) error {
 
 	// ロック外でリスナーに通知
 	for _, l := range listeners {
-		l.OnVariableChanged(v, mappings)
+		l.OnVariableChanged(v, mappings, "", nil)
 	}
 
 	return nil
@@ -480,7 +483,7 @@ func (s *VariableStore) SetMappings(variableID string, mappings []ProtocolMappin
 	s.mu.Unlock()
 
 	for _, l := range listeners {
-		l.OnVariableChanged(v, mappingsCopy)
+		l.OnVariableChanged(v, mappingsCopy, "", nil)
 	}
 
 	return nil
@@ -953,13 +956,15 @@ func (s *VariableStore) UpdateFieldValue(id, fieldPath string, value interface{}
 	}
 
 	v.Value = converted
+	// 変換済みの部分値を取得してリスナーに渡す（差分送信用）
+	changedValue, _ := getAtPath(converted, internalPath)
 	mappings := s.getMappingsCopy(id)
 	listeners := make([]ChangeListener, len(s.listeners))
 	copy(listeners, s.listeners)
 	s.mu.Unlock()
 
 	for _, l := range listeners {
-		l.OnVariableChanged(v, mappings)
+		l.OnVariableChanged(v, mappings, fieldPath, changedValue)
 	}
 
 	return nil

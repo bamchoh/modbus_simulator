@@ -1745,6 +1745,16 @@ func (s *PLCService) UpdateVariableValue(id string, value interface{}) error {
 	return nil
 }
 
+// UpdateVariableFieldValue は変数の特定フィールド/要素のみを更新する。
+// fieldPath は外部インデックス（表示ベース）のパス文字列（例: "motor.speed", "items[1]"）
+func (s *PLCService) UpdateVariableFieldValue(id, fieldPath string, value interface{}) error {
+	if err := s.variableStore.UpdateFieldValue(id, fieldPath, value); err != nil {
+		return err
+	}
+	go s.emitVariablesChanged()
+	return nil
+}
+
 // DeleteVariable は変数を削除する
 func (s *PLCService) DeleteVariable(id string) error {
 	if err := s.variableStore.DeleteVariable(id); err != nil {

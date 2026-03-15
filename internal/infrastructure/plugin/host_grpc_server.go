@@ -40,11 +40,11 @@ func unmarshalMsgpack(b []byte, v interface{}) error {
 type HostGrpcServer struct {
 	pb.UnimplementedVariableAccessorServiceServer
 
-	accessor    protocol.VariableStoreAccessor
-	varStore    *variable.VariableStore
-	grpcServer  *grpc.Server
-	listener    net.Listener
-	port        int
+	accessor   protocol.VariableStoreAccessor
+	varStore   *variable.VariableStore
+	grpcServer *grpc.Server
+	listener   net.Listener
+	port       int
 
 	mu          sync.RWMutex
 	subscribers []chan *pb.VariableChange // SubscribeVariableChanges のストリーム送信用チャンネル
@@ -193,14 +193,20 @@ func (s *HostGrpcServer) SubscribeVariableChanges(_ *pb.Empty, stream pb.Variabl
 // ---- variable.ChangeListener 実装 ----
 // 変数が変更されたとき、購読中の全プラグインに通知する
 
-func (s *HostGrpcServer) OnVariableChanged(v *variable.Variable, _ []variable.ProtocolMapping) {
-	b, err := marshalMsgpack(v.Value)
+func (s *HostGrpcServer) OnVariableChanged(v *variable.Variable, _ []variable.ProtocolMapping, changedPath string, changedValue interface{}) {
+	// changedPath が空でない場合は部分値のみシリアライズ、空の場合は全体値
+	target := v.Value
+	if changedPath != "" && changedValue != nil {
+		target = changedValue
+	}
+	b, err := marshalMsgpack(target)
 	if err != nil {
 		return
 	}
 	change := &pb.VariableChange{
 		VariableId:   v.ID,
 		ValueMsgpack: b,
+		FieldPath:    changedPath,
 	}
 	s.mu.RLock()
 	subs := make([]chan *pb.VariableChange, len(s.subscribers))

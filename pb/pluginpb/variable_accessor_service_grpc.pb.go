@@ -27,7 +27,8 @@ type VariableAccessorServiceClient interface {
 	ReadVariableValue(ctx context.Context, in *ReadVariableValueRequest, opts ...grpc.CallOption) (*ReadVariableValueResponse, error)
 	WriteVariableValue(ctx context.Context, in *WriteVariableValueRequest, opts ...grpc.CallOption) (*Empty, error)
 	// WriteVariableField は変数の特定フィールド/要素のみをアトミックに更新する。
-	// field_path は 0ベースのパス文字列 (例: "motor.speed", "items[0]", "items[2].name")
+	// field_path は外部インデックス（表示ベース）のパス文字列
+	// 例: "motor.speed", "items[1]"（ARRAY[1..10] の場合）, "items[2].name"
 	WriteVariableField(ctx context.Context, in *WriteVariableFieldRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetStructFields(ctx context.Context, in *GetStructFieldsRequest, opts ...grpc.CallOption) (*GetStructFieldsResponse, error)
 	// SubscribeVariableChanges: ホストの VariableStore 変更をプラグインに通知する
@@ -129,7 +130,8 @@ type VariableAccessorServiceServer interface {
 	ReadVariableValue(context.Context, *ReadVariableValueRequest) (*ReadVariableValueResponse, error)
 	WriteVariableValue(context.Context, *WriteVariableValueRequest) (*Empty, error)
 	// WriteVariableField は変数の特定フィールド/要素のみをアトミックに更新する。
-	// field_path は 0ベースのパス文字列 (例: "motor.speed", "items[0]", "items[2].name")
+	// field_path は外部インデックス（表示ベース）のパス文字列
+	// 例: "motor.speed", "items[1]"（ARRAY[1..10] の場合）, "items[2].name"
 	WriteVariableField(context.Context, *WriteVariableFieldRequest) (*Empty, error)
 	GetStructFields(context.Context, *GetStructFieldsRequest) (*GetStructFieldsResponse, error)
 	// SubscribeVariableChanges: ホストの VariableStore 変更をプラグインに通知する

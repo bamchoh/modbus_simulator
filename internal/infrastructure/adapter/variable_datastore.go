@@ -47,7 +47,7 @@ func (a *VariableBackedDataStore) Detach() {
 
 // OnVariableChanged はVariableStoreからの変更通知を処理する
 // 変数値 → DataStoreへの書き込み
-func (a *VariableBackedDataStore) OnVariableChanged(v *variable.Variable, mappings []variable.ProtocolMapping) {
+func (a *VariableBackedDataStore) OnVariableChanged(v *variable.Variable, mappings []variable.ProtocolMapping, _ string, _ interface{}) {
 	a.mu.Lock()
 	if a.syncing {
 		a.mu.Unlock()
