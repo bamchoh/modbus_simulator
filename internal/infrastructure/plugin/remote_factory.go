@@ -94,7 +94,7 @@ func (f *LazyRemoteServerFactory) EnsureStarted() error {
 	if proc == nil {
 		entrypoint := filepath.Join(f.manifestDir, f.manifest.Entrypoint)
 		fmt.Println("Starting plugin process:", entrypoint)
-		proc, err = f.manager.Launch(entrypoint)
+		proc, err = f.manager.Launch(entrypoint, "--protocol-type="+f.manifest.ProtocolType)
 		if err != nil {
 			return fmt.Errorf("プラグイン起動失敗 (%s): %w", f.manifest.Name, err)
 		}

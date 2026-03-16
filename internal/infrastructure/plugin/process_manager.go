@@ -184,11 +184,13 @@ func loadManifest(pluginDir string) (*PluginManifest, error) {
 	return &manifest, nil
 }
 
-// Launch はプラグイン実行ファイルを起動し、gRPC 接続を確立して PluginProcess を返す
-func (m *PluginProcessManager) Launch(pluginPath string) (*PluginProcess, error) {
+// Launch はプラグイン実行ファイルを起動し、gRPC 接続を確立して PluginProcess を返す。
+// extraArgs には追加のコマンドライン引数を渡せる（例: "--protocol-type=modbus-tcp"）。
+func (m *PluginProcessManager) Launch(pluginPath string, extraArgs ...string) (*PluginProcess, error) {
 	proc := &PluginProcess{path: pluginPath}
 
-	cmd := exec.Command(pluginPath, "--host-grpc-addr="+m.hostAddr)
+	args := append([]string{"--host-grpc-addr=" + m.hostAddr}, extraArgs...)
+	cmd := exec.Command(pluginPath, args...)
 	setSysProcAttr(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

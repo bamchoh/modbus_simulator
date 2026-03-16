@@ -20,10 +20,11 @@ type PluginServer struct {
 	pb.UnimplementedPluginServiceServer
 	pb.UnimplementedDataStoreServiceServer
 
-	mu      sync.Mutex
-	factory protocol.ServerFactory
-	store   *modbus.ModbusDataStore
-	server  protocol.ProtocolServer
+	mu           sync.Mutex
+	protocolType string // "modbus-tcp", "modbus-rtu", "modbus-ascii"
+	factory      protocol.ServerFactory
+	store        *modbus.ModbusDataStore
+	server       protocol.ProtocolServer
 
 	// SubscribeChanges ストリームの購読者チャンネル
 	subsMu      sync.RWMutex
@@ -33,10 +34,22 @@ type PluginServer struct {
 	hostWriting bool
 }
 
-// NewPluginServer は PluginServer を作成する
-func NewPluginServer() *PluginServer {
+// NewPluginServer は PluginServer を作成する。
+// protocolType は "modbus-tcp", "modbus-rtu", "modbus-ascii" のいずれかを指定する。
+func NewPluginServer(protocolType string) *PluginServer {
+	var factory protocol.ServerFactory
+	switch protocolType {
+	case "modbus-rtu":
+		factory = modbus.NewModbusRTUServerFactory()
+	case "modbus-ascii":
+		factory = modbus.NewModbusASCIIServerFactory()
+	default:
+		factory = modbus.NewModbusTCPServerFactory()
+	}
 	return &PluginServer{
-		store: modbus.NewModbusDataStore(65536, 65536, 65536, 65536),
+		protocolType: protocolType,
+		factory:      factory,
+		store:        modbus.NewModbusDataStore(65536, 65536, 65536, 65536),
 	}
 }
 
@@ -50,8 +63,8 @@ func (s *PluginServer) Register(srv *grpc.Server) {
 
 func (s *PluginServer) GetMetadata(ctx context.Context, _ *pb.Empty) (*pb.PluginMetadata, error) {
 	return &pb.PluginMetadata{
-		ProtocolType: "modbus",
-		DisplayName:  "Modbus",
+		ProtocolType: s.protocolType,
+		DisplayName:  s.factory.DisplayName(),
 		Capabilities: &pb.ProtocolCapabilities{
 			SupportsUnitId:         true,
 			UnitIdMin:              1,
@@ -62,17 +75,12 @@ func (s *PluginServer) GetMetadata(ctx context.Context, _ *pb.Empty) (*pb.Plugin
 }
 
 func (s *PluginServer) GetConfigVariants(ctx context.Context, _ *pb.Empty) (*pb.GetConfigVariantsResponse, error) {
-	factory := s.getFactory("tcp") // デフォルト
-	variants := factory.ConfigVariants()
-	pbVariants := make([]*pb.ConfigVariant, len(variants))
-	for i, v := range variants {
-		pbVariants[i] = &pb.ConfigVariant{Id: v.ID, DisplayName: v.DisplayName}
-	}
-	return &pb.GetConfigVariantsResponse{Variants: pbVariants}, nil
+	// バリアントなし（プロトコルタイプが固定されているため）
+	return &pb.GetConfigVariantsResponse{Variants: nil}, nil
 }
 
 func (s *PluginServer) GetConfigFields(ctx context.Context, req *pb.GetConfigFieldsRequest) (*pb.GetConfigFieldsResponse, error) {
-	factory := s.getFactory(req.VariantId)
+	factory := s.factory
 	fields := factory.GetConfigFields(req.VariantId)
 	pbFields := make([]*pb.ConfigField, len(fields))
 	for i, f := range fields {
@@ -108,7 +116,7 @@ func (s *PluginServer) GetConfigFields(ctx context.Context, req *pb.GetConfigFie
 }
 
 func (s *PluginServer) GetDefaultConfig(ctx context.Context, req *pb.GetDefaultConfigRequest) (*pb.ConfigDataResponse, error) {
-	factory := s.getFactory(req.VariantId)
+	factory := s.factory
 	config := factory.CreateConfigFromVariant(req.VariantId)
 	settingsMap := factory.ConfigToMap(config)
 	settingsJSON, err := json.Marshal(settingsMap)
@@ -122,7 +130,7 @@ func (s *PluginServer) GetDefaultConfig(ctx context.Context, req *pb.GetDefaultC
 }
 
 func (s *PluginServer) MapToConfig(ctx context.Context, req *pb.MapToConfigRequest) (*pb.MapToConfigResponse, error) {
-	factory := s.getFactory(req.VariantId)
+	factory := s.factory
 	var settings map[string]interface{}
 	if err := json.Unmarshal([]byte(req.SettingsJson), &settings); err != nil {
 		return &pb.MapToConfigResponse{Error: "JSON パース失敗: " + err.Error()}, nil
@@ -143,7 +151,7 @@ func (s *PluginServer) MapToConfig(ctx context.Context, req *pb.MapToConfigReque
 }
 
 func (s *PluginServer) ConfigToMap(ctx context.Context, req *pb.ConfigToMapRequest) (*pb.ConfigToMapResponse, error) {
-	factory := s.getFactory(req.VariantId)
+	factory := s.factory
 	var settings map[string]interface{}
 	if err := json.Unmarshal([]byte(req.SettingsJson), &settings); err != nil {
 		return nil, err
@@ -165,7 +173,7 @@ func (s *PluginServer) CreateAndStart(ctx context.Context, req *pb.CreateAndStar
 	defer s.mu.Unlock()
 
 	variantID := req.VariantId
-	factory := s.getFactory(variantID)
+	factory := s.factory
 
 	// 設定を復元
 	var settings map[string]interface{}
@@ -243,7 +251,7 @@ func (s *PluginServer) UpdateConfig(ctx context.Context, req *pb.UpdateConfigReq
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.server == nil || s.factory == nil {
+	if s.server == nil {
 		return nil, fmt.Errorf("サーバーが未起動")
 	}
 
@@ -556,14 +564,3 @@ func (s *PluginServer) isHostWriting() bool {
 	return v
 }
 
-// getFactory はバリアントIDに基づいてファクトリーを返す
-func (s *PluginServer) getFactory(variantID string) protocol.ServerFactory {
-	switch variantID {
-	case "rtu":
-		return modbus.NewModbusRTUServerFactory()
-	case "ascii":
-		return modbus.NewModbusASCIIServerFactory()
-	default:
-		return modbus.NewModbusTCPServerFactory()
-	}
-}

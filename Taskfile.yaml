@@ -21,10 +21,20 @@ tasks:
     desc: プラグインバイナリをビルドする（サブフォルダ + plugin.json を生成）
     cmds:
       - powershell -Command "Remove-Item -Path {{.PLUGINS_DIR}}/* -Recurse -Force"
-      - powershell -Command "mkdir -p {{.PLUGINS_DIR}}/modbus-plugin"
-      - go build -o {{.PLUGINS_DIR}}/modbus-plugin/modbus-plugin.exe ./cmd/modbus-plugin
+      # Modbus プラグインを一度ビルドして TCP/RTU/ASCII の3ディレクトリにコピー
+      - powershell -Command "mkdir -p {{.PLUGINS_DIR}}/modbus-tcp-plugin"
+      - go build -o {{.PLUGINS_DIR}}/modbus-tcp-plugin/modbus-plugin.exe ./cmd/modbus-plugin
       - |
-        printf '{\n  "name": "Modbus Plugin",\n  "entrypoint": "modbus-plugin.exe",\n  "version": "0.0.1",\n  "protocol_type": "modbus",\n  "display_name": "Modbus",\n  "variants": [\n    {"id": "tcp", "display_name": "Modbus TCP"},\n    {"id": "rtu", "display_name": "Modbus RTU"},\n    {"id": "ascii", "display_name": "Modbus ASCII"}\n  ],\n  "capabilities": {\n    "supports_unit_id": true,\n    "unit_id_min": 1,\n    "unit_id_max": 247,\n    "supports_node_publishing": false\n  }\n}\n' > {{.PLUGINS_DIR}}/modbus-plugin/plugin.json
+        printf '{\n  "name": "Modbus TCP Plugin",\n  "entrypoint": "modbus-plugin.exe",\n  "version": "0.0.1",\n  "protocol_type": "modbus-tcp",\n  "display_name": "Modbus TCP",\n  "variants": [],\n  "capabilities": {\n    "supports_unit_id": true,\n    "unit_id_min": 1,\n    "unit_id_max": 247,\n    "supports_node_publishing": false\n  }\n}\n' > {{.PLUGINS_DIR}}/modbus-tcp-plugin/plugin.json
+      - powershell -Command "mkdir -p {{.PLUGINS_DIR}}/modbus-rtu-plugin"
+      - powershell -Command "Copy-Item -Path {{.PLUGINS_DIR}}/modbus-tcp-plugin/modbus-plugin.exe -Destination {{.PLUGINS_DIR}}/modbus-rtu-plugin/modbus-plugin.exe"
+      - |
+        printf '{\n  "name": "Modbus RTU Plugin",\n  "entrypoint": "modbus-plugin.exe",\n  "version": "0.0.1",\n  "protocol_type": "modbus-rtu",\n  "display_name": "Modbus RTU",\n  "variants": [],\n  "capabilities": {\n    "supports_unit_id": true,\n    "unit_id_min": 1,\n    "unit_id_max": 247,\n    "supports_node_publishing": false\n  }\n}\n' > {{.PLUGINS_DIR}}/modbus-rtu-plugin/plugin.json
+      - powershell -Command "mkdir -p {{.PLUGINS_DIR}}/modbus-ascii-plugin"
+      - powershell -Command "Copy-Item -Path {{.PLUGINS_DIR}}/modbus-tcp-plugin/modbus-plugin.exe -Destination {{.PLUGINS_DIR}}/modbus-ascii-plugin/modbus-plugin.exe"
+      - |
+        printf '{\n  "name": "Modbus ASCII Plugin",\n  "entrypoint": "modbus-plugin.exe",\n  "version": "0.0.1",\n  "protocol_type": "modbus-ascii",\n  "display_name": "Modbus ASCII",\n  "variants": [],\n  "capabilities": {\n    "supports_unit_id": true,\n    "unit_id_min": 1,\n    "unit_id_max": 247,\n    "supports_node_publishing": false\n  }\n}\n' > {{.PLUGINS_DIR}}/modbus-ascii-plugin/plugin.json
+      # OPC UA プラグイン
       - powershell -Command "mkdir -p {{.PLUGINS_DIR}}/opcua-plugin"
       - go build -o {{.PLUGINS_DIR}}/opcua-plugin/opcua-plugin.exe ./cmd/opcua-plugin
       - |
@@ -53,4 +63,4 @@ tasks:
   clean:
     desc: ビルド成果物を削除する
     cmds:
-      - rm -rf {{.PLUGINS_DIR}}/modbus-plugin {{.PLUGINS_DIR}}/opcua-plugin
+      - rm -rf {{.PLUGINS_DIR}}/modbus-tcp-plugin {{.PLUGINS_DIR}}/modbus-rtu-plugin {{.PLUGINS_DIR}}/modbus-ascii-plugin {{.PLUGINS_DIR}}/opcua-plugin
