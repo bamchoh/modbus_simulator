@@ -54,20 +54,22 @@ func (f *OpcuaServerFactory) DefaultConfig() protocol.ProtocolConfig {
 func (f *OpcuaServerFactory) GetConfigFields(variantID string) []protocol.ConfigField {
 	return []protocol.ConfigField{
 		{
-			Name:     "host",
-			Label:    "ホスト (0.0.0.0で全インターフェース)",
-			Type:     "text",
-			Required: true,
-			Default:  "0.0.0.0",
+			Name:        "host",
+			Label:       "ホスト",
+			Description: "待ち受けるネットワークアドレス。0.0.0.0 で全インターフェースに対応します。",
+			Type:        "text",
+			Required:    true,
+			Default:     "0.0.0.0",
 		},
 		{
-			Name:     "port",
-			Label:    "ポート番号",
-			Type:     "number",
-			Required: true,
-			Default:  4840,
-			Min:      intPtr(1),
-			Max:      intPtr(65535),
+			Name:        "port",
+			Label:       "ポート番号",
+			Description: "OPC UA サーバーの待ち受けポート番号。標準ポートは 4840 です。",
+			Type:        "number",
+			Required:    true,
+			Default:     4840,
+			Min:         intPtr(1),
+			Max:         intPtr(65535),
 		},
 	}
 }

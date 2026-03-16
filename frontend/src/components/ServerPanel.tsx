@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { FocusTrap } from './FocusTrap';
 import {
   GetServerInstances,
@@ -18,223 +18,6 @@ import {
 } from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { application } from '../../wailsjs/go/models';
-
-// ServerInstanceRow はコンポーネント外で定義（再レンダリング時の状態リセットを防ぐため）
-interface ServerInstanceRowProps {
-  instance: application.ServerInstanceDTO;
-  onStart: (protocolType: string) => void;
-  onStop: (protocolType: string) => void;
-  onRemove: (protocolType: string) => void;
-  serialPorts: string[];
-  onRefreshPorts: () => void;
-}
-
-function ServerInstanceRow({
-  instance,
-  onStart,
-  onStop,
-  onRemove,
-  serialPorts,
-  onRefreshPorts,
-}: ServerInstanceRowProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [schema, setSchema] = useState<application.ProtocolSchemaDTO | null>(null);
-  const [config, setConfig] = useState<application.ServerConfigDTO | null>(null);
-  const [isDirty, setIsDirty] = useState(false);
-  const [rowError, setRowError] = useState<string | null>(null);
-  const [unitIDSettings, setUnitIDSettings] = useState<application.UnitIDSettingsDTO | null>(null);
-  const [disabledUnitIds, setDisabledUnitIds] = useState<Set<number>>(new Set());
-
-  const isRunning = instance.status === 'Running';
-
-  const loadSettings = async () => {
-    try {
-      const [s, cfg, unitSettings] = await Promise.all([
-        GetProtocolSchema(instance.protocolType),
-        GetServerConfig(instance.protocolType),
-        GetUnitIDSettings(instance.protocolType),
-      ]);
-      setSchema(s);
-      setConfig(cfg);
-      if (unitSettings) {
-        setUnitIDSettings(unitSettings);
-        setDisabledUnitIds(new Set(unitSettings.disabledIds || []));
-      }
-      setIsDirty(false);
-    } catch (e) {
-      setRowError(String(e));
-    }
-  };
-
-  const handleToggleExpand = () => {
-    if (!isExpanded) {
-      loadSettings();
-    }
-    setIsExpanded(!isExpanded);
-  };
-
-  // 現在のバリアントのフィールドを取得
-  const currentVariantId = config?.variant || instance.variant;
-  const currentVariant = schema?.variants.find(v => v.id === currentVariantId);
-  const fields = currentVariant?.fields || [];
-
-  const handleVariantChange = (variantId: string) => {
-    if (config) {
-      setConfig({ ...config, variant: variantId });
-      setIsDirty(true);
-    }
-  };
-
-  const handleSettingChange = (fieldName: string, value: any) => {
-    if (config) {
-      setConfig({
-        ...config,
-        settings: {
-          ...config.settings,
-          [fieldName]: value,
-        },
-      });
-      setIsDirty(true);
-    }
-  };
-
-  const handleSaveConfig = async () => {
-    if (config) {
-      try {
-        setRowError(null);
-        await UpdateServerConfig(config);
-        await loadSettings();
-      } catch (e) {
-        setRowError(String(e));
-      }
-    }
-  };
-
-  const handleUnitIdToggle = async (unitId: number, enabled: boolean) => {
-    try {
-      await SetUnitIDEnabled(instance.protocolType, unitId, enabled);
-      const newDisabled = new Set(disabledUnitIds);
-      if (enabled) {
-        newDisabled.delete(unitId);
-      } else {
-        newDisabled.add(unitId);
-      }
-      setDisabledUnitIds(newDisabled);
-    } catch (e) {
-      setRowError(String(e));
-    }
-  };
-
-  const unitIdRange = unitIDSettings
-    ? Array.from(
-        { length: unitIDSettings.max - unitIDSettings.min + 1 },
-        (_, i) => unitIDSettings.min + i
-      )
-    : [];
-
-  const statusClass =
-    instance.status === 'Running'
-      ? 'running'
-      : instance.status === 'Error'
-      ? 'error'
-      : 'stopped';
-
-  return (
-    <div className="server-instance-row">
-      <div className="server-instance-header">
-        <div className="server-instance-info">
-          <span className="server-instance-name">{instance.displayName}</span>
-          {instance.variant && <span className="server-instance-variant">{instance.variant}</span>}
-          <span className={`server-status-badge ${statusClass}`}>{instance.status}</span>
-        </div>
-        <div className="server-instance-actions">
-          <button
-            onClick={() =>
-              isRunning ? onStop(instance.protocolType) : onStart(instance.protocolType)
-            }
-            className={isRunning ? 'btn-danger' : 'btn-primary'}
-          >
-            {isRunning ? '停止' : '開始'}
-          </button>
-          <button onClick={handleToggleExpand} className="btn-secondary">
-            {isExpanded ? '設定 ▲' : '設定 ▼'}
-          </button>
-          <button
-            onClick={() => onRemove(instance.protocolType)}
-            className="btn-danger"
-            disabled={isRunning}
-          >
-            削除
-          </button>
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div className="server-instance-config">
-          {rowError && <div className="error-message">{rowError}</div>}
-
-          {schema && schema.variants.length > 1 && config && (
-            <div className="form-group">
-              <label>サーバータイプ</label>
-              <select
-                value={config.variant}
-                onChange={e => handleVariantChange(e.target.value)}
-                disabled={isRunning}
-              >
-                {schema.variants.map(v => (
-                  <option key={v.id} value={v.id}>
-                    {v.displayName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {fields.map(field => (
-            <DynamicField
-              key={field.name}
-              field={field}
-              value={config?.settings?.[field.name]}
-              onChange={value => handleSettingChange(field.name, value)}
-              disabled={isRunning}
-              serialPorts={serialPorts}
-              onRefreshPorts={onRefreshPorts}
-            />
-          ))}
-
-          <button
-            onClick={handleSaveConfig}
-            disabled={isRunning}
-            className={isDirty ? 'btn-primary' : 'btn-secondary'}
-          >
-            {isDirty ? '設定を保存 *' : '設定を保存'}
-          </button>
-
-          {schema?.capabilities.supportsUnitId && unitIDSettings && (
-            <div className="unit-id-section">
-              <h4>UnitID 応答設定</h4>
-              <p className="help-text">
-                オフにしたUnitIDには応答しません（デフォルト: 全て応答）
-              </p>
-              <div className="unit-id-grid">
-                {unitIdRange.map(unitId => (
-                  <label key={unitId} className="unit-id-toggle">
-                    <input
-                      type="checkbox"
-                      checked={!disabledUnitIds.has(unitId)}
-                      onChange={e => handleUnitIdToggle(unitId, e.target.checked)}
-                    />
-                    <span className="unit-id-label">{unitId}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // 動的フィールドコンポーネント
 interface DynamicFieldProps {
@@ -256,24 +39,19 @@ function DynamicField({
 }: DynamicFieldProps) {
   const displayValue = value ?? field.default;
 
-  switch (field.type) {
-    case 'text':
-      return (
-        <div className="form-group">
-          <label>{field.label}</label>
+  const renderControl = () => {
+    switch (field.type) {
+      case 'text':
+        return (
           <input
             type="text"
             value={displayValue || ''}
             onChange={e => onChange(e.target.value)}
             disabled={disabled}
           />
-        </div>
-      );
-
-    case 'number':
-      return (
-        <div className="form-group">
-          <label>{field.label}</label>
+        );
+      case 'number':
+        return (
           <input
             type="number"
             min={field.min ?? undefined}
@@ -282,13 +60,9 @@ function DynamicField({
             onChange={e => onChange(parseInt(e.target.value))}
             disabled={disabled}
           />
-        </div>
-      );
-
-    case 'select':
-      return (
-        <div className="form-group">
-          <label>{field.label}</label>
+        );
+      case 'select':
+        return (
           <select
             value={String(displayValue ?? '')}
             onChange={e => {
@@ -304,13 +78,9 @@ function DynamicField({
               </option>
             ))}
           </select>
-        </div>
-      );
-
-    case 'serialport':
-      return (
-        <div className="form-group">
-          <label>{field.label}</label>
+        );
+      case 'serialport':
+        return (
           <div style={{ display: 'flex', gap: '8px' }}>
             <select
               value={displayValue || ''}
@@ -340,22 +110,213 @@ function DynamicField({
               ↻
             </button>
           </div>
-        </div>
-      );
-
-    default:
-      return (
-        <div className="form-group">
-          <label>{field.label}</label>
+        );
+      default:
+        return (
           <input
             type="text"
             value={displayValue || ''}
             onChange={e => onChange(e.target.value)}
             disabled={disabled}
           />
+        );
+    }
+  };
+
+  return (
+    <div className="vscode-setting-item">
+      <div className="vscode-setting-label">{field.label}</div>
+      {field.description && (
+        <div className="vscode-setting-description">{field.description}</div>
+      )}
+      <div className="vscode-setting-control">{renderControl()}</div>
+    </div>
+  );
+}
+
+// 右ペイン: 選択されたサーバーの設定
+interface ServerConfigPaneProps {
+  instance: application.ServerInstanceDTO;
+  serialPorts: string[];
+  onRefreshPorts: () => void;
+  onRemove: (protocolType: string) => void;
+}
+
+function ServerConfigPane({
+  instance,
+  serialPorts,
+  onRefreshPorts,
+  onRemove,
+}: ServerConfigPaneProps) {
+  const [schema, setSchema] = useState<application.ProtocolSchemaDTO | null>(null);
+  const [config, setConfig] = useState<application.ServerConfigDTO | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [paneError, setPaneError] = useState<string | null>(null);
+  const [unitIDSettings, setUnitIDSettings] = useState<application.UnitIDSettingsDTO | null>(null);
+  const [disabledUnitIds, setDisabledUnitIds] = useState<Set<number>>(new Set());
+
+  const isRunning = instance.status === 'Running';
+
+  const loadSettings = useCallback(async () => {
+    try {
+      setPaneError(null);
+      const [s, cfg, unitSettings] = await Promise.all([
+        GetProtocolSchema(instance.protocolType),
+        GetServerConfig(instance.protocolType),
+        GetUnitIDSettings(instance.protocolType),
+      ]);
+      setSchema(s);
+      setConfig(cfg);
+      if (unitSettings) {
+        setUnitIDSettings(unitSettings);
+        setDisabledUnitIds(new Set(unitSettings.disabledIds || []));
+      }
+      setIsDirty(false);
+    } catch (e) {
+      setPaneError(String(e));
+    }
+  }, [instance.protocolType]);
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
+  const currentVariantId = config?.variant || instance.variant;
+  const currentVariant = schema?.variants.find(v => v.id === currentVariantId);
+  const fields = currentVariant?.fields || [];
+
+  const handleVariantChange = (variantId: string) => {
+    if (config) {
+      setConfig({ ...config, variant: variantId });
+      setIsDirty(true);
+    }
+  };
+
+  const handleSettingChange = (fieldName: string, value: any) => {
+    if (config) {
+      setConfig({
+        ...config,
+        settings: { ...config.settings, [fieldName]: value },
+      });
+      setIsDirty(true);
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    if (config) {
+      try {
+        setPaneError(null);
+        await UpdateServerConfig(config);
+        await loadSettings();
+      } catch (e) {
+        setPaneError(String(e));
+      }
+    }
+  };
+
+  const handleUnitIdToggle = async (unitId: number, enabled: boolean) => {
+    try {
+      await SetUnitIDEnabled(instance.protocolType, unitId, enabled);
+      const newDisabled = new Set(disabledUnitIds);
+      if (enabled) {
+        newDisabled.delete(unitId);
+      } else {
+        newDisabled.add(unitId);
+      }
+      setDisabledUnitIds(newDisabled);
+    } catch (e) {
+      setPaneError(String(e));
+    }
+  };
+
+  const unitIdRange = unitIDSettings
+    ? Array.from(
+        { length: unitIDSettings.max - unitIDSettings.min + 1 },
+        (_, i) => unitIDSettings.min + i
+      )
+    : [];
+
+  return (
+    <div className="server-config-pane">
+      <div className="server-config-pane-header">
+        <div className="server-config-pane-title">
+          <span className="server-config-pane-name">{instance.displayName}</span>
+          <button
+            onClick={() => onRemove(instance.protocolType)}
+            className="btn-danger"
+            disabled={isRunning}
+          >
+            削除
+          </button>
         </div>
-      );
-  }
+        <div className="server-config-pane-actions">
+          <button
+            onClick={handleSaveConfig}
+            disabled={isRunning}
+            className={isDirty ? 'btn-primary' : 'btn-secondary'}
+          >
+            {isDirty ? '保存 *' : '保存'}
+          </button>
+        </div>
+      </div>
+
+      {paneError && <div className="error-message" style={{ margin: '0.5rem 1rem' }}>{paneError}</div>}
+
+      <div className="vscode-settings-list">
+        {schema && schema.variants.length > 1 && config && (
+          <div className="vscode-setting-item">
+            <div className="vscode-setting-label">サーバータイプ</div>
+            <div className="vscode-setting-control">
+              <select
+                value={config.variant}
+                onChange={e => handleVariantChange(e.target.value)}
+                disabled={isRunning}
+              >
+                {schema.variants.map(v => (
+                  <option key={v.id} value={v.id}>
+                    {v.displayName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {fields.map(field => (
+          <DynamicField
+            key={field.name}
+            field={field}
+            value={config?.settings?.[field.name]}
+            onChange={value => handleSettingChange(field.name, value)}
+            disabled={isRunning}
+            serialPorts={serialPorts}
+            onRefreshPorts={onRefreshPorts}
+          />
+        ))}
+      </div>
+
+      {schema?.capabilities.supportsUnitId && unitIDSettings && (
+        <div className="unit-id-section">
+          <h4>UnitID 応答設定</h4>
+          <p className="help-text">
+            オフにしたUnitIDには応答しません（デフォルト: 全て応答）
+          </p>
+          <div className="unit-id-grid">
+            {unitIdRange.map(unitId => (
+              <label key={unitId} className="unit-id-toggle">
+                <input
+                  type="checkbox"
+                  checked={!disabledUnitIds.has(unitId)}
+                  onChange={e => handleUnitIdToggle(unitId, e.target.checked)}
+                />
+                <span className="unit-id-label">{unitId}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ServerPanel() {
@@ -363,6 +324,7 @@ export function ServerPanel() {
   const [error, setError] = useState<string | null>(null);
   const [serialPorts, setSerialPorts] = useState<string[]>([]);
   const [protocols, setProtocols] = useState<application.ProtocolInfoDTO[]>([]);
+  const [selectedProtocolType, setSelectedProtocolType] = useState<string | null>(null);
 
   // サーバー追加ダイアログ
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -372,7 +334,13 @@ export function ServerPanel() {
   useEffect(() => {
     loadInitialData();
     const offServer = EventsOn('plc:server-changed', (instances: application.ServerInstanceDTO[]) => {
-      setServerInstances(instances || []);
+      const list = instances || [];
+      setServerInstances(list);
+      // 選択中サーバーが消えた場合は先頭を選択
+      setSelectedProtocolType(prev => {
+        if (prev && list.some(i => i.protocolType === prev)) return prev;
+        return list.length > 0 ? list[0].protocolType : null;
+      });
     });
     const offProtocols = EventsOn('plc:protocols-changed', (protos: application.ProtocolInfoDTO[]) => {
       setProtocols(protos || []);
@@ -390,9 +358,11 @@ export function ServerPanel() {
         GetAvailableProtocols(),
         GetSerialPorts(),
       ]);
-      setServerInstances(instances || []);
+      const list = instances || [];
+      setServerInstances(list);
       setProtocols(protos || []);
       setSerialPorts(ports || []);
+      if (list.length > 0) setSelectedProtocolType(list[0].protocolType);
     } catch (e) {
       setError(String(e));
     }
@@ -402,8 +372,7 @@ export function ServerPanel() {
     try {
       setError(null);
       await StartServer(protocolType);
-      const instances = await GetServerInstances();
-      setServerInstances(instances || []);
+      setServerInstances(await GetServerInstances() || []);
     } catch (e) {
       setError(String(e));
     }
@@ -413,8 +382,7 @@ export function ServerPanel() {
     try {
       setError(null);
       await StopServer(protocolType);
-      const instances = await GetServerInstances();
-      setServerInstances(instances || []);
+      setServerInstances(await GetServerInstances() || []);
     } catch (e) {
       setError(String(e));
     }
@@ -424,8 +392,9 @@ export function ServerPanel() {
     try {
       setError(null);
       await RemoveServer(protocolType);
-      const instances = await GetServerInstances();
-      setServerInstances(instances || []);
+      const list = await GetServerInstances() || [];
+      setServerInstances(list);
+      setSelectedProtocolType(list.length > 0 ? list[0].protocolType : null);
     } catch (e) {
       setError(String(e));
     }
@@ -452,14 +421,12 @@ export function ServerPanel() {
 
   const handleRefreshPorts = async () => {
     try {
-      const ports = await GetSerialPorts();
-      setSerialPorts(ports || []);
+      setSerialPorts(await GetSerialPorts() || []);
     } catch (e) {
       console.error('Failed to load serial ports:', e);
     }
   };
 
-  // 追加済みでないプロトコルのみ候補に
   const addedProtocolTypes = new Set(serverInstances.map(i => i.protocolType));
   const availableProtocols = protocols.filter(p => !addedProtocolTypes.has(p.type));
 
@@ -481,15 +448,15 @@ export function ServerPanel() {
     try {
       setError(null);
       await AddServer(selectedProtocol, selectedVariant);
-      const instances = await GetServerInstances();
-      setServerInstances(instances || []);
+      const list = await GetServerInstances() || [];
+      setServerInstances(list);
+      setSelectedProtocolType(selectedProtocol);
       setIsAddDialogOpen(false);
     } catch (e) {
       setError(String(e));
     }
   };
 
-  // ESCキーで追加ダイアログを閉じる
   useEffect(() => {
     if (!isAddDialogOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -499,8 +466,10 @@ export function ServerPanel() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isAddDialogOpen]);
 
+  const selectedInstance = serverInstances.find(i => i.protocolType === selectedProtocolType) ?? null;
+
   return (
-    <div className="panel">
+    <div className="panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="server-panel-header">
         <h2>サーバー</h2>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -522,73 +491,112 @@ export function ServerPanel() {
 
       {error && <div className="error-message">{error}</div>}
 
-      <div className="server-instance-list">
-        {serverInstances.length === 0 ? (
-          <div className="server-instance-empty">
-            サーバーが登録されていません。「+ サーバーを追加」ボタンでサーバーを追加してください。
+      {serverInstances.length === 0 ? (
+        <div className="server-instance-empty">
+          サーバーが登録されていません。「+ サーバーを追加」ボタンでサーバーを追加してください。
+        </div>
+      ) : (
+        <div className="server-vertical-tabs">
+          {/* 左ペイン: タブリスト */}
+          <div className="server-tab-list">
+            {serverInstances.map(instance => {
+              const isSelected = instance.protocolType === selectedProtocolType;
+              const statusClass =
+                instance.status === 'Running'
+                  ? 'running'
+                  : instance.status === 'Error'
+                  ? 'error'
+                  : 'stopped';
+              const isRunning = instance.status === 'Running';
+              return (
+                <div
+                  key={instance.protocolType}
+                  className={`server-tab-item${isSelected ? ' selected' : ''}`}
+                  onClick={() => setSelectedProtocolType(instance.protocolType)}
+                >
+                  <div className="server-tab-left">
+                    <span className="server-tab-name">{instance.displayName}</span>
+                    {instance.variant && (
+                      <span className="server-instance-variant">{instance.variant}</span>
+                    )}
+                    <span className={`server-status-badge ${statusClass}`}>{instance.status}</span>
+                  </div>
+                  <button
+                    className={`server-tab-toggle ${isRunning ? 'btn-danger' : 'btn-primary'}`}
+                    onClick={e => { e.stopPropagation(); isRunning ? handleStop(instance.protocolType) : handleStart(instance.protocolType); }}
+                  >
+                    {isRunning ? '停止' : '開始'}
+                  </button>
+                </div>
+              );
+            })}
           </div>
-        ) : (
-          serverInstances.map(instance => (
-            <ServerInstanceRow
-              key={instance.protocolType}
-              instance={instance}
-              onStart={handleStart}
-              onStop={handleStop}
-              onRemove={handleRemove}
-              serialPorts={serialPorts}
-              onRefreshPorts={handleRefreshPorts}
-            />
-          ))
-        )}
-      </div>
+
+          {/* 右ペイン: 設定 */}
+          <div className="server-tab-content">
+            {selectedInstance ? (
+              <ServerConfigPane
+                key={selectedInstance.protocolType}
+                instance={selectedInstance}
+                serialPorts={serialPorts}
+                onRefreshPorts={handleRefreshPorts}
+                onRemove={handleRemove}
+              />
+            ) : (
+              <div className="server-instance-empty">サーバーを選択してください。</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* サーバー追加ダイアログ */}
       {isAddDialogOpen && (() => {
-        const selectedProtoVariants = availableProtocols.find(p => p.type === selectedProtocol)?.variants ?? [];
+        const selectedProtoVariants =
+          availableProtocols.find(p => p.type === selectedProtocol)?.variants ?? [];
         return (
-        <FocusTrap onConfirm={handleAddServer}>
-          <div className="dialog">
-            <h3>サーバーを追加</h3>
-            <div className="dialog-content">
-              <div className="form-group">
-                <label>プロトコル</label>
-                <select
-                  value={selectedProtocol}
-                  onChange={e => handleAddProtocolChange(e.target.value)}
-                >
-                  {availableProtocols.map(p => (
-                    <option key={p.type} value={p.type}>
-                      {p.displayName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {selectedProtoVariants.length > 1 && (
+          <FocusTrap onConfirm={handleAddServer}>
+            <div className="dialog">
+              <h3>サーバーを追加</h3>
+              <div className="dialog-content">
                 <div className="form-group">
-                  <label>バリアント</label>
+                  <label>プロトコル</label>
                   <select
-                    value={selectedVariant}
-                    onChange={e => setSelectedVariant(e.target.value)}
+                    value={selectedProtocol}
+                    onChange={e => handleAddProtocolChange(e.target.value)}
                   >
-                    {selectedProtoVariants.map(v => (
-                      <option key={v.id} value={v.id}>
-                        {v.displayName}
+                    {availableProtocols.map(p => (
+                      <option key={p.type} value={p.type}>
+                        {p.displayName}
                       </option>
                     ))}
                   </select>
                 </div>
-              )}
+                {selectedProtoVariants.length > 1 && (
+                  <div className="form-group">
+                    <label>バリアント</label>
+                    <select
+                      value={selectedVariant}
+                      onChange={e => setSelectedVariant(e.target.value)}
+                    >
+                      {selectedProtoVariants.map(v => (
+                        <option key={v.id} value={v.id}>
+                          {v.displayName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="dialog-buttons">
+                <button onClick={() => setIsAddDialogOpen(false)} className="btn-secondary">
+                  キャンセル
+                </button>
+                <button onClick={handleAddServer} className="btn-primary">
+                  追加
+                </button>
+              </div>
             </div>
-            <div className="dialog-buttons">
-              <button onClick={() => setIsAddDialogOpen(false)} className="btn-secondary">
-                キャンセル
-              </button>
-              <button onClick={handleAddServer} className="btn-primary">
-                追加
-              </button>
-            </div>
-          </div>
-        </FocusTrap>
+          </FocusTrap>
         );
       })()}
     </div>

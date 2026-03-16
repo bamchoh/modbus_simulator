@@ -79,6 +79,7 @@ message ConfigField {
   bool has_max = 9;
   int32 max = 10;
   FieldCondition condition = 11;
+  string description = 12; // 設定項目の説明文
 }
 
 message FieldOption {

@@ -179,6 +179,7 @@ export namespace application {
 	export class FieldDTO {
 	    name: string;
 	    label: string;
+	    description?: string;
 	    type: string;
 	    required: boolean;
 	    default: any;
@@ -195,6 +196,7 @@ export namespace application {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.label = source["label"];
+	        this.description = source["description"];
 	        this.type = source["type"];
 	        this.required = source["required"];
 	        this.default = source["default"];

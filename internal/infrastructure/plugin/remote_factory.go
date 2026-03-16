@@ -241,11 +241,12 @@ func (f *LazyRemoteServerFactory) MapToConfig(variantID string, settings map[str
 // pbConfigFieldToProtocol は protobuf の ConfigField を domain の ConfigField に変換する
 func pbConfigFieldToProtocol(pbf *pb.ConfigField) protocol.ConfigField {
 	field := protocol.ConfigField{
-		Name:     pbf.Name,
-		Label:    pbf.Label,
-		Type:     pbf.Type,
-		Required: pbf.Required,
-		Options:  make([]protocol.FieldOption, len(pbf.Options)),
+		Name:        pbf.Name,
+		Label:       pbf.Label,
+		Description: pbf.Description,
+		Type:        pbf.Type,
+		Required:    pbf.Required,
+		Options:     make([]protocol.FieldOption, len(pbf.Options)),
 	}
 	if pbf.DefaultJson != "" {
 		var def interface{}

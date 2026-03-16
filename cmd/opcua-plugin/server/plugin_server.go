@@ -90,10 +90,11 @@ func (s *PluginServer) GetConfigFields(ctx context.Context, req *pb.GetConfigFie
 	pbFields := make([]*pb.ConfigField, len(fields))
 	for i, f := range fields {
 		pbF := &pb.ConfigField{
-			Name:     f.Name,
-			Label:    f.Label,
-			Type:     f.Type,
-			Required: f.Required,
+			Name:        f.Name,
+			Label:       f.Label,
+			Description: f.Description,
+			Type:        f.Type,
+			Required:    f.Required,
 		}
 		if f.Default != nil {
 			if b, err := json.Marshal(f.Default); err == nil {

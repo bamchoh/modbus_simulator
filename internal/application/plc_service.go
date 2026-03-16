@@ -508,13 +508,14 @@ func (s *PLCService) GetProtocolSchema(protocolType string) (*ProtocolSchemaDTO,
 		fieldDTOs := make([]FieldDTO, len(fields))
 		for j, f := range fields {
 			fieldDTOs[j] = FieldDTO{
-				Name:     f.Name,
-				Label:    f.Label,
-				Type:     f.Type,
-				Required: f.Required,
-				Default:  f.Default,
-				Min:      f.Min,
-				Max:      f.Max,
+				Name:        f.Name,
+				Label:       f.Label,
+				Description: f.Description,
+				Type:        f.Type,
+				Required:    f.Required,
+				Default:     f.Default,
+				Min:         f.Min,
+				Max:         f.Max,
 			}
 			if f.Options != nil {
 				fieldDTOs[j].Options = make([]OptionDTO, len(f.Options))

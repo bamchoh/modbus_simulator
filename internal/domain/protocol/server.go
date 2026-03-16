@@ -125,15 +125,16 @@ type MemoryArea struct {
 
 // ConfigField は設定フィールドの定義
 type ConfigField struct {
-	Name      string          `json:"name"`
-	Label     string          `json:"label"`
-	Type      string          `json:"type"` // "text", "number", "select"
-	Required  bool            `json:"required"`
-	Default   interface{}     `json:"default"`
-	Options   []FieldOption   `json:"options,omitempty"`
-	Min       *int            `json:"min,omitempty"`
-	Max       *int            `json:"max,omitempty"`
-	Condition *FieldCondition `json:"condition,omitempty"` // 表示条件
+	Name        string          `json:"name"`
+	Label       string          `json:"label"`
+	Description string          `json:"description,omitempty"` // 設定項目の説明文
+	Type        string          `json:"type"`                  // "text", "number", "select"
+	Required    bool            `json:"required"`
+	Default     interface{}     `json:"default"`
+	Options     []FieldOption   `json:"options,omitempty"`
+	Min         *int            `json:"min,omitempty"`
+	Max         *int            `json:"max,omitempty"`
+	Condition   *FieldCondition `json:"condition,omitempty"` // 表示条件
 }
 
 // FieldOption はセレクトフィールドのオプション

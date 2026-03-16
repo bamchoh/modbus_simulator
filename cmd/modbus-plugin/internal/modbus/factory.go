@@ -105,28 +105,28 @@ func (f *ModbusServerFactory) GetConfigFields(_ string) []protocol.ConfigField {
 	switch f.fixedVariant {
 	case VariantTCP:
 		return []protocol.ConfigField{
-			{Name: "tcpAddress", Label: "アドレス", Type: "text", Required: true, Default: "0.0.0.0"},
-			{Name: "tcpPort", Label: "ポート", Type: "number", Required: true, Default: 502, Min: intPtr(1), Max: intPtr(65535)},
+			{Name: "tcpAddress", Label: "アドレス", Description: "待ち受けるネットワークアドレス。0.0.0.0 で全インターフェースに対応します。", Type: "text", Required: true, Default: "0.0.0.0"},
+			{Name: "tcpPort", Label: "ポート", Description: "Modbus TCP の待ち受けポート番号。標準ポートは 502 です。", Type: "number", Required: true, Default: 502, Min: intPtr(1), Max: intPtr(65535)},
 		}
 	case VariantRTU:
 		return []protocol.ConfigField{
-			{Name: "serialPort", Label: "シリアルポート", Type: "serialport", Required: true, Default: "COM1"},
-			{Name: "baudRate", Label: "ボーレート", Type: "select", Required: true, Default: 115200, Options: []protocol.FieldOption{
+			{Name: "serialPort", Label: "シリアルポート", Description: "通信に使用するシリアルポート（例: COM1、COM3）。", Type: "serialport", Required: true, Default: "COM1"},
+			{Name: "baudRate", Label: "ボーレート", Description: "シリアル通信の速度（bps）。接続先デバイスと一致させてください。", Type: "select", Required: true, Default: 115200, Options: []protocol.FieldOption{
 				{Value: "9600", Label: "9600"},
 				{Value: "19200", Label: "19200"},
 				{Value: "38400", Label: "38400"},
 				{Value: "57600", Label: "57600"},
 				{Value: "115200", Label: "115200"},
 			}},
-			{Name: "dataBits", Label: "データビット", Type: "select", Required: true, Default: 8, Options: []protocol.FieldOption{
+			{Name: "dataBits", Label: "データビット", Description: "1フレームあたりのデータビット数。Modbus RTU は通常 8 ビットです。", Type: "select", Required: true, Default: 8, Options: []protocol.FieldOption{
 				{Value: "7", Label: "7"},
 				{Value: "8", Label: "8"},
 			}},
-			{Name: "stopBits", Label: "ストップビット", Type: "select", Required: true, Default: 1, Options: []protocol.FieldOption{
+			{Name: "stopBits", Label: "ストップビット", Description: "フレーム末尾のストップビット数。", Type: "select", Required: true, Default: 1, Options: []protocol.FieldOption{
 				{Value: "1", Label: "1"},
 				{Value: "2", Label: "2"},
 			}},
-			{Name: "parity", Label: "パリティ", Type: "select", Required: true, Default: "N", Options: []protocol.FieldOption{
+			{Name: "parity", Label: "パリティ", Description: "エラー検出用のパリティビット。None（N）、Even（E）、Odd（O）から選択します。", Type: "select", Required: true, Default: "N", Options: []protocol.FieldOption{
 				{Value: "N", Label: "None"},
 				{Value: "E", Label: "Even"},
 				{Value: "O", Label: "Odd"},
@@ -134,23 +134,23 @@ func (f *ModbusServerFactory) GetConfigFields(_ string) []protocol.ConfigField {
 		}
 	case VariantASCII:
 		return []protocol.ConfigField{
-			{Name: "serialPort", Label: "シリアルポート", Type: "serialport", Required: true, Default: "COM1"},
-			{Name: "baudRate", Label: "ボーレート", Type: "select", Required: true, Default: 9600, Options: []protocol.FieldOption{
+			{Name: "serialPort", Label: "シリアルポート", Description: "通信に使用するシリアルポート（例: COM1、COM3）。", Type: "serialport", Required: true, Default: "COM1"},
+			{Name: "baudRate", Label: "ボーレート", Description: "シリアル通信の速度（bps）。接続先デバイスと一致させてください。", Type: "select", Required: true, Default: 9600, Options: []protocol.FieldOption{
 				{Value: "9600", Label: "9600"},
 				{Value: "19200", Label: "19200"},
 				{Value: "38400", Label: "38400"},
 				{Value: "57600", Label: "57600"},
 				{Value: "115200", Label: "115200"},
 			}},
-			{Name: "dataBits", Label: "データビット", Type: "select", Required: true, Default: 7, Options: []protocol.FieldOption{
+			{Name: "dataBits", Label: "データビット", Description: "1フレームあたりのデータビット数。Modbus ASCII は通常 7 ビットです。", Type: "select", Required: true, Default: 7, Options: []protocol.FieldOption{
 				{Value: "7", Label: "7"},
 				{Value: "8", Label: "8"},
 			}},
-			{Name: "stopBits", Label: "ストップビット", Type: "select", Required: true, Default: 1, Options: []protocol.FieldOption{
+			{Name: "stopBits", Label: "ストップビット", Description: "フレーム末尾のストップビット数。", Type: "select", Required: true, Default: 1, Options: []protocol.FieldOption{
 				{Value: "1", Label: "1"},
 				{Value: "2", Label: "2"},
 			}},
-			{Name: "parity", Label: "パリティ", Type: "select", Required: true, Default: "E", Options: []protocol.FieldOption{
+			{Name: "parity", Label: "パリティ", Description: "エラー検出用のパリティビット。None（N）、Even（E）、Odd（O）から選択します。", Type: "select", Required: true, Default: "E", Options: []protocol.FieldOption{
 				{Value: "N", Label: "None"},
 				{Value: "E", Label: "Even"},
 				{Value: "O", Label: "Odd"},

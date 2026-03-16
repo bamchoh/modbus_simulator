@@ -1088,26 +1088,21 @@ button:disabled {
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
 }
 
-/* Server Panel - Multi-server list */
+/* Server Panel */
 .server-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid #0f3460;
+  flex-shrink: 0;
 }
 
 .server-panel-header h2 {
   margin-bottom: 0;
   border-bottom: none;
   padding-bottom: 0;
-}
-
-.server-instance-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
 }
 
 .server-instance-empty {
@@ -1118,29 +1113,116 @@ button:disabled {
   border-radius: 4px;
 }
 
-.server-instance-row {
+/* 縦タブレイアウト */
+.server-vertical-tabs {
+  display: flex;
+  flex: 1;
+  min-height: 0;
   border: 1px solid #0f3460;
-  border-radius: 6px;
+  border-radius: 4px;
   overflow: hidden;
 }
 
-.server-instance-header {
+.server-tab-list {
+  width: 200px;
+  flex-shrink: 0;
+  background: #0f3460;
+  border-right: 1px solid #1a1a2e;
+  overflow-y: auto;
+}
+
+.server-tab-item {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid #1a1a2e;
+  transition: background 0.15s;
+}
+
+.server-tab-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.server-tab-toggle {
+  align-self: stretch;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+
+.server-tab-item:hover {
+  background: #16213e;
+}
+
+.server-tab-item.selected {
+  background: #16213e;
+  border-left: 2px solid #e94560;
+  padding-left: calc(0.75rem - 2px);
+}
+
+.server-tab-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #eaeaea;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.server-tab-variant {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+
+.server-tab-content {
+  flex: 1;
+  overflow-y: auto;
+  background: #16213e;
+}
+
+/* 右ペイン: サーバー設定 */
+.server-config-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.server-config-pane-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 1rem;
   background: #0f3460;
+  border-bottom: 1px solid #1a1a2e;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
-.server-instance-info {
+.server-config-pane-title {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
-.server-instance-name {
+.server-config-pane-name {
   font-weight: 600;
+  font-size: 0.95rem;
   color: #eaeaea;
+}
+
+.server-config-pane-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .server-instance-variant {
@@ -1149,11 +1231,6 @@ button:disabled {
   background: #1a1a2e;
   padding: 0.125rem 0.5rem;
   border-radius: 3px;
-}
-
-.server-instance-actions {
-  display: flex;
-  gap: 0.5rem;
 }
 
 .server-status-badge {
@@ -1181,17 +1258,67 @@ button:disabled {
   border: 1px solid #dc2626;
 }
 
-.server-instance-config {
-  padding: 1rem;
-  background: #16213e;
-  border-top: 1px solid #0f3460;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
+/* VSCode風設定リスト */
+.vscode-settings-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.vscode-setting-item {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #0f3460;
+  text-align: left;
+}
+
+.vscode-setting-item:last-child {
+  border-bottom: none;
+}
+
+.vscode-setting-label {
+  font-size: 0.875rem;
+  color: #eaeaea;
+  margin-bottom: 0.25rem;
+  font-weight: 500;
+}
+
+.vscode-setting-description {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+}
+
+.vscode-setting-control {
+  max-width: 400px;
+}
+
+.vscode-setting-control input,
+.vscode-setting-control select {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #0f3460;
+  background: #1a1a2e;
+  color: #eaeaea;
+  border-radius: 2px;
+  font-size: 0.875rem;
+  box-sizing: border-box;
+}
+
+.vscode-setting-control input:focus,
+.vscode-setting-control select:focus {
+  outline: none;
+  border-color: #e94560;
+}
+
+.vscode-setting-control input:disabled,
+.vscode-setting-control select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .unit-id-section {
-  grid-column: 1 / -1;
+  padding: 0.75rem 1rem;
+  text-align: left;
 }
 
 .unit-id-section h4 {
