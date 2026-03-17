@@ -1,13 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import "./App.css";
-import { ServerPanel } from "./components/ServerPanel";
+import { ServerPanel, ServerPanelHandle } from "./components/ServerPanel";
+import { FocusTrap } from "./components/FocusTrap";
 import { VariableView } from "./components/VariableView";
 import { RegisterPanel, RegisterTab } from "./components/RegisterPanel";
 import { ScriptPanel } from "./components/ScriptPanel";
 import { CommunicationIndicator } from "./components/CommunicationIndicator";
 import { GetHTTPAPIPort, SetHTTPAPIPort } from "../wailsjs/go/main/App";
 
-const APP_VERSION = "v0.0.32";
+const APP_VERSION = "v0.0.33";
 
 type Tab = "server" | "variables" | "registers" | "scripts";
 
@@ -18,6 +19,33 @@ function App() {
   const [editingPort, setEditingPort] = useState(false);
   const [portInput, setPortInput] = useState("");
   const [portError, setPortError] = useState<string | null>(null);
+  const [serverPanelDirty, setServerPanelDirty] = useState(false);
+  const [pendingTab, setPendingTab] = useState<Tab | null>(null);
+  const serverPanelRef = useRef<ServerPanelHandle>(null);
+
+  const handleTabClick = (tab: Tab) => {
+    if (tab !== activeTab && activeTab === "server" && serverPanelDirty) {
+      setPendingTab(tab);
+    } else {
+      setActiveTab(tab);
+    }
+  };
+
+  const handleConfirmSaveAndNavigate = async () => {
+    if (!pendingTab) return;
+    const tab = pendingTab;
+    setPendingTab(null);
+    await serverPanelRef.current?.save();
+    setActiveTab(tab);
+  };
+
+  const handleConfirmDiscardAndNavigate = async () => {
+    if (!pendingTab) return;
+    const tab = pendingTab;
+    setPendingTab(null);
+    await serverPanelRef.current?.revert();
+    setActiveTab(tab);
+  };
 
   useEffect(() => {
     GetHTTPAPIPort().then(setHttpAPIPort);
@@ -83,25 +111,25 @@ function App() {
         <nav className="tab-nav">
           <button
             className={`tab-button ${activeTab === "server" ? "active" : ""}`}
-            onClick={() => setActiveTab("server")}
+            onClick={() => handleTabClick("server")}
           >
             サーバー
           </button>
           <button
             className={`tab-button ${activeTab === "variables" ? "active" : ""}`}
-            onClick={() => setActiveTab("variables")}
+            onClick={() => handleTabClick("variables")}
           >
             変数
           </button>
           <button
             className={`tab-button ${activeTab === "registers" ? "active" : ""}`}
-            onClick={() => setActiveTab("registers")}
+            onClick={() => handleTabClick("registers")}
           >
             レジスタ
           </button>
           <button
             className={`tab-button ${activeTab === "scripts" ? "active" : ""}`}
-            onClick={() => setActiveTab("scripts")}
+            onClick={() => handleTabClick("scripts")}
           >
             スクリプト
           </button>
@@ -109,7 +137,9 @@ function App() {
       </header>
 
       <main className="app-main">
-        {activeTab === "server" && <ServerPanel />}
+        {activeTab === "server" && (
+          <ServerPanel ref={serverPanelRef} onDirtyChange={setServerPanelDirty} />
+        )}
         {activeTab === "variables" && <VariableView />}
         {activeTab === "registers" && (
           <RegisterPanel
@@ -121,6 +151,27 @@ function App() {
           <ScriptPanel />
         </div>
       </main>
+      {pendingTab && (
+        <FocusTrap onConfirm={handleConfirmSaveAndNavigate}>
+          <div className="dialog">
+            <h3>設定が保存されていません</h3>
+            <div className="dialog-content">
+              <p>通信設定が変更されています。</p>
+            </div>
+            <div className="dialog-buttons">
+              <button onClick={() => setPendingTab(null)} className="btn-secondary">
+                キャンセル
+              </button>
+              <button onClick={handleConfirmDiscardAndNavigate} className="btn-secondary">
+                保存せずに移動
+              </button>
+              <button onClick={handleConfirmSaveAndNavigate} className="btn-primary">
+                保存してから移動
+              </button>
+            </div>
+          </div>
+        </FocusTrap>
+      )}
     </div>
   );
 }

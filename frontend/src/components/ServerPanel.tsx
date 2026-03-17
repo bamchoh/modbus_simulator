@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
 import { FocusTrap } from './FocusTrap';
 import {
   GetServerInstances,
@@ -135,19 +135,26 @@ function DynamicField({
 }
 
 // 右ペイン: 選択されたサーバーの設定
+interface ServerConfigPaneHandle {
+  save: () => Promise<void>;
+  revert: () => Promise<void>;
+}
+
 interface ServerConfigPaneProps {
   instance: application.ServerInstanceDTO;
   serialPorts: string[];
   onRefreshPorts: () => void;
   onRemove: (protocolType: string) => void;
+  onDirtyChange: (dirty: boolean) => void;
 }
 
-function ServerConfigPane({
+const ServerConfigPane = forwardRef<ServerConfigPaneHandle, ServerConfigPaneProps>(function ServerConfigPane({
   instance,
   serialPorts,
   onRefreshPorts,
   onRemove,
-}: ServerConfigPaneProps) {
+  onDirtyChange,
+}, ref) {
   const [schema, setSchema] = useState<application.ProtocolSchemaDTO | null>(null);
   const [config, setConfig] = useState<application.ServerConfigDTO | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -172,14 +179,32 @@ function ServerConfigPane({
         setDisabledUnitIds(new Set(unitSettings.disabledIds || []));
       }
       setIsDirty(false);
+      onDirtyChange(false);
     } catch (e) {
       setPaneError(String(e));
     }
-  }, [instance.protocolType]);
+  }, [instance.protocolType, onDirtyChange]);
 
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  useImperativeHandle(ref, () => ({
+    save: async () => {
+      if (config) {
+        try {
+          setPaneError(null);
+          await UpdateServerConfig(config);
+          await loadSettings();
+        } catch (e) {
+          setPaneError(String(e));
+        }
+      }
+    },
+    revert: async () => {
+      await loadSettings();
+    },
+  }), [config, loadSettings]);
 
   const currentVariantId = config?.variant || instance.variant;
   const currentVariant = schema?.variants.find(v => v.id === currentVariantId);
@@ -189,6 +214,7 @@ function ServerConfigPane({
     if (config) {
       setConfig({ ...config, variant: variantId });
       setIsDirty(true);
+      onDirtyChange(true);
     }
   };
 
@@ -199,6 +225,7 @@ function ServerConfigPane({
         settings: { ...config.settings, [fieldName]: value },
       });
       setIsDirty(true);
+      onDirtyChange(true);
     }
   };
 
@@ -317,14 +344,43 @@ function ServerConfigPane({
       )}
     </div>
   );
+});
+
+export interface ServerPanelHandle {
+  save: () => Promise<void>;
+  revert: () => Promise<void>;
 }
 
-export function ServerPanel() {
+interface ServerPanelProps {
+  onDirtyChange?: (dirty: boolean) => void;
+}
+
+export const ServerPanel = forwardRef<ServerPanelHandle, ServerPanelProps>(function ServerPanel(
+  { onDirtyChange },
+  ref,
+) {
   const [serverInstances, setServerInstances] = useState<application.ServerInstanceDTO[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [serialPorts, setSerialPorts] = useState<string[]>([]);
   const [protocols, setProtocols] = useState<application.ProtocolInfoDTO[]>([]);
   const [selectedProtocolType, setSelectedProtocolType] = useState<string | null>(null);
+  const [selectedPaneDirty, setSelectedPaneDirty] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    execute: () => Promise<void>;
+    discardLabel: string;
+    saveLabel: string;
+  } | null>(null);
+  const configPaneRef = useRef<ServerConfigPaneHandle>(null);
+
+  useImperativeHandle(ref, () => ({
+    save: async () => { await configPaneRef.current?.save(); },
+    revert: async () => { await configPaneRef.current?.revert(); },
+  }));
+
+  const handlePaneDirtyChange = useCallback((dirty: boolean) => {
+    setSelectedPaneDirty(dirty);
+    onDirtyChange?.(dirty);
+  }, [onDirtyChange]);
 
   // サーバー追加ダイアログ
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -368,13 +424,67 @@ export function ServerPanel() {
     }
   };
 
-  const handleStart = async (protocolType: string) => {
+  const doStart = async (protocolType: string) => {
     try {
       setError(null);
       await StartServer(protocolType);
       setServerInstances(await GetServerInstances() || []);
     } catch (e) {
       setError(String(e));
+    }
+  };
+
+  const requestAction = (
+    execute: () => Promise<void>,
+    discardLabel: string,
+    saveLabel: string,
+  ) => {
+    if (selectedPaneDirty) {
+      setPendingAction({ execute, discardLabel, saveLabel });
+    } else {
+      execute();
+    }
+  };
+
+  const handleConfirmSave = async () => {
+    if (!pendingAction) return;
+    const action = pendingAction;
+    setPendingAction(null);
+    await configPaneRef.current?.save();
+    await action.execute();
+  };
+
+  const handleConfirmDiscard = async () => {
+    if (!pendingAction) return;
+    const action = pendingAction;
+    setPendingAction(null);
+    await configPaneRef.current?.revert();
+    await action.execute();
+  };
+
+  const handleCancelAction = () => {
+    setPendingAction(null);
+  };
+
+  const handleSelectTab = (protocolType: string) => {
+    if (protocolType === selectedProtocolType) return;
+    requestAction(
+      async () => setSelectedProtocolType(protocolType),
+      '保存せずに切り替え',
+      '保存してから切り替え',
+    );
+  };
+
+  const handleStart = (protocolType: string) => {
+    const isSameTab = protocolType === selectedProtocolType;
+    if (isSameTab) {
+      requestAction(
+        async () => doStart(protocolType),
+        '保存せずに開始',
+        '保存してから開始',
+      );
+    } else {
+      doStart(protocolType);
     }
   };
 
@@ -512,7 +622,7 @@ export function ServerPanel() {
                 <div
                   key={instance.protocolType}
                   className={`server-tab-item${isSelected ? ' selected' : ''}`}
-                  onClick={() => setSelectedProtocolType(instance.protocolType)}
+                  onClick={() => handleSelectTab(instance.protocolType)}
                 >
                   <div className="server-tab-left">
                     <span className="server-tab-name">{instance.displayName}</span>
@@ -537,16 +647,41 @@ export function ServerPanel() {
             {selectedInstance ? (
               <ServerConfigPane
                 key={selectedInstance.protocolType}
+                ref={configPaneRef}
                 instance={selectedInstance}
                 serialPorts={serialPorts}
                 onRefreshPorts={handleRefreshPorts}
                 onRemove={handleRemove}
+                onDirtyChange={handlePaneDirtyChange}
               />
             ) : (
               <div className="server-instance-empty">サーバーを選択してください。</div>
             )}
           </div>
         </div>
+      )}
+
+      {/* 未保存設定の確認ダイアログ */}
+      {pendingAction && (
+        <FocusTrap onConfirm={handleConfirmSave}>
+          <div className="dialog">
+            <h3>設定が保存されていません</h3>
+            <div className="dialog-content">
+              <p>通信設定が変更されています。</p>
+            </div>
+            <div className="dialog-buttons">
+              <button onClick={handleCancelAction} className="btn-secondary">
+                キャンセル
+              </button>
+              <button onClick={handleConfirmDiscard} className="btn-secondary">
+                {pendingAction.discardLabel}
+              </button>
+              <button onClick={handleConfirmSave} className="btn-primary">
+                {pendingAction.saveLabel}
+              </button>
+            </div>
+          </div>
+        </FocusTrap>
       )}
 
       {/* サーバー追加ダイアログ */}
@@ -601,4 +736,4 @@ export function ServerPanel() {
       })()}
     </div>
   );
-}
+});
