@@ -42,9 +42,18 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
-	// イベントエミッターを設定
+	// 通信イベントエミッターを設定
 	emitter := protocol.NewWailsEventEmitter(ctx)
 	a.plcService.SetEventEmitter(emitter)
+
+	// アプリケーション状態イベントエミッターを設定
+	appEmitter := application.NewWailsAppStateEmitter(ctx)
+	a.plcService.SetAppStateEmitter(appEmitter)
+
+	// コンソールログプッシュ通知を設定
+	a.plcService.SetConsoleLogCallback(func(entry application.ConsoleLogDTO) {
+		appEmitter.EmitConsoleLogAdded(entry)
+	})
 
 	// HostGrpcServer を起動（OPC UA 等のプラグインが変数アクセスに使用）
 	if _, err := a.plcService.StartHostGrpcServer(); err != nil {
@@ -470,6 +479,12 @@ func (a *App) CreateVariable(name, dataType string, value interface{}) (*applica
 // UpdateVariableValue は変数の値を更新する
 func (a *App) UpdateVariableValue(id string, value interface{}) error {
 	return a.plcService.UpdateVariableValue(id, value)
+}
+
+// UpdateVariableFieldValue は変数の特定フィールド/要素のみを更新する。
+// fieldPath は外部インデックス（表示ベース）のパス文字列（例: "motor.speed", "items[1]"）
+func (a *App) UpdateVariableFieldValue(id, fieldPath string, value interface{}) error {
+	return a.plcService.UpdateVariableFieldValue(id, fieldPath, value)
 }
 
 // DeleteVariable は変数を削除する

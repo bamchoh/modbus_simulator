@@ -125,15 +125,16 @@ type MemoryArea struct {
 
 // ConfigField は設定フィールドの定義
 type ConfigField struct {
-	Name      string          `json:"name"`
-	Label     string          `json:"label"`
-	Type      string          `json:"type"` // "text", "number", "select"
-	Required  bool            `json:"required"`
-	Default   interface{}     `json:"default"`
-	Options   []FieldOption   `json:"options,omitempty"`
-	Min       *int            `json:"min,omitempty"`
-	Max       *int            `json:"max,omitempty"`
-	Condition *FieldCondition `json:"condition,omitempty"` // 表示条件
+	Name        string          `json:"name"`
+	Label       string          `json:"label"`
+	Description string          `json:"description,omitempty"` // 設定項目の説明文
+	Type        string          `json:"type"`                  // "text", "number", "select"
+	Required    bool            `json:"required"`
+	Default     interface{}     `json:"default"`
+	Options     []FieldOption   `json:"options,omitempty"`
+	Min         *int            `json:"min,omitempty"`
+	Max         *int            `json:"max,omitempty"`
+	Condition   *FieldCondition `json:"condition,omitempty"` // 表示条件
 }
 
 // FieldOption はセレクトフィールドのオプション
@@ -176,6 +177,10 @@ type VariableStoreAccessor interface {
 	GetEnabledNodePublishings(protocolType string) []NodePublishingInfo
 	ReadVariableValue(variableID string) (interface{}, error)
 	WriteVariableValue(variableID string, value interface{}) error
+	// WriteVariableFieldValue は変数の特定フィールド/要素のみをアトミックに更新する。
+	// fieldPath は外部インデックス（表示ベース）のパス文字列
+	// 例: "motor.speed", "items[1]"（ARRAY[1..10] の場合）, "items[2].name"
+	WriteVariableFieldValue(variableID string, fieldPath string, value interface{}) error
 	// GetStructFields は指定した構造体型のフィールド一覧を返す（子ノードブラウズ・サブスクリプション用）
 	GetStructFields(typeName string) []StructFieldInfo
 }

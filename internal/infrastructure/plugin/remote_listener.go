@@ -48,7 +48,7 @@ func (l *RemoteVariableChangeListener) Detach() {
 }
 
 // OnVariableChanged は VariableStore からの変更通知を処理する（Variable → Plugin DataStore）
-func (l *RemoteVariableChangeListener) OnVariableChanged(v *variable.Variable, mappings []variable.ProtocolMapping) {
+func (l *RemoteVariableChangeListener) OnVariableChanged(v *variable.Variable, mappings []variable.ProtocolMapping, _ string, _ interface{}) {
 	l.mu.Lock()
 	if l.syncing {
 		l.mu.Unlock()
@@ -175,6 +175,53 @@ func (l *RemoteVariableChangeListener) writeVariableToRemote(v *variable.Variabl
 		words := variable.ValueToWords(v.Value, v.DataType, m.Endianness)
 		_ = l.remoteDS.WriteWords(m.MemoryArea, m.Address, words)
 	}
+}
+
+// SyncHostWordWriteToVariable はホスト（UI/スクリプト）がプラグインの DataStore に
+// ワードを書き込んだ後、対応する変数を更新する。
+// プラグイン側は「ホスト→プラグイン書き込み時は通知しない」ため、
+// ホスト側でこのメソッドを呼び出して変数を同期する。
+func (l *RemoteVariableChangeListener) SyncHostWordWriteToVariable(area string, address uint32) {
+	l.mu.Lock()
+	if l.syncing {
+		l.mu.Unlock()
+		return
+	}
+	l.syncing = true
+	l.mu.Unlock()
+
+	defer func() {
+		l.mu.Lock()
+		l.syncing = false
+		l.mu.Unlock()
+	}()
+
+	// values=nil（len=0）なので syncWordChangeToVariable 内部でリモートから読み取る
+	l.syncWordChangeToVariable(area, address, nil)
+}
+
+// SyncHostBitWriteToVariable はホスト（UI/スクリプト）がプラグインの DataStore に
+// ビットを書き込んだ後、対応する変数を更新する。
+func (l *RemoteVariableChangeListener) SyncHostBitWriteToVariable(area string, address uint32) {
+	l.mu.Lock()
+	if l.syncing {
+		l.mu.Unlock()
+		return
+	}
+	l.syncing = true
+	l.mu.Unlock()
+
+	defer func() {
+		l.mu.Lock()
+		l.syncing = false
+		l.mu.Unlock()
+	}()
+
+	bit, err := l.remoteDS.ReadBit(area, address)
+	if err != nil {
+		return
+	}
+	l.syncBitChangeToVariable(area, address, []bool{bit})
 }
 
 // syncAllVariablesToDataStore は起動時に全変数をプラグインの DataStore に同期する

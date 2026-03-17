@@ -26,6 +26,10 @@ type VariableAccessorServiceClient interface {
 	// value_msgpack には変数値を MessagePack シリアライズしたバイト列を使用する（uint64 精度を保持）
 	ReadVariableValue(ctx context.Context, in *ReadVariableValueRequest, opts ...grpc.CallOption) (*ReadVariableValueResponse, error)
 	WriteVariableValue(ctx context.Context, in *WriteVariableValueRequest, opts ...grpc.CallOption) (*Empty, error)
+	// WriteVariableField は変数の特定フィールド/要素のみをアトミックに更新する。
+	// field_path は外部インデックス（表示ベース）のパス文字列
+	// 例: "motor.speed", "items[1]"（ARRAY[1..10] の場合）, "items[2].name"
+	WriteVariableField(ctx context.Context, in *WriteVariableFieldRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetStructFields(ctx context.Context, in *GetStructFieldsRequest, opts ...grpc.CallOption) (*GetStructFieldsResponse, error)
 	// SubscribeVariableChanges: ホストの VariableStore 変更をプラグインに通知する
 	// OPC UA サブスクリプション更新等に使用する
@@ -61,6 +65,15 @@ func (c *variableAccessorServiceClient) ReadVariableValue(ctx context.Context, i
 func (c *variableAccessorServiceClient) WriteVariableValue(ctx context.Context, in *WriteVariableValueRequest, opts ...grpc.CallOption) (*Empty, error) {
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, "/plugin.v1.VariableAccessorService/WriteVariableValue", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *variableAccessorServiceClient) WriteVariableField(ctx context.Context, in *WriteVariableFieldRequest, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/plugin.v1.VariableAccessorService/WriteVariableField", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +129,10 @@ type VariableAccessorServiceServer interface {
 	// value_msgpack には変数値を MessagePack シリアライズしたバイト列を使用する（uint64 精度を保持）
 	ReadVariableValue(context.Context, *ReadVariableValueRequest) (*ReadVariableValueResponse, error)
 	WriteVariableValue(context.Context, *WriteVariableValueRequest) (*Empty, error)
+	// WriteVariableField は変数の特定フィールド/要素のみをアトミックに更新する。
+	// field_path は外部インデックス（表示ベース）のパス文字列
+	// 例: "motor.speed", "items[1]"（ARRAY[1..10] の場合）, "items[2].name"
+	WriteVariableField(context.Context, *WriteVariableFieldRequest) (*Empty, error)
 	GetStructFields(context.Context, *GetStructFieldsRequest) (*GetStructFieldsResponse, error)
 	// SubscribeVariableChanges: ホストの VariableStore 変更をプラグインに通知する
 	// OPC UA サブスクリプション更新等に使用する
@@ -135,6 +152,9 @@ func (UnimplementedVariableAccessorServiceServer) ReadVariableValue(context.Cont
 }
 func (UnimplementedVariableAccessorServiceServer) WriteVariableValue(context.Context, *WriteVariableValueRequest) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method WriteVariableValue not implemented")
+}
+func (UnimplementedVariableAccessorServiceServer) WriteVariableField(context.Context, *WriteVariableFieldRequest) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WriteVariableField not implemented")
 }
 func (UnimplementedVariableAccessorServiceServer) GetStructFields(context.Context, *GetStructFieldsRequest) (*GetStructFieldsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetStructFields not implemented")
@@ -210,6 +230,24 @@ func _VariableAccessorService_WriteVariableValue_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VariableAccessorService_WriteVariableField_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WriteVariableFieldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VariableAccessorServiceServer).WriteVariableField(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/plugin.v1.VariableAccessorService/WriteVariableField",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VariableAccessorServiceServer).WriteVariableField(ctx, req.(*WriteVariableFieldRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _VariableAccessorService_GetStructFields_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetStructFieldsRequest)
 	if err := dec(in); err != nil {
@@ -267,6 +305,10 @@ var VariableAccessorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WriteVariableValue",
 			Handler:    _VariableAccessorService_WriteVariableValue_Handler,
+		},
+		{
+			MethodName: "WriteVariableField",
+			Handler:    _VariableAccessorService_WriteVariableField_Handler,
 		},
 		{
 			MethodName: "GetStructFields",

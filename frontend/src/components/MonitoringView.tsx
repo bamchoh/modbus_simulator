@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { FocusTrap } from './FocusTrap';
 import {
   DndContext,
   closestCenter,
@@ -605,9 +606,7 @@ export function MonitoringView({ serverInstances }: Props) {
 
   // 書き込みダイアログ内のキーハンドラ
   const handleWriteDialogKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleWrite();
-    } else if (e.key === 'Escape') {
+    if (e.key === 'Escape') {
       handleWriteDialogClose();
     }
   };
@@ -688,7 +687,7 @@ export function MonitoringView({ serverInstances }: Props) {
 
       {/* 追加ダイアログ */}
       {isAddDialogOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleSave}>
           <div className="dialog">
             <h3>モニタリング項目を追加</h3>
 
@@ -790,12 +789,12 @@ export function MonitoringView({ serverInstances }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
 
       {/* 書き込みダイアログ */}
       {isWriteDialogOpen && writingItem && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleWrite}>
           <div className="dialog">
             <h3>レジスタ書き込み</h3>
 
@@ -849,7 +848,7 @@ export function MonitoringView({ serverInstances }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
     </div>
   );

@@ -33,6 +33,7 @@ type ScriptEngine struct {
 	variableStore *variable.VariableStore
 	scripts       map[string]*runningScript
 	consoleLogs   []ConsoleLogEntry
+	onLogAdded    func(ConsoleLogEntry)
 }
 
 type runningScript struct {
@@ -49,6 +50,13 @@ func NewScriptEngine(varStore *variable.VariableStore) *ScriptEngine {
 		variableStore: varStore,
 		scripts:       make(map[string]*runningScript),
 	}
+}
+
+// SetOnLogAdded はコンソールログ追加時のコールバックを設定する
+func (e *ScriptEngine) SetOnLogAdded(cb func(ConsoleLogEntry)) {
+	e.mu.Lock()
+	e.onLogAdded = cb
+	e.mu.Unlock()
 }
 
 // createVM は新しいJavaScript VMを作成し、変数アクセス関数を登録する
@@ -75,7 +83,11 @@ func (e *ScriptEngine) createVM(scriptID, scriptName string) *goja.Runtime {
 		if len(e.consoleLogs) > maxConsoleLogs {
 			e.consoleLogs = e.consoleLogs[len(e.consoleLogs)-maxConsoleLogs:]
 		}
+		cb := e.onLogAdded
 		e.mu.Unlock()
+		if cb != nil {
+			go cb(entry)
+		}
 		return goja.Undefined()
 	})
 	vm.Set("console", console)
@@ -102,7 +114,16 @@ func (e *ScriptEngine) createVM(scriptID, scriptName string) *goja.Runtime {
 
 	if e.variableStore != nil {
 		// readVariable(name) - 変数名で値を読む
+		// name は "VarName", "Array[2]", "Struct.field", "Array[1].field" など
 		plc.Set("readVariable", func(name string) any {
+			baseName, fieldPath := splitNameAndPath(name)
+			if fieldPath != "" {
+				val, err := e.variableStore.ReadFieldValue(baseName, fieldPath)
+				if err != nil {
+					return nil
+				}
+				return toJSCompatibleValue(val)
+			}
 			v, err := e.variableStore.GetVariableByName(name)
 			if err != nil {
 				return nil
@@ -127,37 +148,30 @@ func (e *ScriptEngine) createVM(scriptID, scriptName string) *goja.Runtime {
 		})
 
 		// writeVariable(name, value) - 変数名で値を書く
+		// name は "VarName", "Array[2]", "Struct.field", "Array[1].field" など
 		plc.Set("writeVariable", func(name string, value any) {
+			baseName, fieldPath := splitNameAndPath(name)
+			if fieldPath != "" {
+				e.variableStore.WriteFieldValueByName(baseName, fieldPath, value)
+				return
+			}
 			e.variableStore.UpdateValueByName(name, value)
 		})
 
-		// readArrayElement(name, index) - 配列要素読み込み
+		// readArrayElement(name, index) - 配列要素読み込み（外部インデックス：表示ベース）
+		// 例: ARRAY[1..10] の場合、index=1 が最初の要素
 		plc.Set("readArrayElement", func(name string, index int) any {
-			v, err := e.variableStore.GetVariableByName(name)
+			val, err := e.variableStore.ReadArrayElement(name, index)
 			if err != nil {
 				return nil
 			}
-			arr, ok := v.Value.([]any)
-			if !ok || index < 0 || index >= len(arr) {
-				return nil
-			}
-			return toJSCompatibleValue(arr[index])
+			return toJSCompatibleValue(val)
 		})
 
-		// writeArrayElement(name, index, value) - 配列要素書き込み
+		// writeArrayElement(name, index, value) - 配列要素書き込み（外部インデックス：表示ベース）
+		// 例: ARRAY[1..10] の場合、index=1 が最初の要素
 		plc.Set("writeArrayElement", func(name string, index int, value any) {
-			v, err := e.variableStore.GetVariableByName(name)
-			if err != nil {
-				return
-			}
-			arr, ok := v.Value.([]any)
-			if !ok || index < 0 || index >= len(arr) {
-				return
-			}
-			newArr := make([]any, len(arr))
-			copy(newArr, arr)
-			newArr[index] = value
-			e.variableStore.UpdateValueByName(name, newArr)
+			e.variableStore.WriteArrayElement(name, index, value)
 		})
 
 		// readStructField(name, fieldName) - 構造体フィールド読み込み
@@ -415,6 +429,16 @@ func (e *ScriptEngine) createVM(scriptID, scriptName string) *goja.Runtime {
 	vm.Set("plc", plc)
 
 	return vm
+}
+
+// splitNameAndPath は "Test[2]" → ("Test", "[2]") や "Test.field" → ("Test", ".field") に分割する。
+// パスがない場合は (name, "") を返す。
+func splitNameAndPath(name string) (baseName, fieldPath string) {
+	idx := strings.IndexAny(name, "[.")
+	if idx < 0 {
+		return name, ""
+	}
+	return name[:idx], name[idx:]
 }
 
 // toJSCompatibleValue はGoの型をgojaが扱えるJavaScript互換の型に変換する

@@ -12,6 +12,7 @@ import {
   GetConsoleLogs,
   ClearConsoleLogs,
 } from '../../wailsjs/go/main/App';
+import { EventsOn } from '../../wailsjs/runtime/runtime';
 import { application } from '../../wailsjs/go/models';
 
 const DEFAULT_CODE = `// PLCオブジェクトで変数にアクセスできます
@@ -49,11 +50,19 @@ export function ScriptPanel() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(() => {
-      loadScripts();
-      loadConsoleLogs();
-    }, 1000);
-    return () => clearInterval(interval);
+    const offScripts = EventsOn('plc:scripts-changed', (scripts: application.ScriptDTO[]) => {
+      setScripts(scripts || []);
+    });
+    const offLog = EventsOn('plc:console-log-added', (entry: application.ConsoleLogDTO) => {
+      setConsoleLogs(prev => {
+        const next = [...prev, entry];
+        return next.length > 500 ? next.slice(-500) : next;
+      });
+    });
+    return () => {
+      offScripts();
+      offLog();
+    };
   }, []);
 
   useEffect(() => {
@@ -63,7 +72,7 @@ export function ScriptPanel() {
   }, [consoleLogs]);
 
   const loadData = async () => {
-    await Promise.all([loadScripts(), loadPresets()]);
+    await Promise.all([loadScripts(), loadPresets(), loadConsoleLogs()]);
   };
 
   const loadScripts = async () => {

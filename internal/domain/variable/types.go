@@ -174,6 +174,38 @@ func (dt DataType) IsStructType() bool {
 	return !dt.IsValid() && !dt.IsArrayType() && string(dt) != ""
 }
 
+// ParseArrayLower は配列型文字列から下限値を返す。
+// 例: "ARRAY[2..9] OF INT" → (2, true)
+// 後方互換の旧形式 "ARRAY[INT;10]" → (0, true) （旧形式は常に下限0）
+// 配列型でない場合は (0, false)
+func ParseArrayLower(dt DataType) (lower int, isArray bool) {
+	s := string(dt)
+	if !strings.HasPrefix(s, "ARRAY[") {
+		return 0, false
+	}
+	// IEC 61131-3 形式: "ARRAY[n..m, ...] OF elemType"
+	ofIdx := strings.Index(s, "] OF ")
+	if ofIdx >= 0 {
+		dimsStr := s[6:ofIdx]
+		dimParts := strings.Split(dimsStr, ",")
+		firstDim := strings.TrimSpace(dimParts[0])
+		parts := strings.SplitN(firstDim, "..", 2)
+		if len(parts) != 2 {
+			return 0, false
+		}
+		lo, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil {
+			return 0, false
+		}
+		return lo, true
+	}
+	// 旧形式（後方互換）: lower は常に 0
+	if strings.HasSuffix(s, "]") {
+		return 0, true
+	}
+	return 0, false
+}
+
 // parseArrayDimension は "lower..upper" 形式の次元文字列からサイズを返す
 // 例: "0..9" → 10
 func parseArrayDimension(s string) (int, error) {

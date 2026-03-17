@@ -76,23 +76,8 @@ func (s *RemoteProtocolServer) Config() protocol.ProtocolConfig {
 }
 
 func (s *RemoteProtocolServer) UpdateConfig(config protocol.ProtocolConfig) error {
-	rc, ok := config.(*remoteProtocolConfig)
-	if !ok {
-		return fmt.Errorf("設定の型が不正: %T", config)
-	}
-	// サーバーが停止中の場合はプラグインへの gRPC 呼び出しをスキップし、
-	// ローカルの config だけを更新する。次回 Start() 時に新しい設定が使われる。
-	if s.Status() == protocol.StatusStopped {
-		s.config = config
-		return nil
-	}
-	_, err := s.pluginClient.UpdateConfig(backgroundCtx(), &pb.UpdateConfigRequest{
-		VariantId:    rc.variantID,
-		SettingsJson: rc.settingsJSON,
-	})
-	if err != nil {
-		return err
-	}
+	// 呼び出し元（PLCService）がサーバー起動中の更新を禁止しているため、
+	// ここに到達する時点でサーバーは常に停止中。ローカルの config を更新するのみ。
 	s.config = config
 	return nil
 }

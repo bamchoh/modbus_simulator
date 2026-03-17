@@ -202,6 +202,10 @@ export function UpdateVariable(arg1, arg2, arg3) {
   return window['go']['main']['App']['UpdateVariable'](arg1, arg2, arg3);
 }
 
+export function UpdateVariableFieldValue(arg1, arg2, arg3) {
+  return window['go']['main']['App']['UpdateVariableFieldValue'](arg1, arg2, arg3);
+}
+
 export function UpdateVariableMappings(arg1, arg2) {
   return window['go']['main']['App']['UpdateVariableMappings'](arg1, arg2);
 }

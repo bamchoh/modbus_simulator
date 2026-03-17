@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { FocusTrap } from './FocusTrap';
 import {
   GetServerInstances,
   GetMemoryAreas,
@@ -30,8 +31,8 @@ const BIT_WIDTHS: { value: BitWidth; label: string; wordCount: number }[] = [
 ];
 
 const ENDIANNESS_OPTIONS: { value: Endianness; label: string }[] = [
-  { value: 'big', label: 'ビッグエンディアン (BE)' },
-  { value: 'little', label: 'リトルエンディアン (LE)' },
+  { value: 'big', label: 'ビッグ(BE)' },
+  { value: 'little', label: 'リトル(LE)' },
 ];
 
 // ビット幅に応じたワード数を取得
@@ -132,7 +133,6 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
   const [selectedArea, setSelectedArea] = useState<string>('');
   const [startAddress, setStartAddress] = useState(0);
   const [values, setValues] = useState<(boolean | number)[]>([]);
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [displayFormat, setDisplayFormat] = useState<DisplayFormat>('decimal');
   const [bitWidth, setBitWidth] = useState<BitWidth>(16);
   const [endianness, setEndianness] = useState<Endianness>('big');
@@ -230,11 +230,9 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
   }, [loadRegisters]);
 
   useEffect(() => {
-    if (autoRefresh) {
-      const interval = setInterval(loadRegisters, 100);
-      return () => clearInterval(interval);
-    }
-  }, [autoRefresh, loadRegisters]);
+    const interval = setInterval(loadRegisters, 100);
+    return () => clearInterval(interval);
+  }, [loadRegisters]);
 
   // コンポーネントマウント時にテーブルにフォーカスを設定
   useEffect(() => {
@@ -402,9 +400,7 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
 
   // ダイアログ内のキーハンドラ
   const handleDialogKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSave();
-    } else if (e.key === 'Escape') {
+    if (e.key === 'Escape') {
       handleDialogClose();
     }
   };
@@ -524,9 +520,9 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
       {/* 一覧表示タブ */}
       {activeTab === 'list' && (
       <>
-      {/* プロトコル選択（レジスタを持つサーバーが複数の場合） */}
-      {serverInstances.filter(i => !i.supportsNodePublishing).length > 1 && (
-        <div className="register-controls" style={{ marginBottom: '0' }}>
+      <div className="register-controls">
+        {/* プロトコル選択（レジスタを持つサーバーが複数の場合） */}
+        {serverInstances.filter(i => !i.supportsNodePublishing).length > 1 && (
           <div className="form-group">
             <label>プロトコル</label>
             <select
@@ -540,15 +536,13 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
             >
               {serverInstances.filter(i => !i.supportsNodePublishing).map(inst => (
                 <option key={inst.protocolType} value={inst.protocolType}>
-                  {inst.displayName} ({inst.variant})
+                  {inst.displayName}
                 </option>
               ))}
             </select>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="register-controls">
         <div className="form-group">
           <label>メモリエリア</label>
           <select
@@ -615,20 +609,6 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
           </>
         )}
 
-        <div className="form-group">
-          <label>
-            <input
-              type="checkbox"
-              checked={autoRefresh}
-              onChange={(e) => setAutoRefresh(e.target.checked)}
-            />
-            自動更新
-          </label>
-        </div>
-
-        <button onClick={loadRegisters} className="btn-secondary">
-          更新
-        </button>
       </div>
 
       <div
@@ -687,7 +667,7 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
 
       {/* 書き込みダイアログ */}
       {isDialogOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleSave}>
           <div className="dialog">
             <h3>レジスタ書き込み</h3>
 
@@ -739,7 +719,7 @@ export function RegisterPanel({ activeSubTab, onSubTabChange }: RegisterPanelPro
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
       </>
       )}

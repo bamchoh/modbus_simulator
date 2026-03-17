@@ -7,7 +7,7 @@ import { ScriptPanel } from "./components/ScriptPanel";
 import { CommunicationIndicator } from "./components/CommunicationIndicator";
 import { GetHTTPAPIPort, SetHTTPAPIPort } from "../wailsjs/go/main/App";
 
-const APP_VERSION = "v0.0.21";
+const APP_VERSION = "v0.0.32";
 
 type Tab = "server" | "variables" | "registers" | "scripts";
 
@@ -117,7 +117,9 @@ function App() {
             onSubTabChange={setRegisterSubTab}
           />
         )}
-        {activeTab === "scripts" && <ScriptPanel />}
+        <div style={{ display: activeTab === "scripts" ? undefined : "none" }}>
+          <ScriptPanel />
+        </div>
       </main>
     </div>
   );

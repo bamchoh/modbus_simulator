@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -13,7 +14,11 @@ import (
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr, "Modbus Plugin starting...")
+	protocolType := flag.String("protocol-type", "modbus-tcp", "プロトコルタイプ (modbus-tcp, modbus-rtu, modbus-ascii)")
+	_ = flag.String("host-grpc-addr", "", "ホスト側 gRPC サーバーアドレス（Modbus プラグインでは未使用）")
+	flag.Parse()
+
+	fmt.Fprintln(os.Stderr, "Modbus Plugin starting... protocol-type="+*protocolType)
 	// ランダムな空きポートで gRPC サーバーを起動
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -24,7 +29,7 @@ func main() {
 
 	// gRPC サーバーを作成してサービスを登録
 	grpcServer := grpc.NewServer()
-	pluginSrv := server.NewPluginServer()
+	pluginSrv := server.NewPluginServer(*protocolType)
 	pluginSrv.Register(grpcServer)
 
 	// サーバーをバックグラウンドで起動

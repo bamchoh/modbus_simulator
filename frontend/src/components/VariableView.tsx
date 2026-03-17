@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { FocusTrap } from "./FocusTrap";
 import {
   GetVariables,
   GetDataTypes,
   CreateVariable,
   UpdateVariable,
   UpdateVariableValue,
+  UpdateVariableFieldValue,
   DeleteVariable,
   UpdateVariableMappings,
   UpdateVariableNodePublishing,
@@ -14,11 +16,8 @@ import {
   RegisterStructType,
   DeleteStructType,
 } from "../../wailsjs/go/main/App";
+import { EventsOn } from "../../wailsjs/runtime/runtime";
 import { application } from "../../wailsjs/go/models";
-
-interface VariableViewProps {
-  autoRefresh?: boolean;
-}
 
 // 構造体型配列の要素エディタ（ローカルで展開/折りたたみ状態を管理）
 const StructArrayElementEditor = ({
@@ -68,7 +67,7 @@ const StructArrayElementEditor = ({
   );
 };
 
-export function VariableView({ autoRefresh = true }: VariableViewProps) {
+export function VariableView() {
   const [variables, setVariables] = useState<application.VariableDTO[]>([]);
   const [dataTypes, setDataTypes] = useState<application.DataTypeInfoDTO[]>([]);
   const [structTypes, setStructTypes] = useState<application.StructTypeDTO[]>(
@@ -167,9 +166,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   // 展開/縮小状態（keyはFlatRowのヘッダーキー）
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
+  // キーボードナビゲーション用フォーカス状態
+  const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
+
   // 編集フォーム
   const [editData, setEditData] = useState<any>(null);
   const [editValue, setEditValue] = useState("");
+  const editDialogRef = useRef<HTMLDivElement>(null);
+  // 行DOM要素のref map
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   // マッピング編集
   const [mappingVariable, setMappingVariable] =
@@ -192,6 +197,13 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
   const [bulkProtocol, setBulkProtocol] = useState<string>("");
   const [bulkRows, setBulkRows] = useState<BulkEditRow[]>([]);
   const [bulkIsSaving, setBulkIsSaving] = useState(false);
+
+  // コンテキストメニュー
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    variable: application.VariableDTO;
+  } | null>(null);
 
   // 変数一覧を取得
   const loadVariables = useCallback(async () => {
@@ -252,18 +264,14 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     loadServerInstancesAndAreas();
   }, [loadStructTypes, loadServerInstancesAndAreas]);
 
-  // 変数一覧の初回読み込み
+  // 変数一覧の初回読み込みとイベント購読
   useEffect(() => {
     loadVariables();
+    const off = EventsOn('plc:variables-changed', (variables: application.VariableDTO[]) => {
+      setVariables(variables || []);
+    });
+    return off;
   }, [loadVariables]);
-
-  // 自動更新
-  useEffect(() => {
-    if (autoRefresh) {
-      const interval = setInterval(loadVariables, 500);
-      return () => clearInterval(interval);
-    }
-  }, [autoRefresh, loadVariables]);
 
   // ESCキーでダイアログを閉じる
   useEffect(() => {
@@ -314,6 +322,39 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     isBulkMappingOpen,
   ]);
 
+  // 値編集ダイアログが開いたら最初の入力にフォーカス
+  useEffect(() => {
+    if (isEditDialogOpen && editDialogRef.current) {
+      const first = editDialogRef.current.querySelector<HTMLElement>(
+        "input, select",
+      );
+      first?.focus();
+    }
+  }, [isEditDialogOpen]);
+
+  // キーボードナビゲーション: focusedRowKey が変わったらその行にフォーカスを移す
+  useEffect(() => {
+    if (focusedRowKey) {
+      const el = rowRefs.current.get(focusedRowKey);
+      if (el && document.activeElement !== el) {
+        el.focus({ preventScroll: false });
+        el.scrollIntoView({ block: "nearest" });
+      }
+    }
+  }, [focusedRowKey]);
+
+
+  // キーボードナビゲーション: 値編集ダイアログが閉じたら行にフォーカスを戻す
+  useEffect(() => {
+    if (!isEditDialogOpen && focusedRowKey) {
+      requestAnimationFrame(() => {
+        rowRefs.current.get(focusedRowKey)?.focus({ preventScroll: false });
+      });
+    }
+  // isEditDialogOpen の変化にのみ反応（focusedRowKey は最新値を参照したいため除外）
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditDialogOpen]);
+
   // スカラー値のフォーマット
   const formatScalarValue = (value: any, dataType: string): string => {
     if (value === null || value === undefined) return "-";
@@ -324,7 +365,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         return `"${value}"`;
       case "REAL":
       case "LREAL":
-        return typeof value === "number" ? value.toFixed(2) : String(value);
+        return typeof value === "number" ? String(value) : String(value);
       default:
         if (dataType.startsWith("STRING[")) return `"${value}"`;
         return String(value);
@@ -670,6 +711,109 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
       }
       return next;
     });
+  };
+
+  // キーボードナビゲーション: 行のキー押下ハンドラ
+  const handleRowKeyDown = (
+    e: React.KeyboardEvent<HTMLTableRowElement>,
+    row: FlatRow,
+    idx: number,
+  ) => {
+    const anyDialogOpen =
+      isEditDialogOpen ||
+      isAddDialogOpen ||
+      isMappingDialogOpen ||
+      isMetaEditDialogOpen ||
+      isStructTypeDialogOpen ||
+      isBulkMappingOpen;
+    if (anyDialogOpen) return;
+
+    switch (e.key) {
+      case "ArrowDown": {
+        e.preventDefault();
+        if (idx < flatRows.length - 1) {
+          setFocusedRowKey(flatRows[idx + 1].key);
+        }
+        break;
+      }
+      case "ArrowUp": {
+        e.preventDefault();
+        if (idx > 0) {
+          setFocusedRowKey(flatRows[idx - 1].key);
+        }
+        break;
+      }
+      case "ArrowRight": {
+        e.preventDefault();
+        if (row.isHeader) {
+          if (!expandedRows.has(row.key)) {
+            // 折りたたみ中 → 展開（フォーカスは移動しない）
+            toggleExpand(row.key);
+          } else if (idx < flatRows.length - 1) {
+            // 展開済み → 最初の子にフォーカス
+            setFocusedRowKey(flatRows[idx + 1].key);
+          }
+        }
+        break;
+      }
+      case "ArrowLeft": {
+        e.preventDefault();
+        if (row.isHeader && expandedRows.has(row.key)) {
+          // 展開中のヘッダー → 折りたたむ
+          toggleExpand(row.key);
+        } else {
+          // 親ヘッダーを探してフォーカス
+          for (let i = idx - 1; i >= 0; i--) {
+            const candidate = flatRows[i];
+            if (candidate.variable.id !== row.variable.id) break;
+            if (candidate.isHeader && candidate.depth < row.depth) {
+              setFocusedRowKey(candidate.key);
+              break;
+            }
+          }
+        }
+        break;
+      }
+      case "Enter": {
+        // ボタンにフォーカスがある場合はネイティブのクリック動作に任せる
+        if ((e.target as HTMLElement).tagName === "BUTTON") break;
+        e.preventDefault();
+        if (row.isHeader) {
+          toggleExpand(row.key);
+        } else {
+          handleRowEditClick(row);
+        }
+        break;
+      }
+      case " ": {
+        e.preventDefault();
+        if (row.isHeader) {
+          toggleExpand(row.key);
+        }
+        break;
+      }
+      case "Insert": {
+        e.preventDefault();
+        setIsAddDialogOpen(true);
+        break;
+      }
+      case "F2": {
+        e.preventDefault();
+        handleOpenMetaEditDialog(row.variable);
+        break;
+      }
+      case "Delete": {
+        e.preventDefault();
+        handleDeleteVariable(row.variable.id, row.variable.name);
+        break;
+      }
+      case "m":
+      case "M": {
+        e.preventDefault();
+        handleMappingClick(row.variable);
+        break;
+      }
+    }
   };
 
   // デフォルト値を取得
@@ -1184,22 +1328,53 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     setIsEditDialogOpen(true);
   };
 
+  // 文字列として保持されているREAL/LREAL値を数値に変換
+  const coerceFloatIfNeeded = (value: any, dataType: string): any => {
+    if (
+      (dataType === "REAL" || dataType === "LREAL") &&
+      typeof value === "string"
+    ) {
+      const f = parseFloat(value);
+      return isNaN(f) ? 0 : f;
+    }
+    return value;
+  };
+
+  // valuePath (string | number)[] をバックエンドのフィールドパス文字列に変換する
+  // 文字列セグメントは常に "." プレフィックスを付ける
+  // 例: ["motor", "speed"] → ".motor.speed"
+  //     ["items", 1]       → ".items[1]"
+  //     [0, "name"]        → "[0].name"
+  const valuePathToFieldPath = (valuePath: (string | number)[]): string => {
+    let result = "";
+    for (const seg of valuePath) {
+      if (typeof seg === "number") {
+        result += `[${seg}]`;
+      } else {
+        result += `.${seg}`;
+      }
+    }
+    return result;
+  };
+
   // 行単位の値更新
   const handleUpdateRow = async () => {
     if (!editingVariable) return;
     try {
       if (editingRow && editingRow.valuePath.length > 0) {
-        // パスをたどって変数全体の値のコピー内の該当箇所を更新
-        const fullValue = JSON.parse(JSON.stringify(editingVariable.value));
-        let target = fullValue;
-        for (let i = 0; i < editingRow.valuePath.length - 1; i++) {
-          target = target[editingRow.valuePath[i]];
-        }
-        target[editingRow.valuePath[editingRow.valuePath.length - 1]] =
-          editData;
-        await UpdateVariableValue(editingVariable.id, fullValue);
+        // フィールドパスを使って部分更新
+        const fieldPath = valuePathToFieldPath(editingRow.valuePath);
+        await UpdateVariableFieldValue(
+          editingVariable.id,
+          fieldPath,
+          coerceFloatIfNeeded(editData, editingRow.dataType),
+        );
       } else {
-        await UpdateVariableValue(editingVariable.id, editData);
+        const dataType = editingVariable.dataType;
+        await UpdateVariableValue(
+          editingVariable.id,
+          coerceFloatIfNeeded(editData, dataType),
+        );
       }
       await loadVariables();
       setIsEditDialogOpen(false);
@@ -1297,6 +1472,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               maxLen > 0 ? e.target.value.slice(0, maxLen) : e.target.value,
             )
           }
+          onFocus={(e) => e.target.select()}
           style={{ flex: 1 }}
           maxLength={maxLen > 0 ? maxLen : undefined}
           placeholder={maxLen > 0 ? `最大${maxLen}バイト` : undefined}
@@ -1317,6 +1493,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
             // 入力中は文字列のまま保持（確定時に正規化）
             onChange(e.target.value);
           }}
+          onFocus={(e) => e.target.select()}
           onBlur={(e) => {
             const normalized = parseBigIntInput(e.target.value, dataType);
             if (normalized !== null) {
@@ -1325,6 +1502,26 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
           }}
           style={{ flex: 1 }}
           placeholder={placeholder}
+        />
+      );
+    }
+    // 浮動小数点型（REAL/LREAL）- 入力中は文字列のまま保持してドット入力を可能にする
+    if (dataType === "REAL" || dataType === "LREAL") {
+      return (
+        <input
+          type="text"
+          value={String(value ?? "0")}
+          onChange={(e) => {
+            // 入力中は文字列のまま保持（"1." のようなドット末尾も維持）
+            onChange(e.target.value);
+          }}
+          onFocus={(e) => e.target.select()}
+          onBlur={(e) => {
+            const parsed = parseFloat(e.target.value);
+            onChange(isNaN(parsed) ? 0 : parsed);
+          }}
+          style={{ flex: 1 }}
+          placeholder="例: 3.14"
         />
       );
     }
@@ -1346,6 +1543,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
           type="text"
           value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={(e) => e.target.select()}
           style={{ flex: 1 }}
           placeholder={placeholders[dataType] || ""}
         />
@@ -1362,6 +1560,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
             onChange(parsed);
           }
         }}
+        onFocus={(e) => e.target.select()}
         onBlur={(e) => {
           const parsed = parseNumericInput(e.target.value);
           if (!isNaN(parsed)) {
@@ -1705,6 +1904,15 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
     setEditMappings(editMappings.filter((_, i) => i !== index));
   };
 
+  // コンテキストメニューを開く
+  const handleContextMenu = (
+    e: React.MouseEvent,
+    variable: application.VariableDTO,
+  ) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, variable });
+  };
+
   // マッピングを保存
   const handleSaveMappings = async () => {
     if (!mappingVariable) return;
@@ -1751,9 +1959,6 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         >
           一括マッピング編集
         </button>
-        <button onClick={loadVariables} className="btn-secondary">
-          更新
-        </button>
       </div>
 
       <table className="variable-table">
@@ -1763,17 +1968,28 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
             <th>データ型</th>
             <th>値</th>
             <th>マッピング</th>
-            <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          {flatRows.map((row) => (
+          {flatRows.map((row, idx) => (
             <tr
               key={row.key}
+              ref={(el) => {
+                if (el) rowRefs.current.set(row.key, el);
+                else rowRefs.current.delete(row.key);
+              }}
+              tabIndex={0}
+              onFocus={() => setFocusedRowKey(row.key)}
+              onKeyDown={(e) => handleRowKeyDown(e, row, idx)}
+              onContextMenu={row.depth === 0 ? (e) => handleContextMenu(e, row.variable) : undefined}
               style={{
-                backgroundColor: row.isHeader
-                  ? "rgba(255,255,255,0.03)"
-                  : undefined,
+                backgroundColor:
+                  focusedRowKey === row.key
+                    ? "rgba(100, 160, 255, 0.12)"
+                    : row.isHeader
+                      ? "rgba(255,255,255,0.03)"
+                      : undefined,
+                outline: focusedRowKey === row.key ? "1px solid rgba(100,160,255,0.4)" : undefined,
                 fontWeight:
                   row.depth === 0 && row.isHeader ? "bold" : undefined,
               }}
@@ -1879,37 +2095,11 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                   </span>
                 )}
               </td>
-              <td className="var-actions">
-                {row.depth === 0 && (
-                  <div>
-                    <button
-                      onClick={() => handleOpenMetaEditDialog(row.variable)}
-                      className="btn-small btn-secondary"
-                    >
-                      編集
-                    </button>
-                    <button
-                      onClick={() => handleMappingClick(row.variable)}
-                      className="btn-small btn-secondary"
-                    >
-                      マッピング
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleDeleteVariable(row.variable.id, row.variable.name)
-                      }
-                      className="btn-small btn-danger"
-                    >
-                      削除
-                    </button>
-                  </div>
-                )}
-              </td>
             </tr>
           ))}
           {variables.length === 0 && (
             <tr>
-              <td colSpan={5} className="empty-message">
+              <td colSpan={4} className="empty-message">
                 変数がありません。「変数を追加」ボタンで変数を作成してください。
               </td>
             </tr>
@@ -1917,9 +2107,51 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
         </tbody>
       </table>
 
+      {/* コンテキストメニュー */}
+      {contextMenu && (
+        <div
+          className="context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            onClick={() => {
+              handleOpenMetaEditDialog(contextMenu.variable);
+              setContextMenu(null);
+            }}
+          >
+            編集
+          </button>
+          <button
+            onClick={() => {
+              handleMappingClick(contextMenu.variable);
+              setContextMenu(null);
+            }}
+          >
+            マッピング
+          </button>
+          <button
+            className="context-menu-danger"
+            onClick={() => {
+              handleDeleteVariable(contextMenu.variable.id, contextMenu.variable.name);
+              setContextMenu(null);
+            }}
+          >
+            削除
+          </button>
+        </div>
+      )}
+      {contextMenu && (
+        <div
+          className="context-menu-backdrop"
+          onClick={() => setContextMenu(null)}
+          onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+        />
+      )}
+
       {/* 変数追加ダイアログ */}
       {isAddDialogOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleAddVariable}>
           <div className="dialog">
             <h3>変数を追加</h3>
             <div className="dialog-content">
@@ -1930,9 +2162,6 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="例: Motor_Speed"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleAddVariable();
-                  }}
                   autoFocus
                 />
               </div>
@@ -2131,12 +2360,12 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
 
       {/* 変数メタデータ編集ダイアログ（名前・データタイプ変更） */}
       {isMetaEditDialogOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleSaveMetaEdit}>
           <div className="dialog">
             <h3>変数を編集</h3>
             <div className="dialog-content">
@@ -2147,9 +2376,6 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
                   value={metaEditName}
                   onChange={(e) => setMetaEditName(e.target.value)}
                   autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSaveMetaEdit();
-                  }}
                 />
               </div>
               <div className="dialog-row">
@@ -2346,13 +2572,14 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
 
       {/* 変数編集ダイアログ */}
       {isEditDialogOpen && editingVariable && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleUpdateRow}>
           <div
+            ref={editDialogRef}
             className="dialog"
             style={{
               minWidth: "450px",
@@ -2414,12 +2641,12 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
 
       {/* マッピング編集ダイアログ */}
       {isMappingDialogOpen && mappingVariable && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleSaveMappings}>
           <div className="dialog" style={{ minWidth: "500px" }}>
             <h3>マッピング設定: {mappingVariable.name}</h3>
             <div className="dialog-content">
@@ -2641,11 +2868,11 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
       {/* 一括マッピング編集ダイアログ */}
       {isBulkMappingOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap>
           <div
             className="dialog"
             style={{
@@ -2945,11 +3172,11 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
       {/* 構造体型管理ダイアログ */}
       {isStructTypeDialogOpen && (
-        <div className="dialog-overlay">
+        <FocusTrap onConfirm={handleRegisterStructType}>
           <div
             className="dialog"
             style={{
@@ -3377,7 +3604,7 @@ export function VariableView({ autoRefresh = true }: VariableViewProps) {
               </button>
             </div>
           </div>
-        </div>
+        </FocusTrap>
       )}
     </div>
   );

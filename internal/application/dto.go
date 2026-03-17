@@ -19,15 +19,16 @@ type VariantDTO struct {
 
 // FieldDTO は設定フィールド情報
 type FieldDTO struct {
-	Name      string        `json:"name"`
-	Label     string        `json:"label"`
-	Type      string        `json:"type"`
-	Required  bool          `json:"required"`
-	Default   interface{}   `json:"default"`
-	Options   []OptionDTO   `json:"options,omitempty"`
-	Min       *int          `json:"min,omitempty"`
-	Max       *int          `json:"max,omitempty"`
-	ShowWhen  *ConditionDTO `json:"showWhen,omitempty"`
+	Name        string        `json:"name"`
+	Label       string        `json:"label"`
+	Description string        `json:"description,omitempty"` // 設定項目の説明文
+	Type        string        `json:"type"`
+	Required    bool          `json:"required"`
+	Default     interface{}   `json:"default"`
+	Options     []OptionDTO   `json:"options,omitempty"`
+	Min         *int          `json:"min,omitempty"`
+	Max         *int          `json:"max,omitempty"`
+	ShowWhen    *ConditionDTO `json:"showWhen,omitempty"`
 }
 
 // OptionDTO はセレクトフィールドのオプション

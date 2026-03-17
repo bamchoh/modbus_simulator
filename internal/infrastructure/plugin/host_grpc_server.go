@@ -40,11 +40,11 @@ func unmarshalMsgpack(b []byte, v interface{}) error {
 type HostGrpcServer struct {
 	pb.UnimplementedVariableAccessorServiceServer
 
-	accessor    protocol.VariableStoreAccessor
-	varStore    *variable.VariableStore
-	grpcServer  *grpc.Server
-	listener    net.Listener
-	port        int
+	accessor   protocol.VariableStoreAccessor
+	varStore   *variable.VariableStore
+	grpcServer *grpc.Server
+	listener   net.Listener
+	port       int
 
 	mu          sync.RWMutex
 	subscribers []chan *pb.VariableChange // SubscribeVariableChanges のストリーム送信用チャンネル
@@ -134,6 +134,17 @@ func (s *HostGrpcServer) WriteVariableValue(ctx context.Context, req *pb.WriteVa
 	return &pb.Empty{}, nil
 }
 
+func (s *HostGrpcServer) WriteVariableField(ctx context.Context, req *pb.WriteVariableFieldRequest) (*pb.Empty, error) {
+	var val interface{}
+	if err := unmarshalMsgpack(req.ValueMsgpack, &val); err != nil {
+		return nil, fmt.Errorf("MessagePack デコード失敗: %w", err)
+	}
+	if err := s.accessor.WriteVariableFieldValue(req.VariableId, req.FieldPath, val); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, nil
+}
+
 func (s *HostGrpcServer) GetStructFields(ctx context.Context, req *pb.GetStructFieldsRequest) (*pb.GetStructFieldsResponse, error) {
 	fields := s.accessor.GetStructFields(req.TypeName)
 	pbFields := make([]*pb.StructFieldInfo, len(fields))
@@ -182,14 +193,20 @@ func (s *HostGrpcServer) SubscribeVariableChanges(_ *pb.Empty, stream pb.Variabl
 // ---- variable.ChangeListener 実装 ----
 // 変数が変更されたとき、購読中の全プラグインに通知する
 
-func (s *HostGrpcServer) OnVariableChanged(v *variable.Variable, _ []variable.ProtocolMapping) {
-	b, err := marshalMsgpack(v.Value)
+func (s *HostGrpcServer) OnVariableChanged(v *variable.Variable, _ []variable.ProtocolMapping, changedPath string, changedValue interface{}) {
+	// changedPath が空でない場合は部分値のみシリアライズ、空の場合は全体値
+	target := v.Value
+	if changedPath != "" && changedValue != nil {
+		target = changedValue
+	}
+	b, err := marshalMsgpack(target)
 	if err != nil {
 		return
 	}
 	change := &pb.VariableChange{
 		VariableId:   v.ID,
 		ValueMsgpack: b,
+		FieldPath:    changedPath,
 	}
 	s.mu.RLock()
 	subs := make([]chan *pb.VariableChange, len(s.subscribers))
