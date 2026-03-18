@@ -135,6 +135,7 @@ type ConfigField struct {
 	Min         *int            `json:"min,omitempty"`
 	Max         *int            `json:"max,omitempty"`
 	Condition   *FieldCondition `json:"condition,omitempty"` // 表示条件
+	Category    string          `json:"category,omitempty"`  // カテゴリ名（空の場合はカテゴリなし）
 }
 
 // FieldOption はセレクトフィールドのオプション

@@ -29,6 +29,7 @@ type FieldDTO struct {
 	Min         *int          `json:"min,omitempty"`
 	Max         *int          `json:"max,omitempty"`
 	ShowWhen    *ConditionDTO `json:"showWhen,omitempty"`
+	Category    string        `json:"category,omitempty"` // カテゴリ名（空の場合はカテゴリなし）
 }
 
 // OptionDTO はセレクトフィールドのオプション

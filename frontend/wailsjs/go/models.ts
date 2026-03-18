@@ -187,6 +187,7 @@ export namespace application {
 	    min?: number;
 	    max?: number;
 	    showWhen?: ConditionDTO;
+	    category?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new FieldDTO(source);
@@ -204,6 +205,7 @@ export namespace application {
 	        this.min = source["min"];
 	        this.max = source["max"];
 	        this.showWhen = this.convertValues(source["showWhen"], ConditionDTO);
+	        this.category = source["category"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

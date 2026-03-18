@@ -80,6 +80,7 @@ message ConfigField {
   int32 max = 10;
   FieldCondition condition = 11;
   string description = 12; // 設定項目の説明文
+  string category = 13;   // カテゴリ名（空の場合はカテゴリなし）
 }
 
 message FieldOption {

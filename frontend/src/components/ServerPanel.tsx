@@ -309,17 +309,38 @@ const ServerConfigPane = forwardRef<ServerConfigPaneHandle, ServerConfigPaneProp
           </div>
         )}
 
-        {fields.map(field => (
-          <DynamicField
-            key={field.name}
-            field={field}
-            value={config?.settings?.[field.name]}
-            onChange={value => handleSettingChange(field.name, value)}
-            disabled={isRunning}
-            serialPorts={serialPorts}
-            onRefreshPorts={onRefreshPorts}
-          />
-        ))}
+        {(() => {
+          // カテゴリ順序を保持しながらグループ化（空カテゴリは先頭）
+          const categoryOrder: string[] = [];
+          const grouped: Record<string, application.FieldDTO[]> = {};
+          for (const field of fields) {
+            const cat = field.category || '';
+            if (!grouped[cat]) {
+              grouped[cat] = [];
+              categoryOrder.push(cat);
+            }
+            grouped[cat].push(field);
+          }
+          const hasCategories = categoryOrder.some(c => c !== '');
+          return categoryOrder.map(cat => (
+            <div key={cat || '__uncategorized__'}>
+              {hasCategories && cat && (
+                <div className="vscode-setting-category">{cat}</div>
+              )}
+              {grouped[cat].map(field => (
+                <DynamicField
+                  key={field.name}
+                  field={field}
+                  value={config?.settings?.[field.name]}
+                  onChange={value => handleSettingChange(field.name, value)}
+                  disabled={isRunning}
+                  serialPorts={serialPorts}
+                  onRefreshPorts={onRefreshPorts}
+                />
+              ))}
+            </div>
+          ));
+        })()}
       </div>
 
       {schema?.capabilities.supportsUnitId && unitIDSettings && (

@@ -271,5 +271,6 @@ func pbConfigFieldToProtocol(pbf *pb.ConfigField) protocol.ConfigField {
 			Value: pbf.Condition.Value,
 		}
 	}
+	field.Category = pbf.Category
 	return field
 }

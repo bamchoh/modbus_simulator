@@ -90,6 +90,7 @@ func (s *PluginServer) GetConfigFields(ctx context.Context, req *pb.GetConfigFie
 			Description: f.Description,
 			Type:        f.Type,
 			Required:    f.Required,
+			Category:    f.Category,
 		}
 		if f.Default != nil {
 			if b, err := json.Marshal(f.Default); err == nil {

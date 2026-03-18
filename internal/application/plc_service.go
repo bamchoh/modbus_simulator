@@ -516,6 +516,7 @@ func (s *PLCService) GetProtocolSchema(protocolType string) (*ProtocolSchemaDTO,
 				Default:     f.Default,
 				Min:         f.Min,
 				Max:         f.Max,
+				Category:    f.Category,
 			}
 			if f.Options != nil {
 				fieldDTOs[j].Options = make([]OptionDTO, len(f.Options))

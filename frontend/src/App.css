@@ -1316,6 +1316,21 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.vscode-setting-category {
+  padding: 0.6rem 1rem 0.4rem 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #eaeaea;
+  background: transparent;
+  border-bottom: 1px solid #0f3460;
+  margin-top: 0.5rem;
+  text-align: left;
+}
+
+.vscode-settings-list > div:first-child .vscode-setting-category {
+  margin-top: 0;
+}
+
 .unit-id-section {
   padding: 0.75rem 1rem;
   text-align: left;
