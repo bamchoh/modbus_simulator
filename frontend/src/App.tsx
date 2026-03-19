@@ -6,9 +6,10 @@ import { VariableView } from "./components/VariableView";
 import { RegisterPanel, RegisterTab } from "./components/RegisterPanel";
 import { ScriptPanel } from "./components/ScriptPanel";
 import { CommunicationIndicator } from "./components/CommunicationIndicator";
+import { KarakuriLogo } from "./components/KarakuriLogo";
 import { GetHTTPAPIPort, SetHTTPAPIPort } from "../wailsjs/go/main/App";
 
-const APP_VERSION = "v0.0.36";
+const APP_VERSION = "v0.0.37";
 
 type Tab = "server" | "variables" | "registers" | "scripts";
 
@@ -81,7 +82,7 @@ function App() {
   return (
     <div id="App">
       <header className="app-header">
-        <h1>Karakuri({APP_VERSION})</h1>
+        <h1><KarakuriLogo size={28} className="header-logo" />Karakuri({APP_VERSION})</h1>
         <CommunicationIndicator />
         <div className="httpapi-indicator">
           {editingPort ? (
