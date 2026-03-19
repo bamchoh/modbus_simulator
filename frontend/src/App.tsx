@@ -8,7 +8,7 @@ import { ScriptPanel } from "./components/ScriptPanel";
 import { CommunicationIndicator } from "./components/CommunicationIndicator";
 import { GetHTTPAPIPort, SetHTTPAPIPort } from "../wailsjs/go/main/App";
 
-const APP_VERSION = "v0.0.35";
+const APP_VERSION = "v0.0.36";
 
 type Tab = "server" | "variables" | "registers" | "scripts";
 
@@ -81,7 +81,7 @@ function App() {
   return (
     <div id="App">
       <header className="app-header">
-        <h1>PLC Simulator({APP_VERSION})</h1>
+        <h1>Karakuri({APP_VERSION})</h1>
         <CommunicationIndicator />
         <div className="httpapi-indicator">
           {editingPort ? (
